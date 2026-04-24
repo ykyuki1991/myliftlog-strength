@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1f2937" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MyLiftLog" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>MyLiftLog Strength Planner</title>
+</head>
+<body>
+  <header class="app-header">
+    <h1 class="app-title">MyLiftLog</h1>
+    <div class="app-status" id="headerStatus"></div>
+  </header>
+
+  <main id="main"></main>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn" data-screen="home">
+      <span class="nav-icon">●</span>
+      <span class="nav-label">ホーム</span>
+    </button>
+    <button class="nav-btn" data-screen="today">
+      <span class="nav-icon">▶</span>
+      <span class="nav-label">今日</span>
+    </button>
+    <button class="nav-btn" data-screen="block">
+      <span class="nav-icon">■</span>
+      <span class="nav-label">ブロック</span>
+    </button>
+    <button class="nav-btn" data-screen="log">
+      <span class="nav-icon">≡</span>
+      <span class="nav-label">ログ</span>
+    </button>
+    <button class="nav-btn" data-screen="settings">
+      <span class="nav-icon">⚙</span>
+      <span class="nav-label">設定</span>
+    </button>
+  </nav>
+
+  <!-- レストタイマー（フローティング表示） -->
+  <div id="restTimer" class="rest-timer hidden">
+    <div class="rest-timer-inner">
+      <div class="rest-timer-label">レスト</div>
+      <div class="rest-timer-display" id="restTimerDisplay">00:00</div>
+      <div class="rest-timer-controls">
+        <button id="restMinus30">-30s</button>
+        <button id="restToggle">停止</button>
+        <button id="restPlus30">+30s</button>
+        <button id="restReset">リセット</button>
+        <button id="restClose">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-inner">
+      <div class="modal-header">
+        <h3 id="modalTitle"></h3>
+        <button id="modalClose">×</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- トースト -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

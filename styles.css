@@ -1,0 +1,730 @@
+/* ==========================================================================
+   MyLiftLog Strength Planner - styles.css
+   スマホ縦画面優先 / PCレスポンシブ対応
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-2: #273449;
+  --surface-3: #334155;
+  --border: #3b4a63;
+  --text: #f1f5f9;
+  --text-dim: #94a3b8;
+  --accent: #60a5fa;
+  --accent-strong: #3b82f6;
+  --success: #4ade80;
+  --warn: #facc15;
+  --danger: #f87171;
+  --rest: #fb923c;
+  --rest-yellow: #fde047;
+  --shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
+               "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  min-height: 100vh;
+}
+
+body {
+  padding-bottom: 80px; /* bottom nav 分 */
+  padding-top: env(safe-area-inset-top);
+}
+
+/* ==== ヘッダー ==== */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--surface);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-top: calc(10px + env(safe-area-inset-top));
+}
+
+.app-title {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.app-status {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* ==== メイン ==== */
+#main {
+  padding: 16px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.screen-title {
+  font-size: 18px;
+  margin: 0 0 12px;
+  font-weight: 700;
+}
+
+.section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+}
+
+.section h2 {
+  font-size: 16px;
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.section h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.value-big {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.value-mid {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row.between {
+  justify-content: space-between;
+}
+
+.row.wrap {
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 12px 0;
+}
+
+/* ==== ボタン ==== */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: opacity 0.15s, transform 0.05s;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--accent-strong);
+  color: #fff;
+  width: 100%;
+  padding: 16px;
+  font-size: 17px;
+}
+
+.btn-secondary {
+  background: var(--surface-3);
+}
+
+.btn-success {
+  background: var(--success);
+  color: #052e16;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-warn {
+  background: var(--warn);
+  color: #1a1300;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.btn-small {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-row > button {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* ==== 入力 ==== */
+input[type="number"],
+input[type="text"],
+select,
+textarea {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+label.field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+label.field > span {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+/* ==== ナビ ==== */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 40;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-btn {
+  flex: 1;
+  background: transparent;
+  border-radius: 0;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.nav-btn.active {
+  color: var(--accent);
+}
+
+.nav-icon {
+  font-size: 18px;
+}
+
+.nav-label {
+  font-size: 11px;
+}
+
+/* ==== ホーム ==== */
+.today-summary {
+  background: linear-gradient(135deg, var(--accent-strong), #6366f1);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.today-summary .day-name {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 4px 0;
+}
+
+.today-summary .meta {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.exercise-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.exercise-list li {
+  margin: 4px 0;
+}
+
+.rest-day-banner {
+  background: var(--surface-2);
+  text-align: center;
+  padding: 24px;
+  border-radius: var(--radius);
+  margin: 14px 0;
+}
+
+.rest-day-banner .big {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.deload-banner {
+  background: rgba(251,146,60,0.15);
+  border-left: 4px solid var(--rest);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.deload-banner .label {
+  color: var(--rest);
+  font-weight: 600;
+  margin: 0;
+}
+
+/* ==== 種目カード ==== */
+.exercise-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+.exercise-card .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.exercise-card .name {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.exercise-card .menu-type {
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.plan-line {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin: 4px 0 8px;
+}
+
+.plan-line .strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.set-grid {
+  display: grid;
+  grid-template-columns: 32px 1fr 1fr 40px;
+  gap: 6px;
+  align-items: center;
+  font-size: 14px;
+  margin: 6px 0;
+}
+
+.set-grid input {
+  padding: 8px;
+  font-size: 15px;
+  text-align: center;
+}
+
+.set-grid .set-no {
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.set-grid .check {
+  text-align: center;
+}
+
+.set-grid .check input {
+  width: 22px;
+  height: 22px;
+}
+
+.row-rpe-pain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip {
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chip.active {
+  background: var(--accent-strong);
+  color: #fff;
+  border-color: var(--accent-strong);
+}
+
+.chip.pain.active {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.exercise-card .actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.exercise-card .actions button {
+  flex: 1;
+  font-size: 13px;
+  padding: 10px 6px;
+  min-width: 90px;
+}
+
+/* ==== レストタイマー ==== */
+.rest-timer {
+  position: fixed;
+  bottom: 80px;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 12px;
+}
+
+.rest-timer.hidden {
+  display: none;
+}
+
+.rest-timer-inner {
+  pointer-events: auto;
+  background: var(--rest);
+  color: #1a0a00;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+}
+
+.rest-timer.alarm .rest-timer-inner {
+  background: var(--rest-yellow);
+  animation: pulse 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.04); }
+}
+
+.rest-timer-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.rest-timer-display {
+  font-size: 36px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  line-height: 1;
+}
+
+.rest-timer-controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.rest-timer-controls button {
+  flex: 1;
+  background: rgba(0,0,0,0.2);
+  color: #1a0a00;
+  font-size: 13px;
+  padding: 8px 4px;
+  min-width: 60px;
+}
+
+#restClose {
+  flex: 0 0 auto;
+  min-width: 36px;
+  font-weight: 700;
+}
+
+/* ==== ログ ==== */
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.log-table th, .log-table td {
+  padding: 6px 4px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.log-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.log-graph {
+  width: 100%;
+  height: 160px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+/* ==== ブロック ==== */
+.rotation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rotation-cell {
+  background: var(--surface-2);
+  text-align: center;
+  padding: 12px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.rotation-cell.current {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+.rotation-cell.deload {
+  background: rgba(251,146,60,0.4);
+  color: #fff;
+}
+
+.suggestion-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.suggestion-row:last-child {
+  border-bottom: none;
+}
+
+.suggestion-row .name { font-weight: 600; }
+.suggestion-row .delta { font-weight: 700; color: var(--accent); }
+
+/* ==== モーダル ==== */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-inner {
+  background: var(--surface);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-header button {
+  background: transparent;
+  font-size: 24px;
+  padding: 0 8px;
+  font-weight: 700;
+}
+
+.modal-body {
+  padding: 16px;
+}
+
+/* ==== トースト ==== */
+.toast {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-3);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  z-index: 200;
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  max-width: 90%;
+  text-align: center;
+}
+
+.toast.hidden { display: none; }
+
+/* ==== ユーティリティ ==== */
+.hidden { display: none !important; }
+.text-center { text-align: center; }
+.text-success { color: var(--success); }
+.text-warn { color: var(--warn); }
+.text-danger { color: var(--danger); }
+.text-rest { color: var(--rest); }
+
+.mb-8 { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+
+/* ==== レスポンシブ（PC） ==== */
+@media (min-width: 768px) {
+  body {
+    font-size: 16px;
+  }
+  #main {
+    padding: 24px;
+  }
+  .set-grid {
+    grid-template-columns: 40px 1fr 1fr 50px;
+  }
+  .rest-timer {
+    bottom: 100px;
+  }
+}
