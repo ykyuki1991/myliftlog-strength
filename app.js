@@ -16,6 +16,8 @@ const DEFAULT_SETTINGS = {
     floorDead: 170,
   },
   increment: 2.5,
+  // 'standard' = 通常ボリューム / 'high' = 補助種目と一部メインセットを増量した高ボリュームモード
+  trainingVolumeMode: 'high',
 };
 
 const DEFAULT_STATE = {
@@ -156,20 +158,36 @@ function getDayMenu(day, rotation, settings) {
   const inc = settings.increment;
   const r = rotation;
   const isDeload = r === 4;
+  const volumeMode = settings.trainingVolumeMode || 'high';
+  const isHigh = volumeMode === 'high';
 
   // パーセンテージ取得（1ローテ=index0, 2ローテ=index1, 3ローテ=index2）
   const pick = (arr) => arr[Math.min(r - 1, 2)];
 
   // 補助種目共通定義
-  const accessoryWith = (key, name, reps, sets, restType, deloadSets = null) => ({
-    key, name,
-    menuType: 'accessory',
-    plannedWeight: null,
-    plannedReps: reps,
-    plannedSets: isDeload ? (deloadSets || Math.max(1, Math.ceil(sets / 2))) : sets,
-    restSec: REST_TIME_SEC[restType] || REST_TIME_SEC.default,
-    isAccessory: true,
-  });
+  // standardSets: 標準モードのセット数
+  // highSets: 高ボリュームモードのセット数（null の場合は standardSets を使う）
+  // deloadSets: R4デロードのセット数（null の場合は standardSets/2 切り上げ）
+  // ※ R4デロードは両モードとも標準モードのセット数を基に計算（モードによる差を出さない）
+  const accessoryWith = (key, name, reps, standardSets, restType, deloadSets = null, highSets = null) => {
+    let sets;
+    if (isDeload) {
+      sets = deloadSets || Math.max(1, Math.ceil(standardSets / 2));
+    } else if (isHigh && highSets != null) {
+      sets = highSets;
+    } else {
+      sets = standardSets;
+    }
+    return {
+      key, name,
+      menuType: 'accessory',
+      plannedWeight: null,
+      plannedReps: reps,
+      plannedSets: sets,
+      restSec: REST_TIME_SEC[restType] || REST_TIME_SEC.default,
+      isAccessory: true,
+    };
+  };
 
   // BIG3トップシングル
   const topSingle = (key, name, max, pcts, menuType) => {
@@ -248,7 +266,7 @@ function getDayMenu(day, rotation, settings) {
         [79.7, 81.3, 82.8], [3, 3, 3], [4, 4, 3], 'squat-heavy-backoff'));
       exercises.push(benchByPct('bench', 'ベンチプレス（ボリューム）', M.bench,
         [71.7, 73.9, 76.1], [5, 5, 5], [5, 5, 5], 'bench-volume', 'bench_volume'));
-      exercises.push(accessoryWith('legpress', 'レッグプレス', '8〜12', 3, 'default'));
+      exercises.push(accessoryWith('legpress', 'レッグプレス', '8〜12', 3, 'default', null, 4));
       exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 4, 'calf'));
       break;
     }
@@ -259,8 +277,8 @@ function getDayMenu(day, rotation, settings) {
       if (bp) exercises.push(bp);
       exercises.push(backoff('bench', 'ベンチプレス（バックオフ）', M.bench,
         [80.4, 82.6, 84.8], [3, 3, 3], [4, 4, 3], 'bench-heavy-backoff'));
-      exercises.push(accessoryWith('incline_db', 'インクラインDBプレス', '8〜10', 3, 'incline_db'));
-      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 3, 'chinning'));
+      exercises.push(accessoryWith('incline_db', 'インクラインDBプレス', '8〜10', 3, 'incline_db', null, 4));
+      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 3, 'chinning', null, 4));
       exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 4, 'row'));
       exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
       exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
@@ -275,9 +293,9 @@ function getDayMenu(day, rotation, settings) {
         [78.9, 81.6, 82.9], [3, 3, 3], [4, 3, 3], 'halfDead-heavy-backoff'));
       exercises.push(benchByPct('bench', 'ベンチプレス（軽め）', M.bench,
         [65.2, 67.4, 69.6], [3, 3, 3], [6, 6, 5], 'bench-light', 'bench_volume'));
-      exercises.push(accessoryWith('shoulder', 'ショルダープレス', '5〜8', 3, 'shoulder'));
-      exercises.push(accessoryWith('row', 'ロウ系', '8〜10', 3, 'row'));
-      exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf'));
+      exercises.push(accessoryWith('shoulder', 'ショルダープレス', '5〜8', 3, 'shoulder', null, 4));
+      exercises.push(accessoryWith('row', 'ロウ系', '8〜10', 3, 'row', null, 4));
+      exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf', null, 4));
       break;
     }
     case 4:
@@ -290,16 +308,19 @@ function getDayMenu(day, rotation, settings) {
         [71.9, 75.0, 76.6], [5, 5, 5], [5, 5, 5], 'squat-volume', 'squat_dead_volume'));
       exercises.push(benchByPct('bench', 'ベンチプレス（中重量）', M.bench,
         [76.1, 78.3, 80.4], [4, 4, 4], [4, 4, 4], 'bench-mid', 'bench_volume'));
-      exercises.push(accessoryWith('hack_squat', 'ハックスクワット', '8〜10', 3, 'default'));
+      exercises.push(accessoryWith('hack_squat', 'ハックスクワット', '8〜10', 3, 'default', null, 4));
       exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 4, 'calf'));
       break;
     }
     case 6: {
       dayName = 'Day6: ベンチボリューム';
+      // 高ボリュームモード時はメインのベンチボリュームを 4セット → 5セット に増量
+      // R4デロード時は benchByPct 内で sets=2 に固定されるため影響なし
+      const day6BenchSets = (isHigh && !isDeload) ? [5, 5, 5] : [4, 4, 4];
       exercises.push(benchByPct('bench', 'ベンチプレス（ボリューム）', M.bench,
-        [67.4, 69.6, 71.7], [6, 6, 6], [4, 4, 4], 'bench-volume2', 'bench_volume'));
-      exercises.push(accessoryWith('dips', 'ディップス', '6〜10', 3, 'dips'));
-      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning'));
+        [67.4, 69.6, 71.7], [6, 6, 6], day6BenchSets, 'bench-volume2', 'bench_volume'));
+      exercises.push(accessoryWith('dips', 'ディップス', '6〜10', 3, 'dips', null, 4));
+      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning', null, 3));
       exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 4, 'row'));
       exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
       exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
@@ -311,9 +332,9 @@ function getDayMenu(day, rotation, settings) {
         [70.6, 73.5, 76.5], [3, 3, 3], [5, 5, 4], 'floorDead-main', 'squat_dead_volume'));
       exercises.push(benchByPct('squat', 'スクワット（軽め）', M.squat,
         [62.5, 64.1, 65.6], [2, 2, 2], [6, 6, 6], 'squat-light', 'squat_dead_volume'));
-      exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 3, 'row'));
-      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning'));
-      exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf'));
+      exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 3, 'row', null, 4));
+      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning', null, 3));
+      exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf', null, 4));
       break;
     }
     case 8:
@@ -413,23 +434,50 @@ function recalculateTodaySession() {
   const hasDoneSet = oldSession.exercises.some(ex => ex.sets.some(s => s.done));
 
   // 既存の入力データを保持しつつ、予定値だけ更新
+  // セット数が変わった場合：
+  //   - 実施済みセットは絶対に保持
+  //   - 未実施セットは新メニューの予定セット数に合わせて再構築
+  //   - 実施済み件数 > 新予定セット数 となる場合でも、実施済みセットは削除しない（実施件数優先）
   const newExercises = menu.exercises.map(newEx => {
     const oldEx = oldSession.exercises.find(e => e.key === newEx.key && e.menuType === newEx.menuType);
+    const targetSets = typeof newEx.plannedSets === 'number' ? newEx.plannedSets : 3;
+    const defaultReps = typeof newEx.plannedReps === 'number' ? newEx.plannedReps : '';
+
     if (!oldEx) {
       return {
         ...newEx,
-        sets: Array.from({ length: typeof newEx.plannedSets === 'number' ? newEx.plannedSets : 3 }, () => ({
-          weight: newEx.plannedWeight, reps: typeof newEx.plannedReps === 'number' ? newEx.plannedReps : '', done: false,
+        sets: Array.from({ length: targetSets }, () => ({
+          weight: newEx.plannedWeight, reps: defaultReps, done: false,
         })),
         rpe: '未入力', pains: [], note: '', completed: false,
       };
     }
-    // 未完了セットだけ予定重量を更新
-    const newSets = oldEx.sets.map(s => {
-      if (s.done) return s;
-      return { ...s, weight: newEx.plannedWeight };
-    });
-    // 予定値だけ最新に
+
+    // 既存セットを完了/未完了に分割
+    const doneSets = oldEx.sets.filter(s => s.done);
+    const undoneSets = oldEx.sets.filter(s => !s.done);
+
+    // 未完了セットの目標数 = max(0, targetSets - doneSets.length)
+    const undoneTarget = Math.max(0, targetSets - doneSets.length);
+    let newUndone;
+    if (undoneSets.length === undoneTarget) {
+      // 件数同じ → 重量だけ更新
+      newUndone = undoneSets.map(s => ({ ...s, weight: newEx.plannedWeight }));
+    } else if (undoneSets.length > undoneTarget) {
+      // 件数減 → 先頭から undoneTarget 件を残す
+      newUndone = undoneSets.slice(0, undoneTarget).map(s => ({ ...s, weight: newEx.plannedWeight }));
+    } else {
+      // 件数増 → 既存を更新 + 不足分を追加
+      newUndone = [
+        ...undoneSets.map(s => ({ ...s, weight: newEx.plannedWeight })),
+        ...Array.from({ length: undoneTarget - undoneSets.length }, () => ({
+          weight: newEx.plannedWeight, reps: defaultReps, done: false,
+        })),
+      ];
+    }
+
+    const newSets = [...doneSets, ...newUndone];
+
     return {
       ...newEx,
       sets: newSets,
@@ -486,7 +534,15 @@ function renderHome() {
 
   const exList = menu.isRest
     ? '<div class="rest-day-banner"><div class="big">今日は休み</div><div class="muted">回復に集中しましょう</div></div>'
-    : `<ul class="exercise-list">${menu.exercises.map(e => `<li>${e.name}${e.plannedWeight != null ? ` <span class="muted">(${e.plannedWeight}kg)</span>` : ''}</li>`).join('')}</ul>`;
+    : `<ul class="exercise-list">${menu.exercises.map(e => {
+        const detail = e.plannedWeight != null
+          ? `${e.plannedWeight}kg × ${e.plannedReps}回 × ${e.plannedSets}セット`
+          : `${e.plannedReps}回 × ${e.plannedSets}セット`;
+        return `<li><span class="ex-name">${e.name}</span> <span class="muted ex-detail">${detail}</span></li>`;
+      }).join('')}</ul>`;
+
+  const volumeMode = store.settings.trainingVolumeMode || 'high';
+  const modeBadge = `<div class="muted" style="font-size:12px;">ボリュームモード: <span class="${volumeMode === 'high' ? 'text-warn' : ''}">${volumeMode === 'high' ? '高ボリューム' : '標準'}</span></div>`;
 
   const deloadBanner = menu.isDeload && !menu.isRest
     ? `<div class="deload-banner"><div class="label">疲労抜きローテ（4ローテ目）</div><div class="muted">トップシングルなし、軽めの重量で身体を整える</div></div>`
@@ -504,6 +560,7 @@ function renderHome() {
 
     <div class="section">
       <h2>今日のメニュー</h2>
+      ${modeBadge}
       ${exList}
     </div>
 
@@ -1332,6 +1389,7 @@ function renderSettings() {
   const m = store.settings.maxes;
   const s = store.currentState;
   const adjList = Object.entries(store.manualAdjustments).filter(([k, v]) => v !== 0);
+  const volumeMode = store.settings.trainingVolumeMode || 'high';
 
   return `
     <h2 class="screen-title">設定</h2>
@@ -1343,6 +1401,31 @@ function renderSettings() {
       <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
       <label class="field"><span>床引きデッドMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
       <label class="field"><span>重量刻み (kg)</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /></label>
+    </div>
+
+    <div class="section">
+      <h2>トレーニングボリューム</h2>
+      <div class="volume-mode-group">
+        <label class="volume-mode-option ${volumeMode === 'standard' ? 'active' : ''}">
+          <input type="radio" name="volumeMode" value="standard" ${volumeMode === 'standard' ? 'checked' : ''} />
+          <div>
+            <div class="opt-title">標準モード</div>
+            <div class="muted opt-desc">回復を優先した通常ボリューム。補助種目は控えめのセット数で疲労を抑えます。</div>
+          </div>
+        </label>
+        <label class="volume-mode-option ${volumeMode === 'high' ? 'active' : ''}">
+          <input type="radio" name="volumeMode" value="high" ${volumeMode === 'high' ? 'checked' : ''} />
+          <div>
+            <div class="opt-title">高ボリュームモード <span class="text-warn" style="font-size:11px;">(推奨)</span></div>
+            <div class="muted opt-desc">補助種目と一部メインセットを増やした高ボリューム版。Day1/2/3/5/6/7の特定種目で +1セット、Day6ベンチボリュームは 4→5セット。</div>
+          </div>
+        </label>
+      </div>
+      <div class="muted mt-8" style="font-size:12px;">
+        ※ 4ローテ目（疲労抜き）は両モードとも同じ縮小ボリュームです。<br>
+        ※ モード変更後、未実施の今後メニューに自動反映されます。今日のメニューは「再計算」を押した時のみ更新されます（実施済みセットは保持）。<br>
+        ※ 過去ログは書き換わりません。
+      </div>
     </div>
 
     <div class="section">
@@ -1407,13 +1490,26 @@ function afterSettings() {
       rotation: Math.min(4, Math.max(1, parseInt(document.getElementById('set-rotation').value) || 1)),
       day: Math.min(8, Math.max(1, parseInt(document.getElementById('set-day').value) || 1)),
     };
+    const volumeRadio = document.querySelector('input[name="volumeMode"]:checked');
+    const newVolumeMode = volumeRadio ? volumeRadio.value : (store.settings.trainingVolumeMode || 'high');
     store.settings.maxes = newMaxes;
     store.settings.increment = newInc;
+    store.settings.trainingVolumeMode = newVolumeMode;
     store.currentState = { ...store.currentState, ...newState };
     saveStore();
     showToast('保存しました');
     render();
   };
+
+  // ラジオボタンの見た目同期（即時反映用、保存は明示的にボタンで）
+  document.querySelectorAll('input[name="volumeMode"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.querySelectorAll('.volume-mode-option').forEach(opt => {
+        const inp = opt.querySelector('input[name="volumeMode"]');
+        opt.classList.toggle('active', inp && inp.checked);
+      });
+    });
+  });
 
   document.getElementById('btnRecalcToday').onclick = () => {
     const hadDone = recalculateTodaySession();
