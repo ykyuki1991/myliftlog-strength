@@ -13,11 +13,49 @@ const DEFAULT_SETTINGS = {
     bench: 115,
     squat: 160,
     halfDead: 190,
+    // 床引きデッドはユーザーが過去にハードにやっていない種目。技術練習・補助的位置づけのため初期値170kg固定。
     floorDead: 170,
   },
   increment: 2.5,
   // 'standard' = 通常ボリューム / 'high' = 補助種目と一部メインセットを増量した高ボリュームモード
   trainingVolumeMode: 'high',
+  // 'standard' = 安全寄りメイン強度 / 'highIntensity' = 過去実績に近い高強度メイン
+  strengthMode: 'highIntensity',
+  // 補助種目の初期重量・回数・セット数。重量は固定値。MAX計算なし。
+  accessoryDefaults: {
+    incline_db:  { weight: 38,  reps: '8〜10',  sets: 4 },
+    dips:        { weight: 90,  reps: '8〜10',  sets: 4, note: '自重込み目安' },
+    shoulder:    { weight: 60,  reps: '8〜10',  sets: 4 },
+    lying_ext:   { weight: 30,  reps: '8〜10',  sets: 3 },
+    preacher:    { weight: 14,  reps: '8〜10',  sets: 3 },
+    legpress:    { weight: 240, reps: '10',    sets: 4 },
+    hack_squat:  { weight: 192, reps: '10〜12', sets: 4 },
+    calf:        { weight: 120, reps: '12〜20', sets: 4 },
+    latpulldown: { weight: 86,  reps: '8〜12',  sets: 4 },
+    machine_row: { weight: 160, reps: '10',    sets: 4 },
+    seated_row:  { weight: 77,  reps: '10',    sets: 2 },
+    pec_fly:     { weight: 70,  reps: '8〜12',  sets: 3 },
+    rear_raise:  { weight: 57,  reps: '8〜12',  sets: 3 },
+  },
+};
+
+// 補助種目キー → 表示名（設定画面の補助重量編集UI、フォールバック用）
+const ACCESSORY_DISPLAY_NAMES = {
+  incline_db: 'インクラインDBプレス',
+  dips: 'ディップス',
+  shoulder: 'ショルダープレス',
+  lying_ext: 'ライイングエクステンション',
+  preacher: 'ワンハンドDBプリーチャーカール',
+  legpress: 'レッグプレス',
+  hack_squat: 'ハックスクワット',
+  calf: 'カーフレイズ',
+  latpulldown: 'ラットプルダウン',
+  machine_row: 'マシンロー',
+  seated_row: 'シーテッドロー',
+  pec_fly: 'ペックフライ',
+  rear_raise: 'リアレイズ',
+  row: 'ロウ系',
+  chinning: 'チンニング',
 };
 
 const DEFAULT_STATE = {
@@ -83,10 +121,21 @@ function loadStore() {
     const parsed = JSON.parse(raw);
     // マージ
     const def = defaultStore();
+    // accessoryDefaults はキーごとに深くマージ（既存ユーザーキーは保持、新規キーは追加）
+    const mergedAccDefaults = { ...def.settings.accessoryDefaults };
+    const userAccDefaults = parsed.settings?.accessoryDefaults || {};
+    for (const k of Object.keys(userAccDefaults)) {
+      mergedAccDefaults[k] = { ...(mergedAccDefaults[k] || {}), ...userAccDefaults[k] };
+    }
     return {
       ...def,
       ...parsed,
-      settings: { ...def.settings, ...(parsed.settings || {}), maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) } },
+      settings: {
+        ...def.settings,
+        ...(parsed.settings || {}),
+        maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
+        accessoryDefaults: mergedAccDefaults,
+      },
       currentState: { ...def.currentState, ...(parsed.currentState || {}) },
     };
   } catch (e) {
@@ -160,6 +209,9 @@ function getDayMenu(day, rotation, settings) {
   const isDeload = r === 4;
   const volumeMode = settings.trainingVolumeMode || 'high';
   const isHigh = volumeMode === 'high';
+  const strengthMode = settings.strengthMode || 'highIntensity';
+  const isHighIntensity = strengthMode === 'highIntensity';
+  const accDefaults = settings.accessoryDefaults || {};
 
   // パーセンテージ取得（1ローテ=index0, 2ローテ=index1, 3ローテ=index2）
   const pick = (arr) => arr[Math.min(r - 1, 2)];
@@ -169,6 +221,8 @@ function getDayMenu(day, rotation, settings) {
   // highSets: 高ボリュームモードのセット数（null の場合は standardSets を使う）
   // deloadSets: R4デロードのセット数（null の場合は standardSets/2 切り上げ）
   // ※ R4デロードは両モードとも標準モードのセット数を基に計算（モードによる差を出さない）
+  // 補助種目の重量・回数は accessoryDefaults から取得（設定可能）。
+  // 引数の reps は accessoryDefaults に reps が無い場合のフォールバック。
   const accessoryWith = (key, name, reps, standardSets, restType, deloadSets = null, highSets = null) => {
     let sets;
     if (isDeload) {
@@ -178,14 +232,33 @@ function getDayMenu(day, rotation, settings) {
     } else {
       sets = standardSets;
     }
+    const def = accDefaults[key] || {};
+    const plannedWeight = (def.weight != null) ? def.weight : null;
+    const plannedReps = (def.reps != null) ? def.reps : reps;
     return {
       key, name,
       menuType: 'accessory',
-      plannedWeight: null,
-      plannedReps: reps,
+      plannedWeight,
+      plannedReps,
       plannedSets: sets,
       restSec: REST_TIME_SEC[restType] || REST_TIME_SEC.default,
       isAccessory: true,
+    };
+  };
+
+  // 高強度モード用：BIG3メイン × 3セット (パーセンテージ × reps × sets を1メニューで表現)
+  // R4デロードのときは呼ばれない想定（呼ばれた場合は通常のbenchByPctロジックでデロード処理）
+  const hiMainSets = (key, name, max, pcts, reps, sets, menuType, restType) => {
+    const pct = pick(pcts);
+    return {
+      key, name,
+      menuType,
+      plannedWeight: roundToIncrement(max * pct / 100, inc),
+      plannedReps: reps,
+      plannedSets: sets,
+      pctNote: `${pct}%`,
+      restSec: REST_TIME_SEC[restType] || REST_TIME_SEC.default,
+      isBig3: true,
     };
   };
 
@@ -259,11 +332,17 @@ function getDayMenu(day, rotation, settings) {
   switch (day) {
     case 1: {
       dayName = 'Day1: スクワット重め / ベンチボリューム';
-      const sq = topSingle('squat', 'スクワット（トップシングル）', M.squat,
-        [87.5, 89.0, 90.6], 'squat-heavy-top');
-      if (sq) exercises.push(sq);
-      exercises.push(backoff('squat', 'スクワット（バックオフ）', M.squat,
-        [79.7, 81.3, 82.8], [3, 3, 3], [4, 4, 3], 'squat-heavy-backoff'));
+      if (isHighIntensity && !isDeload) {
+        // 高強度モード: トップシングル+バックオフを 85.0/86.25/87.5% × 5回 × 3セット に置換
+        exercises.push(hiMainSets('squat', 'スクワット（高強度メイン）', M.squat,
+          [85.0, 86.25, 87.5], 5, 3, 'squat-hi-main', 'squat_dead_volume'));
+      } else {
+        const sq = topSingle('squat', 'スクワット（トップシングル）', M.squat,
+          [87.5, 89.0, 90.6], 'squat-heavy-top');
+        if (sq) exercises.push(sq);
+        exercises.push(backoff('squat', 'スクワット（バックオフ）', M.squat,
+          [79.7, 81.3, 82.8], [3, 3, 3], [4, 4, 3], 'squat-heavy-backoff'));
+      }
       exercises.push(benchByPct('bench', 'ベンチプレス（ボリューム）', M.bench,
         [71.7, 73.9, 76.1], [5, 5, 5], [5, 5, 5], 'bench-volume', 'bench_volume'));
       exercises.push(accessoryWith('legpress', 'レッグプレス', '8〜12', 3, 'default', null, 4));
@@ -272,30 +351,54 @@ function getDayMenu(day, rotation, settings) {
     }
     case 2: {
       dayName = 'Day2: ベンチ重め';
-      const bp = topSingle('bench', 'ベンチプレス（トップシングル）', M.bench,
-        [91.3, 93.5, 95.7], 'bench-heavy-top');
-      if (bp) exercises.push(bp);
-      exercises.push(backoff('bench', 'ベンチプレス（バックオフ）', M.bench,
-        [80.4, 82.6, 84.8], [3, 3, 3], [4, 4, 3], 'bench-heavy-backoff'));
-      exercises.push(accessoryWith('incline_db', 'インクラインDBプレス', '8〜10', 3, 'incline_db', null, 4));
-      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 3, 'chinning', null, 4));
-      exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 4, 'row'));
-      exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
-      exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
+      if (isHighIntensity && !isDeload) {
+        // 高強度モード: トップシングル+バックオフを 85.0/87.0/89.0% × 5回 × 3セット に置換
+        exercises.push(hiMainSets('bench', 'ベンチプレス（高強度メイン）', M.bench,
+          [85.0, 87.0, 89.0], 5, 3, 'bench-hi-main', 'bench_volume'));
+        // 高強度モード補助: チンニング / マシンロー / プリーチャー / ライイングエクステンション
+        exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 3, 'chinning', null, 4));
+        exercises.push(accessoryWith('machine_row', 'マシンロー', '10', 4, 'row'));
+        exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
+        exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
+      } else {
+        const bp = topSingle('bench', 'ベンチプレス（トップシングル）', M.bench,
+          [91.3, 93.5, 95.7], 'bench-heavy-top');
+        if (bp) exercises.push(bp);
+        exercises.push(backoff('bench', 'ベンチプレス（バックオフ）', M.bench,
+          [80.4, 82.6, 84.8], [3, 3, 3], [4, 4, 3], 'bench-heavy-backoff'));
+        exercises.push(accessoryWith('incline_db', 'インクラインDBプレス', '8〜10', 3, 'incline_db', null, 4));
+        exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 3, 'chinning', null, 4));
+        exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 4, 'row'));
+        exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
+        exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
+      }
       break;
     }
     case 3: {
       dayName = 'Day3: ハーフデッド重め / ベンチ軽め';
-      const hd = topSingle('halfDead', 'ハーフデッド（トップシングル）', M.halfDead,
-        [89.5, 92.1, 93.4], 'halfDead-heavy-top');
-      if (hd) exercises.push(hd);
-      exercises.push(backoff('halfDead', 'ハーフデッド（バックオフ）', M.halfDead,
-        [78.9, 81.6, 82.9], [3, 3, 3], [4, 3, 3], 'halfDead-heavy-backoff'));
+      if (isHighIntensity && !isDeload) {
+        // 高強度モード: トップシングル+バックオフを 84.25/85.5/86.75% × 5回 × 3セット に置換
+        exercises.push(hiMainSets('halfDead', 'ハーフデッド（高強度メイン）', M.halfDead,
+          [84.25, 85.5, 86.75], 5, 3, 'halfDead-hi-main', 'squat_dead_volume'));
+      } else {
+        const hd = topSingle('halfDead', 'ハーフデッド（トップシングル）', M.halfDead,
+          [89.5, 92.1, 93.4], 'halfDead-heavy-top');
+        if (hd) exercises.push(hd);
+        exercises.push(backoff('halfDead', 'ハーフデッド（バックオフ）', M.halfDead,
+          [78.9, 81.6, 82.9], [3, 3, 3], [4, 3, 3], 'halfDead-heavy-backoff'));
+      }
       exercises.push(benchByPct('bench', 'ベンチプレス（軽め）', M.bench,
         [65.2, 67.4, 69.6], [3, 3, 3], [6, 6, 5], 'bench-light', 'bench_volume'));
-      exercises.push(accessoryWith('shoulder', 'ショルダープレス', '5〜8', 3, 'shoulder', null, 4));
-      exercises.push(accessoryWith('row', 'ロウ系', '8〜10', 3, 'row', null, 4));
-      exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf', null, 4));
+      if (isHighIntensity) {
+        // 高強度モード補助: マシンロー / ショルダープレス / カーフレイズ
+        exercises.push(accessoryWith('machine_row', 'マシンロー', '10', 3, 'row', null, 4));
+        exercises.push(accessoryWith('shoulder', 'ショルダープレス', '5〜8', 3, 'shoulder', null, 4));
+        exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf', null, 4));
+      } else {
+        exercises.push(accessoryWith('shoulder', 'ショルダープレス', '5〜8', 3, 'shoulder', null, 4));
+        exercises.push(accessoryWith('row', 'ロウ系', '8〜10', 3, 'row', null, 4));
+        exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf', null, 4));
+      }
       break;
     }
     case 4:
@@ -319,22 +422,40 @@ function getDayMenu(day, rotation, settings) {
       const day6BenchSets = (isHigh && !isDeload) ? [5, 5, 5] : [4, 4, 4];
       exercises.push(benchByPct('bench', 'ベンチプレス（ボリューム）', M.bench,
         [67.4, 69.6, 71.7], [6, 6, 6], day6BenchSets, 'bench-volume2', 'bench_volume'));
-      exercises.push(accessoryWith('dips', 'ディップス', '6〜10', 3, 'dips', null, 4));
-      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning', null, 3));
-      exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 4, 'row'));
-      exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
-      exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
+      if (isHighIntensity) {
+        // 高強度モード補助: インクラインDBプレス / ディップス / ペックフライ / ライイングエクステンション
+        exercises.push(accessoryWith('incline_db', 'インクラインDBプレス', '8〜10', 3, 'incline_db', null, 4));
+        exercises.push(accessoryWith('dips', 'ディップス', '6〜10', 3, 'dips', null, 4));
+        exercises.push(accessoryWith('pec_fly', 'ペックフライ', '8〜12', 3, 'default'));
+        exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
+      } else {
+        exercises.push(accessoryWith('dips', 'ディップス', '6〜10', 3, 'dips', null, 4));
+        exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning', null, 3));
+        exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 4, 'row'));
+        exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
+        exercises.push(accessoryWith('lying_ext', 'ライイングエクステンション', '10〜12', 3, 'arm'));
+      }
       break;
     }
     case 7: {
       dayName = 'Day7: 床引きデッド / スクワット軽め';
+      // 床引きデッドはハーフデッド強化の補助・フォーム維持目的のため、
+      // 高強度モードでも軽〜中重量を維持。強化対象にしない。
       exercises.push(benchByPct('floorDead', '床引きデッド', M.floorDead,
         [70.6, 73.5, 76.5], [3, 3, 3], [5, 5, 4], 'floorDead-main', 'squat_dead_volume'));
       exercises.push(benchByPct('squat', 'スクワット（軽め）', M.squat,
         [62.5, 64.1, 65.6], [2, 2, 2], [6, 6, 6], 'squat-light', 'squat_dead_volume'));
-      exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 3, 'row', null, 4));
-      exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning', null, 3));
-      exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf', null, 4));
+      if (isHighIntensity) {
+        // 高強度モード補助: ラットプルダウン / マシンロー / シーテッドロー / プリーチャー
+        exercises.push(accessoryWith('latpulldown', 'ラットプルダウン', '8〜12', 3, 'row', null, 4));
+        exercises.push(accessoryWith('machine_row', 'マシンロー', '10', 3, 'row', null, 4));
+        exercises.push(accessoryWith('seated_row', 'シーテッドロー', '10', 2, 'row'));
+        exercises.push(accessoryWith('preacher', 'ワンハンドDBプリーチャーカール', '10〜12', 3, 'arm'));
+      } else {
+        exercises.push(accessoryWith('row', 'ロウ系', '8〜12', 3, 'row', null, 4));
+        exercises.push(accessoryWith('chinning', 'チンニング', '5〜8', 2, 'chinning', null, 3));
+        exercises.push(accessoryWith('calf', 'カーフレイズ', '12〜20', 3, 'calf', null, 4));
+      }
       break;
     }
     case 8:
@@ -1050,6 +1171,36 @@ function renderBlock() {
     ? ''
     : '<div class="muted mt-8" style="font-size:12px;">※ ブロック完了前は採用できません</div>';
 
+  // 1ローテ予定一覧（現在のローテの8日分）
+  const rotationOverview = [1,2,3,4,5,6,7,8].map(d => {
+    const m = getDayMenu(d, s.rotation, store.settings);
+    const isCurrent = d === s.day;
+    let summary;
+    if (m.isRest) {
+      summary = '<div class="muted" style="font-size:12px;">休み</div>';
+    } else {
+      const exItems = m.exercises.map(e => {
+        const detail = e.plannedWeight != null
+          ? `${e.plannedWeight}kg × ${e.plannedReps} × ${e.plannedSets}`
+          : `${e.plannedReps} × ${e.plannedSets}`;
+        return `<li><span class="ex-name" style="font-size:12px;">${e.name}</span> <span class="muted" style="font-size:11px;">${detail}</span></li>`;
+      }).join('');
+      summary = `<ul class="exercise-list" style="margin:4px 0 0;">${exItems}</ul>`;
+    }
+    return `
+      <div class="rotation-day-card" style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;${isCurrent ? 'border-color:var(--accent);background:rgba(96,165,250,0.05);' : ''}">
+        <div class="row between" style="align-items:center;">
+          <div>
+            <div style="font-size:13px;font-weight:600;">Day${d}${isCurrent ? ' <span class="text-warn" style="font-size:10px;">(現在)</span>' : ''}</div>
+            <div class="muted" style="font-size:11px;">${m.name}</div>
+          </div>
+          <button class="btn-secondary btn-small" data-set-day="${d}" ${isCurrent ? 'disabled style="opacity:0.45;"' : ''}>このDayに設定</button>
+        </div>
+        ${summary}
+      </div>
+    `;
+  }).join('');
+
   return `
     <h2 class="screen-title">ブロック管理</h2>
     <div class="section">
@@ -1060,6 +1211,14 @@ function renderBlock() {
         <div><span class="label">Day</span><div class="value-big">${s.day}/8</div></div>
       </div>
       <div class="rotation-grid">${cells}</div>
+    </div>
+
+    <div class="section">
+      <h2>1ローテ予定一覧（R${s.rotation}）</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        現在のローテの8日分のメニューです。「このDayに設定」を押すと、ローテ・ブロックは変更せずDayだけ変更します（過去ログには影響しません）。
+      </div>
+      ${rotationOverview}
     </div>
 
     <div class="section">
@@ -1120,6 +1279,19 @@ function afterBlock() {
     saveStore();
     render();
   };
+
+  // 「このDayに設定」ボタン: Dayだけを変更（block/rotation はそのまま）
+  document.querySelectorAll('button[data-set-day]').forEach(btn => {
+    btn.onclick = () => {
+      const d = parseInt(btn.dataset.setDay);
+      if (!d || d < 1 || d > 8) return;
+      if (d === store.currentState.day) return;
+      store.currentState.day = d;
+      saveStore();
+      showToast(`Day${d} に設定しました`);
+      render();
+    };
+  });
 }
 
 function openEditSuggestionModal(sug) {
@@ -1390,6 +1562,24 @@ function renderSettings() {
   const s = store.currentState;
   const adjList = Object.entries(store.manualAdjustments).filter(([k, v]) => v !== 0);
   const volumeMode = store.settings.trainingVolumeMode || 'high';
+  const strengthMode = store.settings.strengthMode || 'highIntensity';
+  const accDefaults = store.settings.accessoryDefaults || {};
+
+  // 補助種目重量編集UI
+  const accKeys = ['incline_db','dips','shoulder','lying_ext','preacher','legpress','hack_squat','calf','latpulldown','machine_row','seated_row','pec_fly','rear_raise'];
+  const accEditHtml = accKeys.map(k => {
+    const def = accDefaults[k] || {};
+    const dispName = ACCESSORY_DISPLAY_NAMES[k] || k;
+    const noteHtml = def.note ? `<span class="muted" style="font-size:11px;"> ${def.note}</span>` : '';
+    return `
+      <div class="acc-edit-row" style="display:grid;grid-template-columns:1fr 90px 90px 70px;gap:6px;align-items:center;margin-bottom:6px;">
+        <div style="font-size:13px;">${dispName}${noteHtml}</div>
+        <input type="number" step="0.5" data-acc-key="${k}" data-acc-field="weight" value="${def.weight ?? ''}" placeholder="重量" style="font-size:13px;" />
+        <input type="text" data-acc-key="${k}" data-acc-field="reps" value="${def.reps ?? ''}" placeholder="回数" style="font-size:13px;" />
+        <input type="number" min="1" data-acc-key="${k}" data-acc-field="sets" value="${def.sets ?? ''}" placeholder="セット" style="font-size:13px;" />
+      </div>
+    `;
+  }).join('');
 
   return `
     <h2 class="screen-title">設定</h2>
@@ -1400,7 +1590,34 @@ function renderSettings() {
       <label class="field"><span>スクワットMAX (kg)</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /></label>
       <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
       <label class="field"><span>床引きデッドMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
+      <div class="muted" style="font-size:11px;margin-top:-4px;margin-bottom:8px;">※ 床引きデッドはハーフデッド強化の補助・フォーム維持用途のため、初期値170kg。高強度モードでも強化対象になりません。</div>
       <label class="field"><span>重量刻み (kg)</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /></label>
+    </div>
+
+    <div class="section">
+      <h2>強度モード</h2>
+      <div class="volume-mode-group">
+        <label class="volume-mode-option ${strengthMode === 'standard' ? 'active' : ''}">
+          <input type="radio" name="strengthMode" value="standard" ${strengthMode === 'standard' ? 'checked' : ''} />
+          <div>
+            <div class="opt-title">標準モード</div>
+            <div class="muted opt-desc">安全寄りの強度。Day1/2/3はトップシングル+バックオフ構成。</div>
+          </div>
+        </label>
+        <label class="volume-mode-option ${strengthMode === 'highIntensity' ? 'active' : ''}">
+          <input type="radio" name="strengthMode" value="highIntensity" ${strengthMode === 'highIntensity' ? 'checked' : ''} />
+          <div>
+            <div class="opt-title">高強度モード <span class="text-warn" style="font-size:11px;">(初期値)</span></div>
+            <div class="muted opt-desc">過去実績ベースの高強度メイン。Day1スクワット85.0/86.25/87.5%×5×3、Day2ベンチ85.0/87.0/89.0%×5×3、Day3ハーフデッド84.25/85.5/86.75%×5×3。Day7床引きデッドは変更なし。</div>
+          </div>
+        </label>
+      </div>
+      <div class="muted mt-8" style="font-size:12px;">
+        ※ 4ローテ目（疲労抜き）は両モードとも同じ縮小ボリューム（モード切替の影響を受けません）。<br>
+        ※ Day7床引きデッドはハーフデッド強化の補助・フォーム維持目的のため高強度モードでも変更されません。<br>
+        ※ モード変更後、未実施の今後メニューに自動反映されます。<br>
+        ※ 過去ログは書き換わりません。
+      </div>
     </div>
 
     <div class="section">
@@ -1426,6 +1643,17 @@ function renderSettings() {
         ※ モード変更後、未実施の今後メニューに自動反映されます。今日のメニューは「再計算」を押した時のみ更新されます（実施済みセットは保持）。<br>
         ※ 過去ログは書き換わりません。
       </div>
+    </div>
+
+    <div class="section">
+      <h2>補助種目の初期重量・回数・セット</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        補助種目はMAX計算なし、ここで設定した値が予定として表示されます。空欄にすると重量未設定（自分で入力）になります。
+      </div>
+      <div class="acc-edit-header" style="display:grid;grid-template-columns:1fr 90px 90px 70px;gap:6px;font-size:11px;color:var(--muted);margin-bottom:4px;">
+        <div>種目</div><div>重量(kg)</div><div>回数</div><div>セット</div>
+      </div>
+      ${accEditHtml}
     </div>
 
     <div class="section">
@@ -1492,9 +1720,31 @@ function afterSettings() {
     };
     const volumeRadio = document.querySelector('input[name="volumeMode"]:checked');
     const newVolumeMode = volumeRadio ? volumeRadio.value : (store.settings.trainingVolumeMode || 'high');
+    const strengthRadio = document.querySelector('input[name="strengthMode"]:checked');
+    const newStrengthMode = strengthRadio ? strengthRadio.value : (store.settings.strengthMode || 'highIntensity');
+
+    // 補助種目重量の収集
+    const newAccDefaults = { ...(store.settings.accessoryDefaults || {}) };
+    document.querySelectorAll('input[data-acc-key]').forEach(inp => {
+      const key = inp.dataset.accKey;
+      const field = inp.dataset.accField;
+      newAccDefaults[key] = newAccDefaults[key] ? { ...newAccDefaults[key] } : {};
+      const val = inp.value.trim();
+      if (field === 'weight') {
+        newAccDefaults[key].weight = val === '' ? null : parseFloat(val);
+      } else if (field === 'sets') {
+        const n = parseInt(val);
+        newAccDefaults[key].sets = isNaN(n) ? null : n;
+      } else { // reps
+        newAccDefaults[key].reps = val === '' ? null : val;
+      }
+    });
+
     store.settings.maxes = newMaxes;
     store.settings.increment = newInc;
     store.settings.trainingVolumeMode = newVolumeMode;
+    store.settings.strengthMode = newStrengthMode;
+    store.settings.accessoryDefaults = newAccDefaults;
     store.currentState = { ...store.currentState, ...newState };
     saveStore();
     showToast('保存しました');
@@ -1504,9 +1754,17 @@ function afterSettings() {
   // ラジオボタンの見た目同期（即時反映用、保存は明示的にボタンで）
   document.querySelectorAll('input[name="volumeMode"]').forEach(r => {
     r.addEventListener('change', () => {
-      document.querySelectorAll('.volume-mode-option').forEach(opt => {
-        const inp = opt.querySelector('input[name="volumeMode"]');
-        opt.classList.toggle('active', inp && inp.checked);
+      document.querySelectorAll('input[name="volumeMode"]').forEach(other => {
+        const opt = other.closest('.volume-mode-option');
+        if (opt) opt.classList.toggle('active', other.checked);
+      });
+    });
+  });
+  document.querySelectorAll('input[name="strengthMode"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.querySelectorAll('input[name="strengthMode"]').forEach(other => {
+        const opt = other.closest('.volume-mode-option');
+        if (opt) opt.classList.toggle('active', other.checked);
       });
     });
   });
