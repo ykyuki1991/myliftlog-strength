@@ -1072,8 +1072,16 @@ function renderToday() {
 }
 
 function renderExerciseCard(ex, exIdx) {
-  const setsHtml = ex.sets.map((set, setIdx) => `
-    <div class="set-grid">
+  const firstPendingSetIndex = ex.sets.findIndex(set => !set.done);
+  const cardTypeClass = ex.isAccessory
+    ? 'exercise-card-accessory'
+    : (ex.isBig3 ? 'exercise-card-big3' : 'exercise-card-main');
+  const setsHtml = ex.sets.map((set, setIdx) => {
+    const rowStateClass = set.done
+      ? 'set-row-done'
+      : (setIdx === firstPendingSetIndex ? 'set-row-current' : '');
+    return `
+    <div class="set-grid set-row ${rowStateClass}">
       <div class="set-no">${setIdx + 1}</div>
       <input type="number" inputmode="decimal" step="0.5" placeholder="重量" value="${set.weight ?? ''}"
         data-ex="${exIdx}" data-set="${setIdx}" data-field="weight" />
@@ -1081,7 +1089,8 @@ function renderExerciseCard(ex, exIdx) {
         data-ex="${exIdx}" data-set="${setIdx}" data-field="reps" />
       <div class="check"><input type="checkbox" ${set.done ? 'checked' : ''} data-ex="${exIdx}" data-set="${setIdx}" data-field="done" /></div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   const rpeChips = RPE_OPTIONS.map(r => `
     <div class="chip ${ex.rpe === r ? 'active' : ''}" data-ex="${exIdx}" data-rpe="${r}">${r}</div>
@@ -1095,13 +1104,17 @@ function renderExerciseCard(ex, exIdx) {
     ? `<div class="plan-line">予定: <span class="strong">${ex.plannedWeight}kg × ${ex.plannedReps}回 × ${ex.plannedSets}セット</span> ${ex.pctNote ? `(${ex.pctNote})` : ''} ${ex.adjusted ? `<span class="text-warn">[調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}]</span>` : ''}</div>`
     : `<div class="plan-line">予定: <span class="strong">${ex.plannedReps}回 × ${ex.plannedSets}セット</span></div>`;
   const accessoryMeta = ex.isAccessory ? `
-    <div class="muted" style="font-size:12px;">スロット: ${ex.slotName || '-'} / 目標RPE: ${ex.targetRpe || '-'}</div>
-    <div class="muted" style="font-size:12px;">カテゴリ: ${(ex.categories || []).join('・') || '-'} / 疲労タグ: ${(ex.fatigueTags || []).join('・') || '-'}</div>
-    <div class="plan-line text-warn">補助提案: ${suggestAccessoryProgression(ex)}</div>
+    <div class="accessory-meta" aria-label="補助種目情報">
+      <span class="accessory-chip accessory-chip-slot">${ex.slotName || '補助'}</span>
+      <span class="accessory-chip accessory-chip-rpe">目標RPE ${ex.targetRpe || '-'}</span>
+      ${(ex.categories || []).map(c => `<span class="accessory-chip">${c}</span>`).join('')}
+      ${(ex.fatigueTags || []).map(t => `<span class="accessory-chip accessory-chip-fatigue">${t}</span>`).join('')}
+    </div>
+    <div class="accessory-suggestion"><span class="suggestion-label">提案</span><span>${suggestAccessoryProgression(ex)}</span></div>
   ` : '';
 
   return `
-    <div class="exercise-card" data-ex="${exIdx}">
+    <div class="exercise-card ${cardTypeClass}" data-ex="${exIdx}">
       <div class="head">
         <div class="name">${ex.name}</div>
         <div class="menu-type">${ex.isAccessory ? '補助' : (ex.isBig3 ? 'BIG3' : 'メイン')}</div>
@@ -1110,7 +1123,7 @@ function renderExerciseCard(ex, exIdx) {
       ${accessoryMeta}
       <div class="muted">レスト目安: ${Math.round(ex.restSec / 60 * 10) / 10}分</div>
 
-      <div class="set-grid"><div class="set-no">#</div><div class="muted text-center">重量(kg)</div><div class="muted text-center">回数</div><div class="muted text-center">✓</div></div>
+      <div class="set-grid set-grid-head"><div class="set-no">#</div><div class="muted text-center">重量(kg)</div><div class="muted text-center">回数</div><div class="muted text-center">完了</div></div>
       ${setsHtml}
 
       <div class="row-rpe-pain">
@@ -2240,17 +2253,27 @@ function importData() {
 function renderAccessoryLoadCheck() {
   const summary = summarizeAccessoryLoad(store.settings);
   const warnings = getAccessoryLoadWarnings(store.settings);
+  const getLoadStatus = (key, value) => {
+    const limit = ACCESSORY_LOAD_LIMITS[key];
+    if (limit) {
+      if (value >= limit.danger) return { label: '危険', className: 'status-danger' };
+      if (value >= limit.caution) return { label: '注意', className: 'status-caution' };
+    }
+    if (key === '背中' && value < 10) return { label: '不足', className: 'status-low' };
+    return { label: '適正', className: 'status-ok' };
+  };
   const rows = ACCESSORY_SUMMARY_KEYS.map(k => `
-    <div class="suggestion-row">
+    <div class="suggestion-row load-metric-row">
       <div class="name">${k}</div>
       <div class="delta">${summary[k] || 0}セット</div>
+      <div class="status-pill ${getLoadStatus(k, summary[k] || 0).className}">${getLoadStatus(k, summary[k] || 0).label}</div>
     </div>
   `).join('');
   const warnHtml = warnings.length === 0
     ? '<div class="muted">現在の8日ローテ負荷は大きな警告なしです</div>'
-    : warnings.map(w => `<div class="${w.level === 'danger' ? 'deload-banner' : 'plan-line'}"><span class="${w.level === 'danger' ? 'text-danger' : 'text-warn'}">${w.level === 'danger' ? '危険' : '注意'}:</span> ${w.message}</div>`).join('');
+    : warnings.map(w => `<div class="load-warning ${w.level === 'danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${w.level === 'danger' ? '危険' : '注意'}</span>${w.message}</div>`).join('');
   return `
-    <div class="section">
+    <div class="section load-check-section">
       <h2>負荷チェック</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">8日ローテ全体の補助セット数をカテゴリ・疲労タグ別に集計します。警告は提案であり、実行は禁止しません。</div>
       ${rows}
@@ -2275,7 +2298,7 @@ function renderAccessorySlotEditor() {
       <div class="muted" style="font-size:12px;margin-bottom:8px;">カテゴリ候補: ${ACCESSORY_CATEGORIES.join('、')}</div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">疲労タグ候補: ${ACCESSORY_FATIGUE_TAGS.join('、')}</div>
       ${Object.keys(dayLabels).map(day => `
-        <div class="subsection" style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
+        <div class="subsection">
           <h3>${dayLabels[day]}</h3>
           ${(slots[day] || []).map(slot => `
             <div class="suggestion-row" style="align-items:flex-start;">
@@ -2311,11 +2334,11 @@ function renderSettings() {
     const dispName = ACCESSORY_DISPLAY_NAMES[k] || k;
     const noteHtml = def.note ? `<span class="muted" style="font-size:11px;"> ${def.note}</span>` : '';
     return `
-      <div class="acc-edit-row" style="display:grid;grid-template-columns:1fr 90px 90px 70px;gap:6px;align-items:center;margin-bottom:6px;">
+      <div class="acc-edit-row">
         <div style="font-size:13px;">${dispName}${noteHtml}</div>
-        <input type="number" step="0.5" data-acc-key="${k}" data-acc-field="weight" value="${def.weight ?? ''}" placeholder="重量" style="font-size:13px;" />
-        <input type="text" data-acc-key="${k}" data-acc-field="reps" value="${def.reps ?? ''}" placeholder="回数" style="font-size:13px;" />
-        <input type="number" min="1" data-acc-key="${k}" data-acc-field="sets" value="${def.sets ?? ''}" placeholder="セット" style="font-size:13px;" />
+        <input type="number" step="0.5" data-acc-key="${k}" data-acc-field="weight" value="${def.weight ?? ''}" placeholder="重量" />
+        <input type="text" data-acc-key="${k}" data-acc-field="reps" value="${def.reps ?? ''}" placeholder="回数" />
+        <input type="number" min="1" data-acc-key="${k}" data-acc-field="sets" value="${def.sets ?? ''}" placeholder="セット" />
       </div>
     `;
   }).join('');
@@ -2407,7 +2430,7 @@ function renderSettings() {
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         補助種目はMAX計算なし、ここで設定した値が予定として表示されます。空欄にすると重量未設定（自分で入力）になります。
       </div>
-      <div class="acc-edit-header" style="display:grid;grid-template-columns:1fr 90px 90px 70px;gap:6px;font-size:11px;color:var(--muted);margin-bottom:4px;">
+      <div class="acc-edit-header">
         <div>種目</div><div>重量(kg)</div><div>回数</div><div>セット</div>
       </div>
       ${accEditHtml}
