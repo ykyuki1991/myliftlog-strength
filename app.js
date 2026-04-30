@@ -111,6 +111,7 @@ function defaultStore() {
     manualAdjustments: {},   // key: "Day-exerciseKey-menuType" → kg差分
     blockSuggestions: [],    // 過去の提案履歴
     daySessions: {},         // key: "YYYY-MM-DD" → セッションデータ
+    restTimerState: null,     // {restStartedAt, restDurationSec, restEndAt, running, targetName, alertedAt}
   };
 }
 
@@ -178,6 +179,12 @@ function fmtDate(s) {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+let nowProvider = () => Date.now();
+
+function nowMs() {
+  return nowProvider();
 }
 
 function showToast(msg, ms = 2000) {
@@ -891,17 +898,17 @@ function afterToday() {
       const exIdx = parseInt(b.dataset.ex);
       const ex = session.exercises[exIdx];
       if (action === 'rest') {
-        startRestTimer(ex.restSec);
+        startRestTimer(ex.restSec, ex.name);
       } else if (action === 'completeSet') {
         // 未完了の最初のセットをdoneに、レスト開始
         const next = ex.sets.find(s => !s.done);
         if (next) {
           next.done = true;
           saveStore();
-          startRestTimer(ex.restSec);
+          startRestTimer(ex.restSec, ex.name);
           render();
         } else {
-          startRestTimer(ex.restSec);
+          startRestTimer(ex.restSec, ex.name);
         }
       } else if (action === 'adjust') {
         openAdjustModal(exIdx);
@@ -1036,42 +1043,158 @@ function finishTodaySession() {
 
 // ===== レストタイマー =====
 let restState = {
-  remaining: 0,
-  total: 0,
+  restStartedAt: null,
+  restDurationSec: 0,
+  restEndAt: null,
   running: false,
+  targetName: '',
+  alertedAt: null,
+  remaining: 0,
   timerId: null,
 };
 
-function startRestTimer(sec) {
-  restState.total = sec;
-  restState.remaining = sec;
-  restState.running = true;
-  document.getElementById('restTimer').classList.remove('hidden', 'alarm');
-  document.getElementById('restToggle').textContent = '停止';
+function createEmptyRestState() {
+  return {
+    restStartedAt: null,
+    restDurationSec: 0,
+    restEndAt: null,
+    running: false,
+    targetName: '',
+    alertedAt: null,
+    remaining: 0,
+    timerId: restState?.timerId || null,
+  };
+}
+
+function normalizeRestTimerState(state) {
+  if (!state || typeof state !== 'object') return null;
+  const restDurationSec = Math.max(0, parseInt(state.restDurationSec, 10) || 0);
+  const restStartedAt = parseInt(state.restStartedAt, 10) || null;
+  const restEndAt = parseInt(state.restEndAt, 10) || null;
+  if (!restDurationSec || !restStartedAt || !restEndAt) return null;
+  return {
+    restStartedAt,
+    restDurationSec,
+    restEndAt,
+    running: !!state.running,
+    targetName: state.targetName || '',
+    alertedAt: state.alertedAt ? parseInt(state.alertedAt, 10) : null,
+  };
+}
+
+function serializableRestTimerState() {
+  const normalized = normalizeRestTimerState(restState);
+  if (!normalized) return null;
+  return normalized;
+}
+
+function persistRestTimerState() {
+  store.restTimerState = serializableRestTimerState();
+  saveStore();
+}
+
+function clearRestTimerState() {
+  store.restTimerState = null;
+  saveStore();
+}
+
+function getRestRemainingSec(now = nowMs()) {
+  if (!restState.restEndAt || !restState.restStartedAt) return 0;
+  if (restState.running) {
+    return Math.max(0, Math.ceil((restState.restEndAt - now) / 1000));
+  }
+  return Math.max(0, Math.ceil((restState.restEndAt - restState.restStartedAt) / 1000));
+}
+
+function setRestTimerVisibility(visible) {
+  const timer = document.getElementById('restTimer');
+  if (!timer) return;
+  timer.classList.toggle('hidden', !visible);
+}
+
+function setRestTimerAlarm(alarm) {
+  const timer = document.getElementById('restTimer');
+  if (!timer) return;
+  timer.classList.toggle('alarm', !!alarm);
+}
+
+function setRestToggleText() {
+  const toggle = document.getElementById('restToggle');
+  if (!toggle) return;
+  toggle.textContent = restState.running ? '停止' : '再開';
+}
+
+function scheduleRestTick() {
   if (restState.timerId) clearInterval(restState.timerId);
-  restState.timerId = setInterval(tickRest, 1000);
+  restState.timerId = setInterval(() => syncRestTimer(), 1000);
+}
+
+function stopRestTick() {
+  if (restState.timerId) clearInterval(restState.timerId);
+  restState.timerId = null;
+}
+
+function startRestTimer(sec, targetName = '') {
+  const duration = Math.max(1, parseInt(sec, 10) || 0);
+  const now = nowMs();
+  restState = {
+    ...createEmptyRestState(),
+    restStartedAt: now,
+    restDurationSec: duration,
+    restEndAt: now + duration * 1000,
+    running: true,
+    targetName,
+    alertedAt: null,
+    remaining: duration,
+  };
+  setRestTimerVisibility(true);
+  setRestTimerAlarm(false);
+  setRestToggleText();
+  scheduleRestTick();
+  persistRestTimerState();
   updateRestDisplay();
 }
 
-function tickRest() {
-  if (!restState.running) return;
-  restState.remaining--;
-  if (restState.remaining <= 0) {
-    restState.remaining = 0;
-    restState.running = false;
-    clearInterval(restState.timerId);
-    restState.timerId = null;
-    document.getElementById('restTimer').classList.add('alarm');
-    playBeep();
-    if ('vibrate' in navigator) navigator.vibrate([300, 100, 300]);
+function syncRestTimer({ persist = true, alert = true } = {}) {
+  const active = normalizeRestTimerState(restState);
+  if (!active) {
+    restState = createEmptyRestState();
+    setRestTimerVisibility(false);
+    setRestTimerAlarm(false);
+    updateRestDisplay();
+    if (persist) clearRestTimerState();
+    return;
   }
+
+  restState = { ...restState, ...active };
+  restState.remaining = getRestRemainingSec();
+
+  if (restState.running && restState.remaining <= 0) {
+    restState.running = false;
+    restState.remaining = 0;
+    stopRestTick();
+    if (!restState.alertedAt) {
+      restState.alertedAt = nowMs();
+      if (alert) {
+        playBeep();
+        if ('vibrate' in navigator) navigator.vibrate([300, 100, 300]);
+      }
+    }
+  }
+
+  setRestTimerVisibility(true);
+  setRestTimerAlarm(restState.remaining <= 0);
+  setRestToggleText();
   updateRestDisplay();
+  if (persist) persistRestTimerState();
 }
 
 function updateRestDisplay() {
   const m = Math.floor(Math.max(0, restState.remaining) / 60);
   const s = Math.max(0, restState.remaining) % 60;
-  document.getElementById('restTimerDisplay').textContent =
+  const display = document.getElementById('restTimerDisplay');
+  if (!display) return;
+  display.textContent =
     `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
@@ -1092,43 +1215,107 @@ function playBeep() {
 
 function setupRestTimerControls() {
   document.getElementById('restToggle').onclick = () => {
+    syncRestTimer({ persist: false, alert: false });
     if (restState.running) {
+      const remaining = getRestRemainingSec();
+      const now = nowMs();
       restState.running = false;
-      clearInterval(restState.timerId);
-      document.getElementById('restToggle').textContent = '再開';
+      restState.restStartedAt = now;
+      restState.restEndAt = now + remaining * 1000;
+      restState.remaining = remaining;
+      setRestToggleText();
     } else {
-      if (restState.remaining <= 0) restState.remaining = restState.total || 60;
+      const remaining = restState.remaining > 0 ? restState.remaining : restState.restDurationSec || 60;
+      const now = nowMs();
+      restState.restStartedAt = now;
+      restState.restEndAt = now + remaining * 1000;
       restState.running = true;
-      restState.timerId = setInterval(tickRest, 1000);
-      document.getElementById('restToggle').textContent = '停止';
-      document.getElementById('restTimer').classList.remove('alarm');
+      restState.alertedAt = null;
+      restState.remaining = remaining;
+      setRestToggleText();
+      setRestTimerAlarm(false);
     }
+    scheduleRestTick();
+    persistRestTimerState();
+    updateRestDisplay();
   };
   document.getElementById('restPlus30').onclick = () => {
-    restState.remaining += 30;
-    updateRestDisplay();
-    document.getElementById('restTimer').classList.remove('alarm');
+    adjustRestTimer(30);
   };
   document.getElementById('restMinus30').onclick = () => {
-    restState.remaining = Math.max(0, restState.remaining - 30);
-    updateRestDisplay();
+    adjustRestTimer(-30);
   };
   document.getElementById('restReset').onclick = () => {
-    restState.remaining = restState.total;
-    document.getElementById('restTimer').classList.remove('alarm');
-    updateRestDisplay();
-    if (!restState.running && restState.total > 0) {
-      restState.running = true;
-      restState.timerId = setInterval(tickRest, 1000);
-      document.getElementById('restToggle').textContent = '停止';
-    }
+    resetRestTimer();
   };
   document.getElementById('restClose').onclick = () => {
-    restState.running = false;
-    if (restState.timerId) clearInterval(restState.timerId);
-    document.getElementById('restTimer').classList.add('hidden');
-    document.getElementById('restTimer').classList.remove('alarm');
+    closeRestTimer();
   };
+}
+
+function adjustRestTimer(deltaSec) {
+  syncRestTimer({ persist: false, alert: false });
+  const remaining = Math.max(0, restState.remaining + deltaSec);
+  const now = nowMs();
+  restState.restStartedAt = now;
+  restState.restEndAt = now + remaining * 1000;
+  restState.remaining = remaining;
+  restState.alertedAt = remaining > 0 ? null : (restState.alertedAt || now);
+  restState.running = remaining > 0 ? restState.running : false;
+  setRestTimerAlarm(remaining <= 0);
+  setRestToggleText();
+  scheduleRestTick();
+  persistRestTimerState();
+  updateRestDisplay();
+}
+
+function resetRestTimer() {
+  const duration = Math.max(1, restState.restDurationSec || restState.remaining || 60);
+  const now = nowMs();
+  restState.restStartedAt = now;
+  restState.restEndAt = now + duration * 1000;
+  restState.restDurationSec = duration;
+  restState.running = true;
+  restState.alertedAt = null;
+  restState.remaining = duration;
+  setRestTimerVisibility(true);
+  setRestTimerAlarm(false);
+  setRestToggleText();
+  scheduleRestTick();
+  persistRestTimerState();
+  updateRestDisplay();
+}
+
+function closeRestTimer() {
+  restState = createEmptyRestState();
+  stopRestTick();
+  setRestTimerVisibility(false);
+  setRestTimerAlarm(false);
+  updateRestDisplay();
+  clearRestTimerState();
+}
+
+function restoreRestTimer() {
+  const saved = normalizeRestTimerState(store.restTimerState);
+  if (!saved) {
+    restState = createEmptyRestState();
+    clearRestTimerState();
+    return;
+  }
+  restState = { ...createEmptyRestState(), ...saved };
+  syncRestTimer({ persist: true, alert: false });
+  scheduleRestTick();
+}
+
+function handleRestTimerLifecycleEvent(event) {
+  syncRestTimer({ persist: true, alert: event.type !== 'pagehide' });
+}
+
+function setupRestTimerLifecycleEvents() {
+  document.addEventListener('visibilitychange', handleRestTimerLifecycleEvent);
+  window.addEventListener('focus', handleRestTimerLifecycleEvent);
+  window.addEventListener('pageshow', handleRestTimerLifecycleEvent);
+  window.addEventListener('pagehide', handleRestTimerLifecycleEvent);
 }
 
 // ===== ブロック画面 =====
@@ -1816,6 +2003,8 @@ function init() {
     if (e.target.id === 'modal') closeModal();
   });
   setupRestTimerControls();
+  setupRestTimerLifecycleEvents();
+  restoreRestTimer();
 
   // Service Worker
   if ('serviceWorker' in navigator) {
@@ -1826,3 +2015,19 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+if (typeof window !== 'undefined') {
+  window.__mllTest = {
+    startRestTimer,
+    syncRestTimer,
+    restoreRestTimer,
+    adjustRestTimer,
+    resetRestTimer,
+    closeRestTimer,
+    setupRestTimerControls,
+    setupRestTimerLifecycleEvents,
+    getRestState: () => ({ ...restState }),
+    getStore: () => store,
+    setNowProvider: (fn) => { nowProvider = fn; },
+  };
+}
