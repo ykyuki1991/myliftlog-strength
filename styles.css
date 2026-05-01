@@ -244,6 +244,10 @@ button:active {
   min-width: 0;
 }
 
+.compact-section {
+  padding: 12px;
+}
+
 /* ==== 入力 ==== */
 input[type="number"],
 input[type="text"],
@@ -705,6 +709,16 @@ label.field > span {
   color: #fecaca;
   border-color: rgba(248,113,113,0.24);
   background: rgba(248,113,113,0.10);
+}
+
+.accessory-form-chips {
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+
+.accessory-form-chips .accessory-chip {
+  cursor: pointer;
+  min-height: 34px;
 }
 
 .accessory-suggestion {

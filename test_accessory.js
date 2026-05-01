@@ -86,6 +86,11 @@ function testEightDayMenusAndAccessorySlots() {
   const accessories = day2.exercises.filter(ex => ex.isAccessory);
   assert.ok(accessories.some(ex => ex.slotName === '胸補助' && ex.name === 'インクラインDBプレス'));
   assert.ok(accessories.every(ex => Array.isArray(ex.categories) && Array.isArray(ex.fatigueTags)));
+
+  const day3 = api.getDayMenu(3, 1, store.settings);
+  assert.ok(day3.exercises.some(ex => ex.isAccessory && ex.name === 'サイドレイズ' && ex.categories.includes('横肩')));
+  const day6 = api.getDayMenu(6, 1, store.settings);
+  assert.ok(day6.exercises.some(ex => ex.isAccessory && ex.name === 'リアデルトフライ' && ex.categories.includes('後ろ肩')));
 }
 
 function testAddDeleteAccessory() {
@@ -101,6 +106,8 @@ function testLoadSummaryAndWarnings() {
   const summary = api.summarizeAccessoryLoad(store.settings);
   assert.ok(summary['背中'] > 0);
   assert.ok(summary['カーフ'] > 0);
+  assert.ok(summary['横肩'] >= 3);
+  assert.ok(summary['後ろ肩'] >= 3);
 
   const original = store.settings.accessorySlots['2'][0].plannedSets;
   store.settings.accessorySlots['2'][0].plannedSets = 31;
@@ -113,7 +120,30 @@ function testLoadSummaryAndWarnings() {
   const cutWarnings = api.getAccessoryLoadWarnings(store.settings);
   assert.ok(cutWarnings.some(w => w.message.includes('背中系が8日で10セット未満')));
   assert.ok(cutWarnings.some(w => w.message.includes('脚補助がゼロ')));
+  assert.ok(cutWarnings.some(w => w.message.includes('横肩の直接刺激')));
+  assert.ok(cutWarnings.some(w => w.message.includes('後ろ肩の直接刺激')));
   store.settings.accessorySlots = savedSlots;
+}
+
+function testUpdateMoveResetAndBlockEditor() {
+  const day3Side = store.settings.accessorySlots['3'].find(slot => slot.slotId === 'd3-side-raise');
+  api.updateAccessorySlot(3, day3Side.slotId, { ...day3Side, plannedSets: 4, reps: '15〜20' });
+  const updated = store.settings.accessorySlots['3'].find(slot => slot.slotId === 'd3-side-raise');
+  assert.strictEqual(updated.plannedSets, 4);
+  assert.strictEqual(updated.reps, '15〜20');
+
+  const beforeFirst = store.settings.accessorySlots['3'][0].slotId;
+  api.moveAccessorySlot(3, 'd3-side-raise', -1);
+  assert.notStrictEqual(store.settings.accessorySlots['3'][0].slotId, beforeFirst);
+
+  api.resetAccessorySlotsForDay(3);
+  assert.ok(store.settings.accessorySlots['3'].some(slot => slot.slotId === 'd3-side-raise' && slot.plannedSets === 3));
+
+  const blockHtml = api.renderBlock();
+  assert.ok(blockHtml.includes('補助種目管理'));
+  assert.ok(blockHtml.includes('サイドレイズ'));
+  assert.ok(blockHtml.includes('リアデルトフライ'));
+  assert.ok(blockHtml.includes('初期おすすめに戻す'));
 }
 
 function testAccessoryProgression() {
@@ -143,12 +173,17 @@ function testAccessoryProgression() {
 function testTodayScreenRenders() {
   const html = api.renderToday();
   assert.ok(html.includes('トレーニング') || html.includes('休み'));
+  if (!html.includes('今日は休み')) {
+    assert.ok(html.includes('＋補助種目を追加'));
+    assert.ok(html.includes('補助編集'));
+  }
 }
 
 testBig3Unaffected();
 testEightDayMenusAndAccessorySlots();
 testAddDeleteAccessory();
 testLoadSummaryAndWarnings();
+testUpdateMoveResetAndBlockEditor();
 testAccessoryProgression();
 testTodayScreenRenders();
 

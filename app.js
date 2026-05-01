@@ -36,9 +36,13 @@ const DEFAULT_SETTINGS = {
     seated_row:  { weight: 77,  reps: '10',    sets: 2 },
     pec_fly:     { weight: 70,  reps: '8〜12',  sets: 3 },
     rear_raise:  { weight: 57,  reps: '8〜12',  sets: 3 },
+    side_raise:  { weight: null, reps: '12〜20', sets: 3 },
+    rear_delt_fly: { weight: null, reps: '12〜20', sets: 3 },
+    face_pull:   { weight: null, reps: '12〜20', sets: 3 },
   },
   accessoryManagementMode: 'aggressive',
   accessorySlots: null,
+  accessoryShoulderDefaultsAdded: true,
 };
 
 // 補助種目キー → 表示名（設定画面の補助重量編集UI、フォールバック用）
@@ -56,6 +60,9 @@ const ACCESSORY_DISPLAY_NAMES = {
   seated_row: 'シーテッドロー',
   pec_fly: 'ペックフライ',
   rear_raise: 'リアレイズ',
+  side_raise: 'サイドレイズ',
+  rear_delt_fly: 'リアデルトフライ',
+  face_pull: 'フェイスプル',
   row: 'ロウ系',
   chinning: 'チンニング',
 };
@@ -104,7 +111,7 @@ const RPE_OPTIONS = ['未入力', '6', '7', '8', '9', '10'];
 const ACCESSORY_CATEGORIES = [
   '胸', '背中', '肩', '腕', '脚前側', '脚後側', 'カーフ',
   'ベンチ系プレス', 'デッド・腰背部負荷', '肩プレス系',
-  'チンニング系', 'ロウ系', '脚補助',
+  'チンニング系', 'ロウ系', '脚補助', '横肩', '後ろ肩', '肩補助',
 ];
 
 const ACCESSORY_FATIGUE_TAGS = [
@@ -129,7 +136,7 @@ const ACCESSORY_LOAD_LIMITS = {
 
 const ACCESSORY_SUMMARY_KEYS = [
   '胸', '背中', '肩', '腕', '脚前側', '脚後側', 'カーフ',
-  'ベンチ系プレス', 'デッド・腰背部負荷',
+  'ベンチ系プレス', 'デッド・腰背部負荷', '横肩', '後ろ肩', '肩補助',
   '肘負荷', '肩負荷', '腰負荷', '膝負荷',
 ];
 
@@ -146,7 +153,8 @@ const DEFAULT_ACCESSORY_SLOTS = {
     { slotId: 'd2-arm-ext', slotName: '腕', key: 'lying_ext', name: 'ライイングエクステンション', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'arm', restType: 'arm' },
   ],
   3: [
-    { slotId: 'd3-shoulder', slotName: '肩', key: 'shoulder', name: 'ショルダープレス', setsText: '2〜3', plannedSets: 3, reps: '5〜8', targetRpe: '7〜8', categories: ['肩', '肩プレス系'], fatigueTags: ['肩負荷'], weightType: 'upper_machine', restType: 'shoulder' },
+    { slotId: 'd3-shoulder', slotName: '肩', key: 'shoulder', name: 'ショルダープレス', setsText: '2〜3', plannedSets: 3, reps: '5〜8', targetRpe: '7〜8', categories: ['肩', '肩補助', '肩プレス系'], fatigueTags: ['肩負荷'], weightType: 'upper_machine', restType: 'shoulder' },
+    { slotId: 'd3-side-raise', slotName: '肩', key: 'side_raise', name: 'サイドレイズ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['肩', '肩補助', '横肩'], fatigueTags: ['低リスク', '肩負荷'], weightType: 'dumbbell', restType: 'default' },
     { slotId: 'd3-back-friendly', slotName: '腰に優しい背中', key: 'friendly_row', name: '腰に優しいロウ系', setsText: '2〜3', plannedSets: 3, reps: '8〜10', targetRpe: '8', categories: ['背中', 'ロウ系'], fatigueTags: ['腰に優しい', '低リスク'], weightType: 'upper_machine', restType: 'row' },
     { slotId: 'd3-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['カーフ'], fatigueTags: ['低リスク'], weightType: 'calf', restType: 'calf' },
   ],
@@ -158,6 +166,7 @@ const DEFAULT_ACCESSORY_SLOTS = {
     { slotId: 'd6-chest-tri', slotName: '胸・三頭補助', key: 'dips', name: 'ディップス', setsText: '2〜3', plannedSets: 3, reps: '6〜10', targetRpe: '8〜9', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'], weightType: 'bodyweight', restType: 'dips' },
     { slotId: 'd6-back-chin', slotName: '背中', key: 'chinning', name: 'チンニング', setsText: '2', plannedSets: 2, reps: '5〜8', targetRpe: '8', categories: ['背中', 'チンニング系'], fatigueTags: ['肘負荷', '握力負荷'], weightType: 'bodyweight', restType: 'chinning' },
     { slotId: 'd6-back-row', slotName: '背中', key: 'row', name: 'ロウ系', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['握力負荷'], weightType: 'upper_machine', restType: 'row' },
+    { slotId: 'd6-rear-delt', slotName: 'リアデルト系', key: 'rear_delt_fly', name: 'リアデルトフライ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['肩', '背中', '肩補助', '後ろ肩'], fatigueTags: ['低リスク', '肩負荷'], weightType: 'upper_machine', restType: 'default' },
     { slotId: 'd6-arm-curl', slotName: '腕', key: 'preacher', name: 'ワンハンドDBプリーチャーカール', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'arm', restType: 'arm' },
     { slotId: 'd6-arm-ext', slotName: '腕', key: 'lying_ext', name: 'ライイングエクステンション', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'arm', restType: 'arm' },
   ],
@@ -197,7 +206,8 @@ function loadStore() {
     for (const k of Object.keys(userAccDefaults)) {
       mergedAccDefaults[k] = { ...(mergedAccDefaults[k] || {}), ...userAccDefaults[k] };
     }
-    const mergedAccessorySlots = mergeAccessorySlots(parsed.settings?.accessorySlots);
+    const shoulderDefaultsAlreadyAdded = parsed.settings?.accessoryShoulderDefaultsAdded === true;
+    const mergedAccessorySlots = mergeAccessorySlots(parsed.settings?.accessorySlots, shoulderDefaultsAlreadyAdded);
     return {
       ...def,
       ...parsed,
@@ -208,6 +218,7 @@ function loadStore() {
         accessoryDefaults: mergedAccDefaults,
         accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
         accessorySlots: mergedAccessorySlots,
+        accessoryShoulderDefaultsAdded: true,
       },
       currentState: { ...def.currentState, ...(parsed.currentState || {}) },
     };
@@ -236,12 +247,20 @@ function defaultAccessorySlots() {
   return deepClone(DEFAULT_ACCESSORY_SLOTS);
 }
 
-function mergeAccessorySlots(userSlots) {
+function mergeAccessorySlots(userSlots, shoulderDefaultsAlreadyAdded = true) {
   const slots = defaultAccessorySlots();
   if (!userSlots || typeof userSlots !== 'object') return slots;
   for (const day of Object.keys(userSlots)) {
     if (Array.isArray(userSlots[day])) {
-      slots[day] = userSlots[day].map(normalizeAccessorySlot).filter(Boolean);
+      const normalizedUserSlots = userSlots[day].map(normalizeAccessorySlot).filter(Boolean);
+      const existingIds = new Set(normalizedUserSlots.map(slot => slot.slotId));
+      const newlyRecommendedSlots = (slots[day] || [])
+        .filter(slot => !existingIds.has(slot.slotId))
+        .filter(() => !shoulderDefaultsAlreadyAdded)
+        .filter(slot => ['d3-side-raise', 'd6-rear-delt'].includes(slot.slotId))
+        .map(normalizeAccessorySlot)
+        .filter(Boolean);
+      slots[day] = [...normalizedUserSlots, ...newlyRecommendedSlots];
     }
   }
   return slots;
@@ -278,6 +297,7 @@ function normalizeAccessorySlot(slot) {
   if (!slot || typeof slot !== 'object') return null;
   const slotId = slot.slotId || `slot_${uid()}`;
   const plannedSets = Math.max(0, parseInt(slot.plannedSets ?? parseRangeMax(slot.setsText, 3), 10) || 0);
+  const plannedWeight = slot.plannedWeight ?? slot.weight ?? null;
   return {
     slotId,
     slotName: slot.slotName || '補助スロット',
@@ -289,6 +309,7 @@ function normalizeAccessorySlot(slot) {
     targetRpe: slot.targetRpe || '8',
     categories: normalizeList(slot.categories, ACCESSORY_CATEGORIES),
     fatigueTags: normalizeList(slot.fatigueTags, ACCESSORY_FATIGUE_TAGS),
+    plannedWeight: plannedWeight === '' || plannedWeight == null ? null : parseFloat(plannedWeight),
     weightType: slot.weightType || inferAccessoryWeightType(slot),
     restType: slot.restType || 'default',
   };
@@ -310,29 +331,35 @@ function getAccessorySlotsForDay(day, settings = store.settings) {
   return (source[String(day)] || source[day] || []).map(normalizeAccessorySlot).filter(Boolean);
 }
 
-function buildAccessoryExercises(day, settings, isDeload) {
+function accessoryExerciseFromSlot(slot, settings, isDeload, day = null) {
   const accDefaults = settings.accessoryDefaults || {};
+  const def = accDefaults[slot.key] || {};
+  const plannedSets = isDeload ? Math.max(1, Math.ceil(slot.plannedSets / 2)) : slot.plannedSets;
+  const plannedReps = def.reps != null ? def.reps : slot.reps;
+  const plannedWeight = def.weight != null ? def.weight : slot.plannedWeight;
+  return {
+    key: slot.key,
+    name: slot.name,
+    menuType: `accessory-${slot.slotId}`,
+    plannedWeight: plannedWeight ?? null,
+    plannedReps,
+    plannedSets,
+    setsText: slot.setsText,
+    targetRpe: slot.targetRpe,
+    categories: [...slot.categories],
+    fatigueTags: [...slot.fatigueTags],
+    slotId: slot.slotId,
+    slotName: slot.slotName,
+    weightType: slot.weightType,
+    restSec: REST_TIME_SEC[slot.restType] || REST_TIME_SEC.default,
+    isAccessory: true,
+    day,
+  };
+}
+
+function buildAccessoryExercises(day, settings, isDeload) {
   return getAccessorySlotsForDay(day, settings).map(slot => {
-    const def = accDefaults[slot.key] || {};
-    const plannedSets = isDeload ? Math.max(1, Math.ceil(slot.plannedSets / 2)) : slot.plannedSets;
-    const plannedReps = def.reps != null ? def.reps : slot.reps;
-    return {
-      key: slot.key,
-      name: slot.name,
-      menuType: `accessory-${slot.slotId}`,
-      plannedWeight: def.weight != null ? def.weight : null,
-      plannedReps,
-      plannedSets,
-      setsText: slot.setsText,
-      targetRpe: slot.targetRpe,
-      categories: [...slot.categories],
-      fatigueTags: [...slot.fatigueTags],
-      slotId: slot.slotId,
-      slotName: slot.slotName,
-      weightType: slot.weightType,
-      restSec: REST_TIME_SEC[slot.restType] || REST_TIME_SEC.default,
-      isAccessory: true,
-    };
+    return accessoryExerciseFromSlot(slot, settings, isDeload, day);
   });
 }
 
@@ -371,11 +398,43 @@ function getAccessoryLoadWarnings(settings = store.settings) {
   if ((summary['背中'] || 0) < 10) warnings.push({ level: 'caution', message: `背中系が8日で10セット未満です (${summary['背中'] || 0}セット)。ベンチ・デッドの安定のため追加を検討してください。` });
   if (!plan.some(ex => ex.categories.includes('脚補助'))) warnings.push({ level: 'caution', message: '脚補助がゼロです。スクワット補助として脚前側/脚後側の追加を検討してください。' });
   if (!plan.some(ex => ex.categories.includes('肩'))) warnings.push({ level: 'caution', message: '肩補助がゼロです。肩の耐性作りとして低リスク種目の追加を検討してください。' });
+  if ((summary['横肩'] || 0) === 0) warnings.push({ level: 'caution', message: '横肩の直接刺激が不足しています。サイドレイズの追加を検討してください。' });
+  if ((summary['後ろ肩'] || 0) === 0) warnings.push({ level: 'caution', message: '後ろ肩の直接刺激が不足しています。リアデルトフライやフェイスプルの追加を検討してください。' });
+  const shoulderAccessories = plan.filter(ex => ex.categories.includes('肩') || ex.categories.includes('肩補助'));
+  if (shoulderAccessories.length > 0 && shoulderAccessories.every(ex => ex.categories.includes('肩プレス系'))) {
+    warnings.push({ level: 'caution', message: '肩補助が前肩寄りです。サイドレイズやリア系の追加を検討してください。' });
+  }
   if (!plan.some(ex => ex.categories.includes('腕'))) warnings.push({ level: 'caution', message: '腕補助がゼロです。肘の状態を見ながら最小限の腕補助を検討してください。' });
   if (!plan.some(ex => ex.categories.includes('背中') && ex.fatigueTags.includes('腰に優しい'))) warnings.push({ level: 'caution', message: '腰に優しい背中種目がゼロです。Day3/Day7に腰に優しいロウ系を入れると疲労干渉を抑えやすくなります。' });
   plan.filter(ex => (ex.day === 3 || ex.day === 7) && ex.categories.includes('ロウ系') && ex.fatigueTags.includes('腰負荷'))
     .forEach(ex => warnings.push({ level: 'caution', message: `Day${ex.day} の ${ex.name} に腰負荷タグがあります。腰に優しい背中種目への変更を検討してください。` }));
+  if ((summary['肩負荷'] || 0) >= 24 && (summary['ベンチ系プレス'] || 0) >= ACCESSORY_LOAD_LIMITS['ベンチ系プレス'].caution) {
+    warnings.push({ level: 'caution', message: '肩負荷全体が多めで、ベンチ系プレスも多い状態です。肩痛がある日は低リスク種目への変更やセット削減を検討してください。' });
+  }
   return warnings;
+}
+
+function getAccessorySafetyWarnings(slot, day = null) {
+  const warnings = [];
+  const normalized = normalizeAccessorySlot(slot);
+  if (!normalized) return warnings;
+  if ((Number(day) === 3 || Number(day) === 7) && normalized.fatigueTags.includes('腰負荷')) {
+    warnings.push(`Day${day}に腰負荷タグ付き種目を入れています。腰に優しい種目か確認してください。`);
+  }
+  const recentPainLogs = store.logs.filter(l => Array.isArray(l.pains) && l.pains.some(p => p && p !== 'なし'));
+  if (normalized.fatigueTags.includes('肩負荷') && recentPainLogs.some(l => l.pains.includes('肩'))) {
+    warnings.push('肩痛ログがあります。肩負荷タグ付き種目の追加・増量は痛みを見ながら行ってください。');
+  }
+  if (normalized.fatigueTags.includes('肘負荷') && recentPainLogs.some(l => l.pains.includes('肘'))) {
+    warnings.push('肘痛ログがあります。肘負荷タグ付き種目の追加・増量は痛みを見ながら行ってください。');
+  }
+  return warnings;
+}
+
+function confirmAccessoryChange(message, slot = null, day = null) {
+  const warnings = slot ? getAccessorySafetyWarnings(slot, day) : [];
+  const warningText = warnings.length ? `\n\n注意:\n${warnings.map(w => `・${w}`).join('\n')}` : '';
+  return confirm(`${message}${warningText}`);
 }
 
 function getRepUpperBound(reps) {
@@ -1059,12 +1118,21 @@ function renderToday() {
     : '';
 
   const exHtml = session.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx)).join('');
+  const accessoryWarnings = getAccessoryLoadWarnings(store.settings)
+    .filter(w => w.message.includes('横肩') || w.message.includes('後ろ肩') || w.message.includes('肩補助'))
+    .map(w => `<div class="load-warning load-warning-caution"><span>注意</span>${w.message}</div>`)
+    .join('');
 
   return `
     <h2 class="screen-title">${session.dayName}</h2>
     <div class="muted mb-12">${todayStr()} / B${s.block} R${s.rotation} D${s.day}</div>
     ${deloadBanner}
+    ${accessoryWarnings ? `<div class="section compact-section">${accessoryWarnings}</div>` : ''}
     ${exHtml}
+    <div class="section">
+      <button class="btn-primary btn-block" id="btnAddTodayAccessory">＋補助種目を追加</button>
+      <div class="muted mt-8" style="font-size:12px;">今日だけ追加、または今後の同じDayにも反映できます。</div>
+    </div>
     <div class="section">
       <button class="btn-success btn-block" id="btnFinishSession">トレーニング完了</button>
     </div>
@@ -1235,6 +1303,9 @@ function afterToday() {
   const finishBtn = document.getElementById('btnFinishSession');
   if (finishBtn) finishBtn.onclick = finishTodaySession;
 
+  const addTodayAccessoryBtn = document.getElementById('btnAddTodayAccessory');
+  if (addTodayAccessoryBtn) addTodayAccessoryBtn.onclick = openAccessoryTodayAddModal;
+
   const finishRest = document.getElementById('btnFinishRest');
   if (finishRest) finishRest.onclick = () => {
     finishTodaySession();
@@ -1304,13 +1375,23 @@ function openAdjustModal(exIdx) {
 }
 
 function slotFormHtml(prefix, ex) {
+  const slotOptions = ['補助スロット', '脚前側補助', 'カーフ', '胸補助', '背中', '腕', '肩', 'リアデルト系', '腰に優しい背中', 'チンニング', '胸・三頭補助'];
   return `
+    <label class="field"><span>スロット</span>
+      <input type="text" id="${prefix}-slotName" value="${ex.slotName || '補助スロット'}" list="${prefix}-slot-options" />
+      <datalist id="${prefix}-slot-options">
+        ${slotOptions.map(v => `<option value="${v}"></option>`).join('')}
+      </datalist>
+    </label>
     <label class="field"><span>種目名</span><input type="text" id="${prefix}-name" value="${ex.name || ''}" /></label>
     <label class="field"><span>セット数</span><input type="number" min="0" id="${prefix}-sets" value="${ex.plannedSets || 1}" /></label>
     <label class="field"><span>レップ範囲</span><input type="text" id="${prefix}-reps" value="${ex.plannedReps || ex.reps || ''}" /></label>
     <label class="field"><span>目標RPE</span><input type="text" id="${prefix}-rpe" value="${ex.targetRpe || '8'}" /></label>
+    <label class="field"><span>予定重量(kg)</span><input type="number" step="0.5" id="${prefix}-weight" value="${ex.plannedWeight ?? ''}" placeholder="未設定でもOK" /></label>
     <label class="field"><span>カテゴリ（、区切り）</span><input type="text" id="${prefix}-categories" value="${(ex.categories || []).join('、')}" /></label>
+    <div class="accessory-meta accessory-form-chips">${ACCESSORY_CATEGORIES.map(c => `<span class="accessory-chip" data-chip-target="${prefix}-categories" data-chip-value="${c}">${c}</span>`).join('')}</div>
     <label class="field"><span>疲労タグ（、区切り）</span><input type="text" id="${prefix}-tags" value="${(ex.fatigueTags || []).join('、')}" /></label>
+    <div class="accessory-meta accessory-form-chips">${ACCESSORY_FATIGUE_TAGS.map(t => `<span class="accessory-chip accessory-chip-fatigue" data-chip-target="${prefix}-tags" data-chip-value="${t}">${t}</span>`).join('')}</div>
     <label class="field"><span>重量タイプ</span>
       <select id="${prefix}-weightType">
         ${[
@@ -1330,8 +1411,10 @@ function readSlotForm(prefix, base = {}) {
   const name = document.getElementById(`${prefix}-name`).value.trim() || '補助種目';
   const plannedSets = Math.max(0, parseInt(document.getElementById(`${prefix}-sets`).value, 10) || 0);
   const reps = document.getElementById(`${prefix}-reps`).value.trim() || '8〜12';
+  const plannedWeightRaw = document.getElementById(`${prefix}-weight`)?.value ?? '';
   return normalizeAccessorySlot({
     ...base,
+    slotName: document.getElementById(`${prefix}-slotName`)?.value.trim() || base.slotName || '補助スロット',
     name,
     key: base.key || accessoryKeyFromName(name),
     plannedSets,
@@ -1340,8 +1423,43 @@ function readSlotForm(prefix, base = {}) {
     targetRpe: document.getElementById(`${prefix}-rpe`).value.trim() || '8',
     categories: normalizeList(document.getElementById(`${prefix}-categories`).value, ACCESSORY_CATEGORIES),
     fatigueTags: normalizeList(document.getElementById(`${prefix}-tags`).value, ACCESSORY_FATIGUE_TAGS),
+    plannedWeight: plannedWeightRaw === '' ? null : parseFloat(plannedWeightRaw),
     weightType: document.getElementById(`${prefix}-weightType`).value,
   });
+}
+
+function bindSlotFormChips(prefix) {
+  document.querySelectorAll(`[data-chip-target^="${prefix}-"]`).forEach(chip => {
+    chip.onclick = () => {
+      const input = document.getElementById(chip.dataset.chipTarget);
+      if (!input) return;
+      const value = chip.dataset.chipValue;
+      const list = normalizeList(input.value);
+      const next = list.includes(value) ? list.filter(v => v !== value) : [...list, value];
+      input.value = next.join('、');
+    };
+  });
+}
+
+function applySlotToExercise(ex, updated) {
+  Object.assign(ex, {
+    name: updated.name,
+    key: updated.key,
+    plannedWeight: updated.plannedWeight,
+    plannedSets: updated.plannedSets,
+    plannedReps: updated.reps,
+    targetRpe: updated.targetRpe,
+    categories: updated.categories,
+    fatigueTags: updated.fatigueTags,
+    slotId: updated.slotId,
+    slotName: updated.slotName,
+    weightType: updated.weightType,
+    restSec: REST_TIME_SEC[updated.restType] || REST_TIME_SEC.default,
+  });
+  ex.sets.forEach(set => {
+    if (!set.done && updated.plannedWeight != null) set.weight = updated.plannedWeight;
+  });
+  resizeExerciseSets(ex);
 }
 
 function openAccessoryTodayModal(exIdx) {
@@ -1357,18 +1475,10 @@ function openAccessoryTodayModal(exIdx) {
       <button class="btn-danger" id="acc-delete-today">今日だけ削除</button>
     </div>
   `, () => {
+    bindSlotFormChips('accToday');
     document.getElementById('acc-today-only').onclick = () => {
       const updated = readSlotForm('accToday', ex);
-      Object.assign(ex, {
-        name: updated.name,
-        plannedSets: updated.plannedSets,
-        plannedReps: updated.reps,
-        targetRpe: updated.targetRpe,
-        categories: updated.categories,
-        fatigueTags: updated.fatigueTags,
-        weightType: updated.weightType,
-      });
-      resizeExerciseSets(ex);
+      applySlotToExercise(ex, updated);
       saveStore();
       closeModal();
       render();
@@ -1376,29 +1486,87 @@ function openAccessoryTodayModal(exIdx) {
     };
     document.getElementById('acc-save-future').onclick = () => {
       const updated = readSlotForm('accToday', ex);
+      if (!confirmAccessoryChange('この変更を今後の同じDayにも反映しますか？', updated, session.day)) return;
       updateAccessorySlot(session.day, ex.slotId, updated);
-      Object.assign(ex, {
-        name: updated.name,
-        key: updated.key,
-        plannedSets: updated.plannedSets,
-        plannedReps: updated.reps,
-        targetRpe: updated.targetRpe,
-        categories: updated.categories,
-        fatigueTags: updated.fatigueTags,
-        weightType: updated.weightType,
-      });
-      resizeExerciseSets(ex);
+      applySlotToExercise(ex, updated);
       saveStore();
       closeModal();
       render();
       showToast('今後にも反映しました');
     };
     document.getElementById('acc-delete-today').onclick = () => {
+      if (!confirm('この補助種目を今日だけ削除しますか？今後の基本プログラムには残ります。')) return;
+      session.deletedAccessories = session.deletedAccessories || [];
+      session.deletedAccessories.push({
+        ts: Date.now(),
+        action: 'today-only-delete',
+        exerciseKey: ex.key,
+        exerciseName: ex.name,
+        slotId: ex.slotId,
+        slotName: ex.slotName,
+      });
       session.exercises.splice(exIdx, 1);
       saveStore();
       closeModal();
       render();
       showToast('今日だけ削除しました');
+    };
+  });
+}
+
+function openAccessoryTodayAddModal() {
+  const session = store.daySessions[todaySessionKey()];
+  if (!session || session.isRest) return;
+  const base = normalizeAccessorySlot({
+    slotId: `today_${session.day}_${uid()}`,
+    slotName: '補助スロット',
+    key: `custom_${uid()}`,
+    name: '新規補助種目',
+    plannedSets: 2,
+    reps: '8〜12',
+    targetRpe: '8',
+    categories: ['肩補助'],
+    fatigueTags: ['低リスク'],
+    weightType: 'upper_machine',
+    restType: 'default',
+  });
+  openModal('補助種目を追加', `
+    <div class="muted mb-8">Day${session.day} に追加します。今日だけ、または今後にも反映を選べます。</div>
+    ${slotFormHtml('accAddToday', { ...base, plannedReps: base.reps })}
+    <div class="btn-row">
+      <button class="btn-secondary" id="acc-add-today-only">今日だけ追加</button>
+      <button class="btn-warn" id="acc-add-future">今後にも反映</button>
+    </div>
+  `, () => {
+    bindSlotFormChips('accAddToday');
+    document.getElementById('acc-add-today-only').onclick = () => {
+      const updated = readSlotForm('accAddToday', base);
+      const ex = accessoryExerciseFromSlot(updated, store.settings, session.isDeload, session.day);
+      ex.sets = Array.from({ length: ex.plannedSets }, () => ({ weight: ex.plannedWeight, reps: '', done: false }));
+      ex.rpe = '未入力';
+      ex.pains = ['なし'];
+      ex.note = '';
+      ex.todayOnlyAdded = true;
+      session.exercises.push(ex);
+      saveStore();
+      closeModal();
+      render();
+      showToast('今日だけ補助種目を追加しました');
+    };
+    document.getElementById('acc-add-future').onclick = () => {
+      const updated = readSlotForm('accAddToday', base);
+      if (!confirmAccessoryChange('この補助種目を今後の同じDayにも追加しますか？', updated, session.day)) return;
+      const savedSlot = addAccessorySlot(session.day, updated.slotName, updated);
+      const ex = accessoryExerciseFromSlot(savedSlot, store.settings, session.isDeload, session.day);
+      ex.sets = Array.from({ length: ex.plannedSets }, () => ({ weight: ex.plannedWeight, reps: '', done: false }));
+      ex.rpe = '未入力';
+      ex.pains = ['なし'];
+      ex.note = '';
+      session.exercises.push(ex);
+      saveStore();
+      closeModal();
+      render();
+      showToast('今後にも反映して追加しました');
     };
   });
 }
@@ -1426,14 +1594,11 @@ function deleteAccessorySlot(day, slotId) {
   store.settings.accessorySlots = slots;
 }
 
-function addAccessorySlot(day, slotName) {
+function addAccessorySlot(day, slotName, slotData = null) {
   const slots = store.settings.accessorySlots || defaultAccessorySlots();
   const key = String(day);
   slots[key] = slots[key] || [];
-  slots[key].push(normalizeAccessorySlot({
-    slotId: `custom_${day}_${uid()}`,
-    slotName: slotName || '補助スロット',
-    key: `custom_${uid()}`,
+  const base = slotData || {
     name: '新規補助種目',
     setsText: '2',
     plannedSets: 2,
@@ -1443,7 +1608,34 @@ function addAccessorySlot(day, slotName) {
     fatigueTags: ['低リスク'],
     weightType: 'upper_machine',
     restType: 'default',
-  }));
+  };
+  const normalized = normalizeAccessorySlot({
+    ...base,
+    slotId: slotData?.slotId && !String(slotData.slotId).startsWith('today_') ? slotData.slotId : `custom_${day}_${uid()}`,
+    slotName: slotName || slotData?.slotName || '補助スロット',
+    key: slotData?.key && !String(slotData.key).startsWith('custom_') ? slotData.key : (slotData?.key || `custom_${uid()}`),
+  });
+  slots[key].push(normalized);
+  store.settings.accessorySlots = slots;
+  return normalized;
+}
+
+function resetAccessorySlotsForDay(day) {
+  const slots = store.settings.accessorySlots || defaultAccessorySlots();
+  const key = String(day);
+  slots[key] = defaultAccessorySlots()[key] || [];
+  store.settings.accessorySlots = slots;
+}
+
+function moveAccessorySlot(day, slotId, direction) {
+  const slots = store.settings.accessorySlots || defaultAccessorySlots();
+  const key = String(day);
+  const list = slots[key] || [];
+  const idx = list.findIndex(slot => slot.slotId === slotId);
+  const nextIdx = idx + direction;
+  if (idx < 0 || nextIdx < 0 || nextIdx >= list.length) return;
+  const [slot] = list.splice(idx, 1);
+  list.splice(nextIdx, 0, slot);
   store.settings.accessorySlots = slots;
 }
 
@@ -1456,8 +1648,10 @@ function openAccessorySlotSettingsModal(day, slot) {
       <button class="btn-danger" id="acc-slot-delete">削除</button>
     </div>
   `, () => {
+    bindSlotFormChips('accSlot');
     document.getElementById('acc-slot-save').onclick = () => {
       const updated = readSlotForm('accSlot', slot);
+      if (!confirmAccessoryChange('この補助種目の変更を今後にも反映しますか？', updated, day)) return;
       updateAccessorySlot(day, slot.slotId, updated);
       saveStore();
       closeModal();
@@ -1465,12 +1659,85 @@ function openAccessorySlotSettingsModal(day, slot) {
       showToast('補助種目を更新しました');
     };
     document.getElementById('acc-slot-delete').onclick = () => {
-      if (!confirm('この補助種目を今後のメニューから削除しますか？')) return;
+      if (!confirm('この補助種目を今後のメニューから削除しますか？BIG3本体は削除されません。')) return;
       deleteAccessorySlot(day, slot.slotId);
       saveStore();
       closeModal();
       render();
       showToast('補助種目を削除しました');
+    };
+  });
+}
+
+function openAccessorySlotAddModal(day) {
+  const base = normalizeAccessorySlot({
+    slotId: `custom_${day}_${uid()}`,
+    slotName: '補助スロット',
+    key: `custom_${uid()}`,
+    name: '新規補助種目',
+    plannedSets: 2,
+    reps: '8〜12',
+    targetRpe: '8',
+    categories: ['肩補助'],
+    fatigueTags: ['低リスク'],
+    weightType: 'upper_machine',
+    restType: 'default',
+  });
+  openModal('補助種目を追加', `
+    <div class="muted mb-8">Day${day} の基本プログラムに追加します。</div>
+    ${slotFormHtml('accSlotAdd', { ...base, plannedReps: base.reps })}
+    <div class="btn-row">
+      <button class="btn-warn" id="acc-slot-add-save">今後にも反映</button>
+    </div>
+  `, () => {
+    bindSlotFormChips('accSlotAdd');
+    document.getElementById('acc-slot-add-save').onclick = () => {
+      const updated = readSlotForm('accSlotAdd', base);
+      if (!confirmAccessoryChange('この補助種目を今後のメニューに追加しますか？', updated, day)) return;
+      addAccessorySlot(day, updated.slotName, updated);
+      saveStore();
+      closeModal();
+      render();
+      showToast('補助種目を追加しました');
+    };
+  });
+}
+
+function bindAccessorySlotEditorActions() {
+  document.querySelectorAll('button[data-edit-slot-id]').forEach(btn => {
+    btn.onclick = () => {
+      const day = btn.dataset.editSlotDay;
+      const slotId = btn.dataset.editSlotId;
+      const slot = (store.settings.accessorySlots?.[day] || []).find(s => s.slotId === slotId);
+      if (slot) openAccessorySlotSettingsModal(day, slot);
+    };
+  });
+  document.querySelectorAll('button[data-delete-slot-id]').forEach(btn => {
+    btn.onclick = () => {
+      if (!confirm('この補助種目を今後のメニューから削除しますか？BIG3本体は削除されません。')) return;
+      deleteAccessorySlot(btn.dataset.deleteSlotDay, btn.dataset.deleteSlotId);
+      saveStore();
+      render();
+      showToast('補助種目を削除しました');
+    };
+  });
+  document.querySelectorAll('button[data-add-slot-day]').forEach(btn => {
+    btn.onclick = () => openAccessorySlotAddModal(btn.dataset.addSlotDay);
+  });
+  document.querySelectorAll('button[data-reset-slot-day]').forEach(btn => {
+    btn.onclick = () => {
+      if (!confirm(`Day${btn.dataset.resetSlotDay} の補助種目を初期おすすめに戻しますか？`)) return;
+      resetAccessorySlotsForDay(btn.dataset.resetSlotDay);
+      saveStore();
+      render();
+      showToast('初期おすすめに戻しました');
+    };
+  });
+  document.querySelectorAll('button[data-move-slot-id]').forEach(btn => {
+    btn.onclick = () => {
+      moveAccessorySlot(btn.dataset.moveSlotDay, btn.dataset.moveSlotId, parseInt(btn.dataset.moveDir, 10));
+      saveStore();
+      render();
     };
   });
 }
@@ -1514,6 +1781,43 @@ function finishTodaySession() {
       ts: Date.now(),
     };
     // 重複チェック（同じセッションキー+exerciseKey+menuType）
+    const existIdx = store.logs.findIndex(l =>
+      l.date === log.date && l.day === log.day && l.block === log.block &&
+      l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
+    );
+    if (existIdx >= 0) store.logs[existIdx] = log;
+    else store.logs.push(log);
+  });
+
+  (session.deletedAccessories || []).forEach(deleted => {
+    const log = {
+      id: uid(),
+      date: session.date,
+      day: session.day,
+      block: session.block,
+      rotation: session.rotation,
+      isDeload: session.isDeload,
+      exerciseKey: deleted.exerciseKey,
+      exerciseName: deleted.exerciseName,
+      menuType: `accessory-deleted-${deleted.slotId || deleted.exerciseKey}`,
+      plannedWeight: null,
+      plannedReps: null,
+      plannedSets: 0,
+      targetRpe: null,
+      categories: [],
+      fatigueTags: [],
+      weightType: null,
+      slotId: deleted.slotId,
+      slotName: deleted.slotName,
+      sets: [],
+      doneSets: 0,
+      rpe: '未入力',
+      pains: [],
+      note: '今日だけ削除',
+      todayOnlyDeleted: true,
+      manualAdjusted: false,
+      ts: deleted.ts || Date.now(),
+    };
     const existIdx = store.logs.findIndex(l =>
       l.date === log.date && l.day === log.day && l.block === log.block &&
       l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
@@ -1893,6 +2197,7 @@ function renderBlock() {
       </div>
     `;
   }).join('');
+  const blockAccessoryEditor = renderAccessorySlotEditor('block');
 
   return `
     <h2 class="screen-title">ブロック管理</h2>
@@ -1913,6 +2218,8 @@ function renderBlock() {
       </div>
       ${rotationOverview}
     </div>
+
+    ${blockAccessoryEditor}
 
     <div class="section">
       <h2>次ブロック重量提案 ${blockComplete ? '<span class="text-success" style="font-size:12px;">[正式]</span>' : '<span class="text-warn" style="font-size:12px;">[参考]</span>'}</h2>
@@ -1985,6 +2292,8 @@ function afterBlock() {
       render();
     };
   });
+
+  bindAccessorySlotEditorActions();
 }
 
 function openEditSuggestionModal(sug) {
@@ -2282,36 +2591,52 @@ function renderAccessoryLoadCheck() {
   `;
 }
 
-function renderAccessorySlotEditor() {
+function renderAccessorySlotEditor(context = 'settings') {
   const slots = store.settings.accessorySlots || defaultAccessorySlots();
   const dayLabels = {
     1: 'Day1: 脚前側補助 / カーフ',
     2: 'Day2: 胸補助 / 背中 / 腕',
-    3: 'Day3: 肩 / 腰に優しい背中 / カーフ',
+    3: 'Day3: 肩（前肩・横肩） / 腰に優しい背中 / カーフ',
+    4: 'Day4: 休息日',
     5: 'Day5: 脚前側補助 / カーフ',
-    6: 'Day6: 胸・三頭補助 / 背中 / 腕',
+    6: 'Day6: 胸・三頭補助 / 背中 / リアデルト系 / 腕',
     7: 'Day7: 腰に優しい背中 / チンニング / カーフ',
+    8: 'Day8: 休息日',
   };
+  const heading = context === 'block' ? '補助種目管理' : '補助種目編集';
+  const intro = context === 'block'
+    ? 'Day1〜Day8の補助種目を直接管理します。BIG3本体はここでは削除できません。'
+    : 'カテゴリ・疲労タグを含めて、今後の基本プログラムを編集します。';
   return `
     <div class="section">
-      <h2>補助種目編集</h2>
+      <h2>${heading}</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">${intro}</div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">カテゴリ候補: ${ACCESSORY_CATEGORIES.join('、')}</div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">疲労タグ候補: ${ACCESSORY_FATIGUE_TAGS.join('、')}</div>
       ${Object.keys(dayLabels).map(day => `
         <div class="subsection">
-          <h3>${dayLabels[day]}</h3>
-          ${(slots[day] || []).map(slot => `
+          <div class="row between" style="align-items:center;gap:8px;">
+            <h3>${dayLabels[day]}</h3>
+            <button class="btn-ghost btn-small" data-reset-slot-day="${day}">初期おすすめに戻す</button>
+          </div>
+          ${(slots[day] || []).length === 0 ? '<div class="muted mb-8" style="font-size:12px;">補助種目なし</div>' : ''}
+          ${(slots[day] || []).map((slot, idx, list) => `
             <div class="suggestion-row" style="align-items:flex-start;">
               <div class="name">
                 <div class="strong">${slot.slotName}: ${slot.name}</div>
                 <div class="muted" style="font-size:12px;">${slot.setsText || slot.plannedSets}セット / ${slot.reps}回 / 目標RPE${slot.targetRpe}</div>
-                <div class="muted" style="font-size:11px;">${(slot.categories || []).join('・') || '-'} / ${(slot.fatigueTags || []).join('・') || '-'}</div>
+                <div class="accessory-meta" style="margin:6px 0 0;">
+                  ${(slot.categories || []).map(c => `<span class="accessory-chip">${c}</span>`).join('')}
+                  ${(slot.fatigueTags || []).map(t => `<span class="accessory-chip accessory-chip-fatigue">${t}</span>`).join('')}
+                </div>
               </div>
+              <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="-1" ${idx === 0 ? 'disabled style="opacity:0.45;"' : ''}>上へ</button>
+              <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="1" ${idx === list.length - 1 ? 'disabled style="opacity:0.45;"' : ''}>下へ</button>
               <button class="btn-secondary btn-small" data-edit-slot-day="${day}" data-edit-slot-id="${slot.slotId}">編集</button>
               <button class="btn-danger btn-small" data-delete-slot-day="${day}" data-delete-slot-id="${slot.slotId}">削除</button>
             </div>
           `).join('')}
-          <button class="btn-secondary btn-small" data-add-slot-day="${day}">種目追加</button>
+          <button class="btn-secondary btn-small" data-add-slot-day="${day}">＋補助種目を追加</button>
         </div>
       `).join('')}
     </div>
@@ -2328,7 +2653,7 @@ function renderSettings() {
   const accDefaults = store.settings.accessoryDefaults || {};
 
   // 補助種目重量編集UI
-  const accKeys = ['incline_db','dips','shoulder','lying_ext','preacher','legpress','hack_squat','calf','latpulldown','machine_row','seated_row','pec_fly','rear_raise'];
+  const accKeys = ['incline_db','dips','shoulder','side_raise','rear_delt_fly','face_pull','lying_ext','preacher','legpress','hack_squat','calf','latpulldown','machine_row','seated_row','pec_fly','rear_raise'];
   const accEditHtml = accKeys.map(k => {
     const def = accDefaults[k] || {};
     const dispName = ACCESSORY_DISPLAY_NAMES[k] || k;
@@ -2560,31 +2885,7 @@ function afterSettings() {
     });
   });
 
-  document.querySelectorAll('button[data-edit-slot-id]').forEach(btn => {
-    btn.onclick = () => {
-      const day = btn.dataset.editSlotDay;
-      const slotId = btn.dataset.editSlotId;
-      const slot = (store.settings.accessorySlots?.[day] || []).find(s => s.slotId === slotId);
-      if (slot) openAccessorySlotSettingsModal(day, slot);
-    };
-  });
-  document.querySelectorAll('button[data-delete-slot-id]').forEach(btn => {
-    btn.onclick = () => {
-      if (!confirm('この補助種目を今後のメニューから削除しますか？')) return;
-      deleteAccessorySlot(btn.dataset.deleteSlotDay, btn.dataset.deleteSlotId);
-      saveStore();
-      render();
-      showToast('補助種目を削除しました');
-    };
-  });
-  document.querySelectorAll('button[data-add-slot-day]').forEach(btn => {
-    btn.onclick = () => {
-      addAccessorySlot(btn.dataset.addSlotDay);
-      saveStore();
-      render();
-      showToast('補助種目を追加しました');
-    };
-  });
+  bindAccessorySlotEditorActions();
 
   document.getElementById('btnRecalcToday').onclick = () => {
     const hadDone = recalculateTodaySession();
@@ -2659,12 +2960,18 @@ if (typeof window !== 'undefined') {
     getDayMenu,
     defaultAccessorySlots,
     buildAccessoryExercises,
+    accessoryExerciseFromSlot,
     summarizeAccessoryLoad,
     getAccessoryLoadWarnings,
+    getAccessorySafetyWarnings,
     suggestAccessoryProgression,
     addAccessorySlot,
     deleteAccessorySlot,
+    updateAccessorySlot,
+    resetAccessorySlotsForDay,
+    moveAccessorySlot,
     renderToday,
+    renderBlock,
     getRestState: () => ({ ...restState }),
     getStore: () => store,
     setNowProvider: (fn) => { nowProvider = fn; },
