@@ -733,6 +733,45 @@ function renderEstimatedMaxHistory(limit = 6) {
   }).join('');
 }
 
+function renderEstimatedMaxSummary() {
+  const entries = [...(store.estimatedMaxHistory || [])].sort((a, b) => b.ts - a.ts);
+  const lifts = [
+    { key: 'bench', name: 'ベンチ' },
+    { key: 'squat', name: 'スクワット' },
+    { key: 'halfDead', name: 'ハーフデッド' },
+    { key: 'floorDead', name: '床引きデッド' },
+  ];
+  const rows = lifts.map(lift => {
+    const entry = entries.find(e => e.liftKey === lift.key);
+    if (!entry) {
+      return `
+        <div class="suggestion-row emax-summary-row">
+          <div class="name">${lift.name}</div>
+          <div class="muted">履歴なし</div>
+        </div>
+      `;
+    }
+    const candidate = getMaxUpdateCandidate(entry);
+    return `
+      <div class="suggestion-row emax-summary-row">
+        <div>
+          <div class="name">${lift.name}推定MAX: ${entry.estimatedMax}kg</div>
+          <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.date}</div>
+        </div>
+        <span class="status-pill ${candidate ? 'status-caution' : 'status-ok'}">${candidate ? 'MAX更新候補あり' : `信頼度:${entry.confidence}`}</span>
+        ${candidate && !entry.adopted ? `<button class="btn-success btn-small" data-adopt-emax="${entry.id}">採用</button>` : entry.adopted ? '<span class="status-pill status-ok">採用済み</span>' : ''}
+      </div>
+    `;
+  }).join('');
+  return `
+    ${rows}
+    <details class="ui-details">
+      <summary>履歴を確認</summary>
+      ${renderEstimatedMaxHistory(6)}
+    </details>
+  `;
+}
+
 function bindEstimatedMaxActions() {
   document.querySelectorAll('button[data-adopt-emax]').forEach(btn => {
     btn.onclick = () => {
@@ -2800,16 +2839,19 @@ function renderBlock() {
       summary = `<ul class="exercise-list" style="margin:4px 0 0;">${exItems}</ul>`;
     }
     return `
-      <div class="rotation-day-card" style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;${isCurrent ? 'border-color:var(--accent);background:rgba(96,165,250,0.05);' : ''}">
-        <div class="row between" style="align-items:center;">
-          <div>
-            <div style="font-size:13px;font-weight:600;">Day${d}${isCurrent ? ' <span class="text-warn" style="font-size:10px;">(現在)</span>' : ''}</div>
-            <div class="muted" style="font-size:11px;">${m.name}</div>
-          </div>
+      <details class="rotation-day-card ui-details" ${isCurrent ? 'open' : ''} style="${isCurrent ? 'border-color:var(--accent);background:rgba(96,165,250,0.05);' : ''}">
+        <summary>
+          <span>
+            <span style="font-size:13px;font-weight:600;">Day${d}${isCurrent ? ' <span class="text-warn" style="font-size:10px;">(現在)</span>' : ''}</span>
+            <span class="muted" style="font-size:11px;">${m.name}</span>
+          </span>
+        </summary>
+        <div class="row between" style="align-items:center;margin-bottom:6px;">
+          <span class="muted" style="font-size:12px;">${m.isRest ? '休息日' : 'メニュー'}</span>
           <button class="btn-secondary btn-small" data-set-day="${d}" ${isCurrent ? 'disabled style="opacity:0.45;"' : ''}>このDayに設定</button>
         </div>
         ${summary}
-      </div>
+      </details>
     `;
   }).join('');
   const blockAccessoryEditor = renderAccessorySlotEditor('block');
@@ -2827,7 +2869,7 @@ function renderBlock() {
     </div>
 
     <div class="section">
-      <h2>1ローテ予定一覧（R${s.rotation}）</h2>
+      <h2>8日分の予定（R${s.rotation}）</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         8日分の予定
       </div>
@@ -2849,8 +2891,8 @@ function renderBlock() {
     </div>
 
     <div class="section">
-      <h2>推定MAX履歴</h2>
-      ${renderEstimatedMaxHistory(6)}
+      <h2>推定MAX要約</h2>
+      ${renderEstimatedMaxSummary()}
     </div>
 
     <div class="section">
@@ -3177,7 +3219,7 @@ function importData() {
 }
 
 // ===== 設定画面 =====
-function renderAccessoryLoadCheck() {
+function renderAccessoryLoadCheck(context = 'full') {
   const summary = summarizeAccessoryLoad(store.settings);
   const warnings = getAccessoryLoadWarnings(store.settings);
   const getLoadStatus = (key, value) => {
@@ -3189,6 +3231,29 @@ function renderAccessoryLoadCheck() {
     if (key === '背中' && value < 10) return { label: '不足', className: 'status-low' };
     return { label: '適正', className: 'status-ok' };
   };
+  const statuses = ACCESSORY_SUMMARY_KEYS.map(k => getLoadStatus(k, summary[k] || 0));
+  const statusCounts = statuses.reduce((acc, status) => {
+    acc[status.label] = (acc[status.label] || 0) + 1;
+    return acc;
+  }, {});
+  const dangerCount = warnings.filter(w => w.level === 'danger').length;
+  const cautionCount = warnings.filter(w => w.level !== 'danger').length;
+  const overall = dangerCount
+    ? { label: '高負荷', className: 'status-danger' }
+    : warnings.some(w => /不足|少なめ/.test(w.message))
+      ? { label: '不足', className: 'status-low' }
+      : cautionCount
+        ? { label: '注意', className: 'status-caution' }
+        : { label: '適正', className: 'status-ok' };
+  const conclusion = `
+    <div class="load-summary">
+      <span class="status-pill ${overall.className}">${overall.label}</span>
+      <span class="status-pill status-ok">適正 ${statusCounts['適正'] || 0}</span>
+      <span class="status-pill status-caution">注意 ${cautionCount}</span>
+      <span class="status-pill status-danger">高負荷 ${dangerCount}</span>
+      <span class="status-pill status-low">不足 ${statusCounts['不足'] || 0}</span>
+    </div>
+  `;
   const rows = ACCESSORY_SUMMARY_KEYS.map(k => `
     <div class="suggestion-row load-metric-row">
       <div class="name">${k}</div>
@@ -3197,20 +3262,36 @@ function renderAccessoryLoadCheck() {
     </div>
   `).join('');
   const warnHtml = warnings.length === 0
-    ? '<div class="muted">現在の8日ローテ負荷は大きな警告なしです</div>'
+    ? '<div class="muted">大きな警告なし</div>'
     : warnings.map(w => `<div class="load-warning ${w.level === 'danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${w.level === 'danger' ? '危険' : '注意'}</span>${w.message}</div>`).join('');
+  const body = `
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">8日負荷チェック</div>
+    ${conclusion}
+    <div class="mt-8">${warnHtml}</div>
+    <details class="ui-details">
+      <summary>詳細数値</summary>
+      ${rows}
+    </details>
+  `;
+  if (context === 'settings') {
+    return `
+      <details class="section load-check-section ui-details">
+        <summary><h2>負荷チェック</h2></summary>
+        ${body}
+      </details>
+    `;
+  }
   return `
     <div class="section load-check-section">
       <h2>負荷チェック</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">8日負荷チェック</div>
-      ${rows}
-      <div class="mt-8">${warnHtml}</div>
+      ${body}
     </div>
   `;
 }
 
 function renderAccessorySlotEditor(context = 'settings') {
   const slots = store.settings.accessorySlots || defaultAccessorySlots();
+  const currentDay = String(store.currentState.day);
   const dayLabels = {
     1: 'Day1: 脚前側補助 / カーフ',
     2: 'Day2: 胸補助 / 背中 / 腕',
@@ -3223,40 +3304,61 @@ function renderAccessorySlotEditor(context = 'settings') {
   };
   const heading = context === 'block' ? '補助種目管理' : '補助種目編集';
   const intro = context === 'block'
-    ? 'Day1〜Day8の補助種目を直接管理します。BIG3本体はここでは削除できません。'
-    : 'カテゴリ・疲労タグを含めて、今後の基本プログラムを編集します。';
-  return `
-    <div class="section">
-      <h2>${heading}</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">${intro}</div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">カテゴリ候補: ${ACCESSORY_CATEGORIES.join('、')}</div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">疲労タグ候補: ${ACCESSORY_FATIGUE_TAGS.join('、')}</div>
-      ${Object.keys(dayLabels).map(day => `
-        <div class="subsection">
-          <div class="row between" style="align-items:center;gap:8px;">
-            <h3>${dayLabels[day]}</h3>
-            <button class="btn-ghost btn-small" data-reset-slot-day="${day}">初期おすすめに戻す</button>
-          </div>
-          ${(slots[day] || []).length === 0 ? '<div class="muted mb-8" style="font-size:12px;">補助種目なし</div>' : ''}
-          ${(slots[day] || []).map((slot, idx, list) => `
-            <div class="suggestion-row" style="align-items:flex-start;">
-              <div class="name">
-                <div class="strong">${slot.slotName}: ${slot.name}</div>
-                <div class="muted" style="font-size:12px;">${slot.setsText || slot.plannedSets}セット / ${slot.reps}回 / 目標RPE${slot.targetRpe}</div>
+    ? 'Day別に補助種目を管理'
+    : '今後の基本プログラムを編集';
+  const body = `
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">${intro}</div>
+    <details class="ui-details compact-details">
+      <summary>候補を確認</summary>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">カテゴリ: ${ACCESSORY_CATEGORIES.join('、')}</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">疲労タグ: ${ACCESSORY_FATIGUE_TAGS.join('、')}</div>
+    </details>
+    ${Object.keys(dayLabels).map(day => `
+      <details class="subsection ui-details accessory-day-details" ${context === 'block' && day === currentDay ? 'open' : ''}>
+        <summary>
+          <span>${dayLabels[day]}</span>
+          <span class="status-pill status-ok">${(slots[day] || []).length}種目</span>
+        </summary>
+        <div class="row between" style="align-items:center;gap:8px;margin-bottom:8px;">
+          <span class="muted" style="font-size:12px;">Day${day}</span>
+          <button class="btn-ghost btn-small" data-reset-slot-day="${day}">初期おすすめに戻す</button>
+        </div>
+        ${(slots[day] || []).length === 0 ? '<div class="muted mb-8" style="font-size:12px;">補助種目なし</div>' : ''}
+        ${(slots[day] || []).map((slot, idx, list) => `
+          <div class="suggestion-row" style="align-items:flex-start;">
+            <div class="name">
+              <div class="strong">${slot.slotName}: ${slot.name}</div>
+              <div class="muted" style="font-size:12px;">${slot.setsText || slot.plannedSets}セット / ${slot.reps}回 / 目標RPE${slot.targetRpe}</div>
+              <details class="ui-details compact-details">
+                <summary>詳細</summary>
                 <div class="accessory-meta" style="margin:6px 0 0;">
                   ${(slot.categories || []).slice(0, 3).map(c => `<span class="accessory-chip">${c}</span>`).join('')}
                   ${(slot.fatigueTags || []).slice(0, 2).map(t => `<span class="accessory-chip accessory-chip-fatigue">${t}</span>`).join('')}
                 </div>
-              </div>
-              <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="-1" ${idx === 0 ? 'disabled style="opacity:0.45;"' : ''}>上へ</button>
-              <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="1" ${idx === list.length - 1 ? 'disabled style="opacity:0.45;"' : ''}>下へ</button>
-              <button class="btn-secondary btn-small" data-edit-slot-day="${day}" data-edit-slot-id="${slot.slotId}">編集</button>
-              <button class="btn-danger btn-small" data-delete-slot-day="${day}" data-delete-slot-id="${slot.slotId}">削除</button>
+              </details>
             </div>
-          `).join('')}
-          <button class="btn-secondary btn-small" data-add-slot-day="${day}">＋補助種目を追加</button>
-        </div>
-      `).join('')}
+            <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="-1" ${idx === 0 ? 'disabled style="opacity:0.45;"' : ''}>上へ</button>
+            <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="1" ${idx === list.length - 1 ? 'disabled style="opacity:0.45;"' : ''}>下へ</button>
+            <button class="btn-secondary btn-small" data-edit-slot-day="${day}" data-edit-slot-id="${slot.slotId}">編集</button>
+            <button class="btn-danger btn-small" data-delete-slot-day="${day}" data-delete-slot-id="${slot.slotId}">削除</button>
+          </div>
+        `).join('')}
+        <button class="btn-secondary btn-small" data-add-slot-day="${day}">＋補助種目を追加</button>
+      </details>
+    `).join('')}
+  `;
+  if (context === 'settings') {
+    return `
+      <details class="section ui-details">
+        <summary><h2>${heading}</h2></summary>
+        ${body}
+      </details>
+    `;
+  }
+  return `
+    <div class="section">
+      <h2>${heading}</h2>
+      ${body}
     </div>
   `;
 }
@@ -3296,8 +3398,11 @@ function renderSettings() {
       <label class="field"><span>スクワットMAX (kg)</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /></label>
       <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
       <label class="field"><span>床引きデッドMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
-      <div class="muted" style="font-size:11px;margin-top:-4px;margin-bottom:8px;">※ 床引きデッドはハーフデッド強化の補助・フォーム維持用途のため、初期値170kg。高強度モードでも強化対象になりません。</div>
       <label class="field"><span>重量刻み (kg)</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /></label>
+      <details class="ui-details compact-details">
+        <summary>補足</summary>
+        <div class="muted" style="font-size:12px;">床引きデッドは補助扱いのため、高強度モードでも強化対象外です。</div>
+      </details>
     </div>
 
     <div class="section">
@@ -3307,23 +3412,26 @@ function renderSettings() {
           <input type="radio" name="strengthMode" value="standard" ${strengthMode === 'standard' ? 'checked' : ''} />
           <div>
             <div class="opt-title">標準モード</div>
-            <div class="muted opt-desc">安全寄りの強度。Day1/2/3はトップシングル+バックオフ構成。</div>
+            <div class="muted opt-desc">安全寄り</div>
           </div>
         </label>
         <label class="volume-mode-option ${strengthMode === 'highIntensity' ? 'active' : ''}">
           <input type="radio" name="strengthMode" value="highIntensity" ${strengthMode === 'highIntensity' ? 'checked' : ''} />
           <div>
             <div class="opt-title">高強度モード <span class="text-warn" style="font-size:11px;">(初期値)</span></div>
-            <div class="muted opt-desc">過去実績ベースの高強度メイン。Day1スクワット85.0/86.25/87.5%×5×3、Day2ベンチ85.0/87.0/89.0%×5×3、Day3ハーフデッド84.25/85.5/86.75%×5×3。Day7床引きデッドは変更なし。</div>
+            <div class="muted opt-desc">メイン高強度</div>
           </div>
         </label>
       </div>
-      <div class="muted mt-8" style="font-size:12px;">
+      <details class="ui-details compact-details mt-8">
+        <summary>補足</summary>
+        <div class="muted" style="font-size:12px;">
         ※ 4ローテ目（疲労抜き）は両モードとも同じ縮小ボリューム（モード切替の影響を受けません）。<br>
         ※ Day7床引きデッドはハーフデッド強化の補助・フォーム維持目的のため高強度モードでも変更されません。<br>
         ※ モード変更後、未実施の今後メニューに自動反映されます。<br>
         ※ 過去ログは書き換わりません。
-      </div>
+        </div>
+      </details>
     </div>
 
     <div class="section">
@@ -3333,22 +3441,25 @@ function renderSettings() {
           <input type="radio" name="volumeMode" value="standard" ${volumeMode === 'standard' ? 'checked' : ''} />
           <div>
             <div class="opt-title">標準モード</div>
-            <div class="muted opt-desc">回復を優先した通常ボリューム。補助種目は控えめのセット数で疲労を抑えます。</div>
+            <div class="muted opt-desc">回復優先</div>
           </div>
         </label>
         <label class="volume-mode-option ${volumeMode === 'high' ? 'active' : ''}">
           <input type="radio" name="volumeMode" value="high" ${volumeMode === 'high' ? 'checked' : ''} />
           <div>
             <div class="opt-title">高ボリュームモード <span class="text-warn" style="font-size:11px;">(推奨)</span></div>
-            <div class="muted opt-desc">補助種目と一部メインセットを増やした高ボリューム版。Day1/2/3/5/6/7の特定種目で +1セット、Day6ベンチボリュームは 4→5セット。</div>
+            <div class="muted opt-desc">補助多め</div>
           </div>
         </label>
       </div>
-      <div class="muted mt-8" style="font-size:12px;">
+      <details class="ui-details compact-details mt-8">
+        <summary>補足</summary>
+        <div class="muted" style="font-size:12px;">
         ※ 4ローテ目（疲労抜き）は両モードとも同じ縮小ボリュームです。<br>
         ※ モード変更後、未実施の今後メニューに自動反映されます。今日のメニューは「再計算」を押した時のみ更新されます（実施済みセットは保持）。<br>
         ※ 過去ログは書き換わりません。
-      </div>
+        </div>
+      </details>
     </div>
 
     <div class="section">
@@ -3373,17 +3484,21 @@ function renderSettings() {
           ${Object.entries(DELOAD_MAX_TEST_MODES).map(([value, label]) => `<option value="${value}" ${deloadMaxTestMode === value ? 'selected' : ''}>${label}</option>`).join('')}
         </select>
       </label>
-      <div class="muted" style="font-size:12px;">初期値はe1RM確認です。真の1RM測定はケガリスクが高いため、安全環境がある場合のみ推奨します。</div>
+      <details class="ui-details compact-details">
+        <summary>補足</summary>
+        <div class="muted" style="font-size:12px;">初期値はe1RM確認です。1RM測定は安全環境がある場合のみ。</div>
+      </details>
     </div>
 
     ${renderAccessorySlotEditor()}
-    ${renderAccessoryLoadCheck()}
+    ${renderAccessoryLoadCheck('settings')}
 
     <div class="section">
       <h2>補助種目の初期重量・回数・セット</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        補助種目はMAX計算なし、ここで設定した値が予定として表示されます。空欄にすると重量未設定（自分で入力）になります。
-      </div>
+      <details class="ui-details compact-details">
+        <summary>補足</summary>
+        <div class="muted" style="font-size:12px;margin-bottom:8px;">空欄は重量未設定として扱います。</div>
+      </details>
       <div class="acc-edit-header">
         <div>種目</div><div>重量(kg)</div><div>回数</div><div>セット</div>
       </div>
@@ -3403,11 +3518,14 @@ function renderSettings() {
         <button class="btn-warn" id="btnRecalcToday">今日のメニューを再計算</button>
         <button class="btn-danger" id="btnReset">初期値に戻す</button>
       </div>
-      <div class="muted mt-8" style="font-size:12px;">
+      <details class="ui-details compact-details mt-8">
+        <summary>補足</summary>
+        <div class="muted" style="font-size:12px;">
         ※ MAX変更後、未実施の今後メニューは新MAXで自動計算されます。<br>
         ※ 過去ログは書き換えません。<br>
         ※ 今日のメニューは「再計算」を押した時のみ更新されます（実施済みセットは保持）。
-      </div>
+        </div>
+      </details>
     </div>
 
     <div class="section">
@@ -3430,10 +3548,13 @@ function renderSettings() {
         <button class="btn-secondary btn-small" id="btnImport2">インポート</button>
         <button class="btn-danger btn-small" id="btnFullReset">全データ削除</button>
       </div>
-      <div class="muted mt-8" style="font-size:12px;">
+      <details class="ui-details compact-details mt-8">
+        <summary>詳細</summary>
+        <div class="muted" style="font-size:12px;">
         ストレージキー: ${STORAGE_KEY}<br>
         バージョン: ${APP_VERSION}
-      </div>
+        </div>
+      </details>
     </div>
   `;
 }
@@ -3605,6 +3726,7 @@ if (typeof window !== 'undefined') {
     adoptEstimatedMax,
     recordMaxTestResult,
     renderEstimatedMaxHistory,
+    renderEstimatedMaxSummary,
     defaultAccessorySlots,
     buildAccessoryExercises,
     accessoryExerciseFromSlot,
@@ -3617,6 +3739,8 @@ if (typeof window !== 'undefined') {
     updateAccessorySlot,
     resetAccessorySlotsForDay,
     moveAccessorySlot,
+    renderAccessoryLoadCheck,
+    renderSettings,
     renderToday,
     renderBlock,
     computeNextBlockSuggestion,

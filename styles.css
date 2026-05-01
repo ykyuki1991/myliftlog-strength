@@ -934,6 +934,60 @@ label.field > span {
   color: #fff;
 }
 
+.ui-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(15,23,42,0.24);
+  margin: 8px 0;
+  padding: 8px 10px;
+}
+
+.ui-details > summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.ui-details > summary h2,
+.ui-details > summary h3 {
+  margin: 0;
+}
+
+.compact-details {
+  background: transparent;
+  padding: 4px 0;
+  border-color: rgba(83,100,127,0.28);
+}
+
+.compact-details > summary {
+  min-height: 34px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.rotation-day-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.load-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.emax-summary-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .suggestion-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

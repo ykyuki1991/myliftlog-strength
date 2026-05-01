@@ -160,9 +160,24 @@ function testUpdateMoveResetAndBlockEditor() {
 
   const blockHtml = api.renderBlock();
   assert.ok(blockHtml.includes('補助種目管理'));
+  assert.ok(blockHtml.includes('<details class="rotation-day-card'));
+  assert.ok(blockHtml.includes('推定MAX要約'));
+  assert.ok(!blockHtml.includes('<h2>推定MAX履歴</h2>'));
   assert.ok(blockHtml.includes('サイドレイズ'));
   assert.ok(blockHtml.includes('リアデルトフライ'));
   assert.ok(blockHtml.includes('初期おすすめに戻す'));
+}
+
+function testLoadCheckAndSettingsAreOrganized() {
+  const loadHtml = api.renderAccessoryLoadCheck();
+  assert.ok(loadHtml.indexOf('load-summary') < loadHtml.indexOf('詳細数値'));
+  assert.ok(loadHtml.includes('8日負荷チェック'));
+
+  const settingsHtml = api.renderSettings();
+  assert.ok(settingsHtml.includes('<details class="section ui-details">'));
+  assert.ok(settingsHtml.includes('補助種目編集'));
+  assert.ok(settingsHtml.includes('負荷チェック'));
+  assert.ok(settingsHtml.includes('補足'));
 }
 
 function testAccessoryProgression() {
@@ -209,6 +224,7 @@ testAddDeleteAccessory();
 testLoadSummaryAndWarnings();
 testAccessoryPresetSelection();
 testUpdateMoveResetAndBlockEditor();
+testLoadCheckAndSettingsAreOrganized();
 testAccessoryProgression();
 testTodayScreenRenders();
 
