@@ -738,6 +738,27 @@ label.field > span {
   cursor: pointer;
 }
 
+.accessory-custom-name {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+}
+
+.accessory-custom-name summary {
+  min-height: 36px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.today-warning-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .accessory-suggestion {
   display: flex;
   gap: 8px;

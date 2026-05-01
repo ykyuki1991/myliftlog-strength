@@ -498,9 +498,9 @@ function upsertEstimatedMaxFromLog(log, source = 'training') {
   if (!entry) return null;
   const recent = recentEstimatedMaxes(entry.liftKey, 1)[0];
   if (entry.estimatedMax < entry.currentMax && recent?.estimatedMax < entry.currentMax) {
-    entry.trendWarning = '2回連続で推定MAXが現在MAXを下回っています。疲労注意。';
+    entry.trendWarning = '2回低下: 疲労注意';
   } else if (entry.estimatedMax < entry.currentMax) {
-    entry.trendWarning = '推定MAXが現在MAXを下回っています。1回のみのため様子見。';
+    entry.trendWarning = '低下: 様子見';
   }
   store.estimatedMaxHistory = store.estimatedMaxHistory || [];
   const existingIdx = store.estimatedMaxHistory.findIndex(e => e.logId && e.logId === entry.logId && e.liftKey === entry.liftKey);
@@ -539,33 +539,33 @@ function evaluateRotationProgression(log) {
   const maxGapPct = estimateEntry ? ((estimateEntry.estimatedMax - (store.settings.maxes[lift.maxKey] || 0)) / (store.settings.maxes[lift.maxKey] || 1)) * 100 : 0;
   let shouldIncrease = false;
   let recommendation = 'hold';
-  let message = `${lift.name}は据え置きを推奨します。`;
+  let message = `${lift.name}: 据え置き`;
 
   if (painful) {
-    message = `${lift.name}は痛みありのため据え置き。必要なら関連補助の削減も検討してください。`;
+    message = `${lift.name}: 痛みあり 据え置き`;
   } else if (formIssue) {
-    message = `${lift.name}はフォーム不安メモがあるため据え置きを推奨します。`;
+    message = `${lift.name}: フォーム要確認`;
   } else if (failed) {
-    message = `${lift.name}は失敗セットありのため据え置きを推奨します。`;
+    message = `${lift.name}: 失敗あり 据え置き`;
   } else if (rpe == null) {
-    message = `${lift.name}はRPE未入力のため微増判定は保留です。`;
+    message = `${lift.name}: RPE未入力`;
   } else if (rpe <= 8) {
     shouldIncrease = true;
     recommendation = 'increase';
-    message = `前回の${lift.name}は全セット成功、最終RPE${rpe}、痛みなしでした。次回は +2.5kg を提案します。`;
+    message = `前回成功: 次回 +2.5kg`;
   } else if (rpe <= 9) {
     const aggressive = (store.settings.accessoryManagementMode || 'aggressive') === 'aggressive';
     shouldIncrease = aggressive;
     recommendation = aggressive ? 'increase' : 'hold';
     message = aggressive
-      ? `前回の${lift.name}はRPE${rpe}ですが成功しています。攻めるモードのため次回 +2.5kg を提案します。`
-      : `前回の${lift.name}は成功していますがRPE${rpe}のため据え置きを推奨します。`;
+      ? `前回成功: 次回 +2.5kg`
+      : `${lift.name}: RPE${rpe} 据え置き`;
   } else {
-    message = `前回の${lift.name}は成功していますが、最終RPE${rpe}のため据え置きを推奨します。`;
+    message = `${lift.name}: RPE${rpe} 据え置き`;
   }
 
   if (shouldIncrease && maxGapPct >= 2.5) {
-    message += ' 推定MAXも現在MAXより高く、ブロック終了時のMAX更新候補があります。';
+    message += ' / MAX更新候補あり';
   }
 
   return {
@@ -1029,19 +1029,19 @@ function suggestAccessoryProgression(ex, mode = store.settings.accessoryManageme
   const twoEasy = recentClass.length >= 2 && recentClass.every(v => v === 'easy');
   const twoHeavy = recentClass.length >= 2 && recentClass.every(v => v === 'heavy');
 
-  if (hasStrongPain(ex)) return '強い痛み: 据え置き、セット削減、種目変更を提案';
-  if (painful) return '痛みあり: 重量アップは慎重に。違和感程度なら記録のみ';
+  if (hasStrongPain(ex)) return '強い痛み: 要変更';
+  if (painful) return '痛みあり: 慎重に';
   if (mode === 'aggressive') {
-    if (hitUpper && rpe != null && rpe <= 7) return `軽すぎ: ${weightStepText(ex.weightType)} か1セット追加を提案`;
-    if (hitUpper && rpe != null && rpe >= 8 && rpe <= 9) return '適正: この負荷を継続';
-    if ((rpe != null && rpe >= 9.5) || failed) return '攻めすぎ: 関連補助を1セット削減、または据え置きを提案';
+    if (hitUpper && rpe != null && rpe <= 7) return `軽い: ${weightStepText(ex.weightType)} or +1set`;
+    if (hitUpper && rpe != null && rpe >= 8 && rpe <= 9) return '適正';
+    if ((rpe != null && rpe >= 9.5) || failed) return '攻めすぎ: 調整';
   }
-  if (twoEasy) return `2回連続で楽: ${weightStepText(ex.weightType)} か1セット追加を提案`;
-  if (twoHeavy) return '2回連続で重い: 1セット削減を提案';
-  if (hitUpper && rpe != null && rpe <= 8) return `次回重量アップ: ${weightStepText(ex.weightType)} を提案`;
-  if (hitUpper && rpe === 9) return '据え置き: 上限回数達成だがRPE9';
-  if (failed && rpe != null && rpe >= 9) return '据え置き or セット減: 回数未達かつ高RPE';
-  return '記録後に前回実績・RPE・痛みから提案します';
+  if (twoEasy) return `2回楽: ${weightStepText(ex.weightType)} or +1set`;
+  if (twoHeavy) return '2回重い: -1set';
+  if (hitUpper && rpe != null && rpe <= 8) return `次回: ${weightStepText(ex.weightType)}`;
+  if (hitUpper && rpe === 9) return '据え置き';
+  if (failed && rpe != null && rpe >= 9) return '据え置き or -1set';
+  return '記録後に提案';
 }
 
 function roundToIncrement(weight, increment = 2.5) {
@@ -1655,10 +1655,15 @@ function renderToday() {
     : '';
 
   const exHtml = session.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx)).join('');
-  const accessoryWarnings = getAccessoryLoadWarnings(store.settings)
-    .filter(w => w.message.includes('横肩') || w.message.includes('後ろ肩') || w.message.includes('肩'))
-    .map(w => `<div class="load-warning load-warning-caution"><span>注意</span>${w.message}</div>`)
+  const todayWarnings = getAccessoryLoadWarnings(store.settings)
+    .filter(w => /横肩|後ろ肩|肩|肘|腰|背中/.test(w.message));
+  const warningChips = todayWarnings
+    .slice(0, 3)
+    .map(w => `<span class="status-pill ${w.level === 'danger' ? 'status-danger' : 'status-caution'}">${w.message}</span>`)
     .join('');
+  const accessoryWarnings = todayWarnings.length
+    ? `<div class="today-warning-summary"><span class="suggestion-label">負荷注意あり</span>${warningChips}${todayWarnings.length > 3 ? `<span class="muted">+${todayWarnings.length - 3}</span>` : ''}</div>`
+    : '';
 
   return `
     <h2 class="screen-title">${session.dayName}</h2>
@@ -1709,20 +1714,19 @@ function renderExerciseCard(ex, exIdx) {
   const planLine = ex.plannedWeight != null
     ? `<div class="plan-line">予定: <span class="strong">${ex.plannedWeight}kg × ${ex.plannedReps}回 × ${ex.plannedSets}セット</span> ${ex.pctNote ? `(${ex.pctNote})` : ''} ${ex.adjusted ? `<span class="text-warn">[調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}]</span>` : ''}</div>`
     : `<div class="plan-line">予定: <span class="strong">${ex.plannedReps}回 × ${ex.plannedSets}セット</span></div>`;
+  const accessoryStatus = suggestAccessoryProgression(ex);
   const accessoryMeta = ex.isAccessory ? `
     <div class="accessory-meta" aria-label="補助種目情報">
       <span class="accessory-chip accessory-chip-slot">${ex.slotName || '補助'}</span>
       <span class="accessory-chip accessory-chip-rpe">目標RPE ${ex.targetRpe || '-'}</span>
-      ${(ex.categories || []).map(c => `<span class="accessory-chip">${c}</span>`).join('')}
-      ${(ex.fatigueTags || []).map(t => `<span class="accessory-chip accessory-chip-fatigue">${t}</span>`).join('')}
     </div>
-    <div class="accessory-suggestion"><span class="suggestion-label">提案</span><span>${suggestAccessoryProgression(ex)}</span></div>
+    <div class="accessory-suggestion"><span class="suggestion-label">提案</span><span>${accessoryStatus}</span></div>
   ` : '';
   const rotationProgression = ex.isBig3 ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
   const big3Meta = ex.isBig3 ? `
     <div class="accessory-suggestion big3-progression">
       <span class="suggestion-label">${rotationProgression?.delta ? '次回候補' : 'BIG3'}</span>
-      <span>${rotationProgression ? rotationProgression.message : '記録後にRPE・痛み・達成状況から次回+2.5kg候補と推定MAXを判定します。'}</span>
+      <span>${rotationProgression ? rotationProgression.message : '記録後に判定'}</span>
       ${rotationProgression?.status === 'suggested' && rotationProgression.delta ? `<button class="btn-secondary btn-small" data-action="adoptRotation" data-progression-id="${rotationProgression.id}">採用</button>` : ''}
       ${ex.rotationProgressionApplied ? `<span class="status-pill status-ok">採用済み +${ex.rotationProgressionApplied}kg</span>` : ''}
     </div>
@@ -1935,15 +1939,19 @@ function openAdjustModal(exIdx) {
 }
 
 function slotFormHtml(prefix, ex) {
-  const slotOptions = ['補助スロット', '脚前側補助', 'カーフ', '胸補助', '背中', '腕', '肩', 'リアデルト系', '腰に優しい背中', 'チンニング', '胸・三頭補助'];
+  const slotOptions = ['補助スロット', '脚前側補助', 'カーフ', '胸補助', '背中', '腕', '肩', 'リアデルト系', 'チンニング', '胸・三頭補助'];
   const selectedPreset = inferPresetKey(ex);
+  const displaySlotName = ex.slotName === '腰に優しい背中' ? '背中' : (ex.slotName || '補助スロット');
   return `
     <label class="field"><span>種目</span>
       <select id="${prefix}-preset" data-preset-select="${prefix}">
         ${accessoryPresetOptionsHtml(selectedPreset)}
       </select>
     </label>
-    <label class="field"><span>種目名</span><input type="text" id="${prefix}-name" value="${ex.name || ''}" placeholder="自由入力の場合のみ編集" /></label>
+    <details class="accessory-custom-name" data-custom-name="${prefix}" ${selectedPreset === 'custom' ? 'open' : ''}>
+      <summary>種目名を手動編集</summary>
+      <label class="field"><span>種目名</span><input type="text" id="${prefix}-name" value="${ex.name || ''}" placeholder="カスタム種目名" /></label>
+    </details>
     <label class="field"><span>セット数</span><input type="number" min="0" id="${prefix}-sets" value="${ex.plannedSets || 1}" /></label>
     <label class="field"><span>回数</span><input type="text" id="${prefix}-reps" value="${ex.plannedReps || ex.reps || ''}" /></label>
     <label class="field"><span>RPE</span><input type="text" id="${prefix}-rpe" value="${ex.targetRpe || '8'}" /></label>
@@ -1951,7 +1959,7 @@ function slotFormHtml(prefix, ex) {
     <details class="accessory-details">
       <summary>詳細設定</summary>
       <label class="field"><span>スロット</span>
-        <input type="text" id="${prefix}-slotName" value="${ex.slotName || '補助スロット'}" list="${prefix}-slot-options" />
+        <input type="text" id="${prefix}-slotName" value="${displaySlotName}" list="${prefix}-slot-options" />
         <datalist id="${prefix}-slot-options">
           ${slotOptions.map(v => `<option value="${v}"></option>`).join('')}
         </datalist>
@@ -1979,12 +1987,13 @@ function slotFormHtml(prefix, ex) {
 }
 
 function readSlotForm(prefix, base = {}) {
-  const name = document.getElementById(`${prefix}-name`).value.trim() || '補助種目';
+  const nameInput = document.getElementById(`${prefix}-name`);
   const plannedSets = Math.max(0, parseInt(document.getElementById(`${prefix}-sets`).value, 10) || 0);
   const reps = document.getElementById(`${prefix}-reps`).value.trim() || '8〜12';
   const plannedWeightRaw = document.getElementById(`${prefix}-weight`)?.value ?? '';
   const presetKey = document.getElementById(`${prefix}-preset`)?.value || inferPresetKey(base);
   const preset = getAccessoryPreset(presetKey);
+  const name = nameInput?.value.trim() || (preset && !preset.custom ? preset.name : '') || '補助種目';
   return normalizeAccessorySlot({
     ...base,
     slotName: document.getElementById(`${prefix}-slotName`)?.value.trim() || base.slotName || '補助スロット',
@@ -2029,6 +2038,8 @@ function fillSlotFormFromPreset(prefix, presetKey) {
   setValue('categories', (preset.categories || []).join('、'));
   setValue('tags', (preset.fatigueTags || []).join('、'));
   setValue('weightType', preset.weightType);
+  const nameDetails = document.querySelector(`[data-custom-name="${prefix}"]`);
+  if (nameDetails) nameDetails.open = !!preset.custom;
 }
 
 function bindAccessoryPresetSelect(prefix) {
@@ -2760,17 +2771,17 @@ function renderBlock() {
   const referenceBanner = !blockComplete
     ? `<div class="deload-banner" style="background:rgba(96,165,250,0.15);border-left-color:var(--accent);">
          <div class="label" style="color:var(--accent);">参考提案</div>
-         <div class="muted">ブロック完了前のため参考提案です。正式な採用は4ローテ目Day8完了後に有効になります。</div>
+         <div class="muted">参考表示</div>
        </div>`
     : `<div class="deload-banner" style="background:rgba(74,222,128,0.15);border-left-color:var(--success);">
          <div class="label" style="color:var(--success);">ブロック完了</div>
-         <div class="muted">提案を採用すると、MAXを更新して次ブロック(R1/D1)へ自動的に進みます。</div>
+         <div class="muted">採用で次ブロックへ</div>
        </div>`;
 
   const acceptBtnAttr = blockComplete ? '' : 'disabled style="opacity:0.45;cursor:not-allowed;"';
   const acceptHelp = blockComplete
     ? ''
-    : '<div class="muted mt-8" style="font-size:12px;">※ ブロック完了前は採用できません</div>';
+    : '<div class="muted mt-8" style="font-size:12px;">完了後に採用可</div>';
 
   // 1ローテ予定一覧（現在のローテの8日分）
   const rotationOverview = [1,2,3,4,5,6,7,8].map(d => {
@@ -2818,7 +2829,7 @@ function renderBlock() {
     <div class="section">
       <h2>1ローテ予定一覧（R${s.rotation}）</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        現在のローテの8日分のメニューです。「このDayに設定」を押すと、ローテ・ブロックは変更せずDayだけ変更します（過去ログには影響しません）。
+        8日分の予定
       </div>
       ${rotationOverview}
     </div>
@@ -2955,14 +2966,6 @@ function computeNextBlockSuggestion() {
     { key: 'floorDead', maxKey: 'floorDead', name: '床引きデッド', range: [2.5, 5] },
   ];
 
-  // 痛みの関連
-  const painRelated = {
-    bench: ['肘', '肩'],
-    squat: ['腰', '膝'],
-    halfDead: ['腰'],
-    floorDead: ['腰'],
-  };
-
   return lifts.map(lift => {
     const logs = blockLogs.filter(l => l.exerciseKey === lift.key);
     if (logs.length === 0) return null;
@@ -2977,7 +2980,7 @@ function computeNextBlockSuggestion() {
       doneSets += l.doneSets;
       if (l.doneSets < planned) failures += (planned - l.doneSets);
       if (l.rpe === '9' || l.rpe === '10') highRPE = true;
-      if (l.pains && l.pains.some(p => painRelated[lift.key].includes(p))) painFlag = true;
+      if (hasLogPain(l)) painFlag = true;
     });
 
     let delta = 0;
@@ -2985,7 +2988,7 @@ function computeNextBlockSuggestion() {
 
     if (painFlag) {
       delta = 0;
-      reason = '関連部位に痛み → 据え置き';
+      reason = '痛みあり → 据え置き';
     } else if (failures >= 3) {
       delta = -lift.range[0];
       reason = '失敗多数 → 少し下げる';
@@ -3199,7 +3202,7 @@ function renderAccessoryLoadCheck() {
   return `
     <div class="section load-check-section">
       <h2>負荷チェック</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">8日ローテ全体の補助セット数をカテゴリ・疲労タグ別に集計します。警告は提案であり、実行は禁止しません。</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">8日負荷チェック</div>
       ${rows}
       <div class="mt-8">${warnHtml}</div>
     </div>
@@ -3356,7 +3359,7 @@ function renderSettings() {
             <input type="radio" name="accessoryMode" value="${value}" ${accessoryMode === value ? 'checked' : ''} />
             <div>
               <div class="opt-title">${label}</div>
-              <div class="muted opt-desc">${value === 'aggressive' ? '初期値。全成功RPE7以下は軽すぎ、RPE8〜9は適正、失敗やRPE9.5以上は攻めすぎとして提案します。' : value === 'fatigue' ? '疲労干渉と痛みリスクを強めに見て、セット削減・種目変更提案を優先します。' : '標準的に前回実績・RPE・痛みから重量提案します。'}</div>
+              <div class="muted opt-desc">${value === 'aggressive' ? '初期値。軽い/適正/攻めすぎを短く表示します。' : value === 'fatigue' ? '疲労・痛みをやや強めに見ます。' : '標準的に提案します。'}</div>
             </div>
           </label>
         `).join('')}
@@ -3616,6 +3619,7 @@ if (typeof window !== 'undefined') {
     moveAccessorySlot,
     renderToday,
     renderBlock,
+    computeNextBlockSuggestion,
     getRestState: () => ({ ...restState }),
     getStore: () => store,
     setNowProvider: (fn) => { nowProvider = fn; },

@@ -168,12 +168,24 @@ function testDeloadMaxTestResult() {
   assert.ok(api.getMaxUpdateCandidate(result.entry));
 }
 
+function testBlockSuggestionPainSeverity() {
+  store.logs = [big3Log({ pains: ['違和感'] })];
+  const discomfortSuggestion = api.computeNextBlockSuggestion().find(s => s.key === 'bench');
+  assert.ok(discomfortSuggestion.delta > 0, 'discomfort should not block block-level increase suggestions');
+
+  store.logs = [big3Log({ pains: ['痛み'] })];
+  const painfulSuggestion = api.computeNextBlockSuggestion().find(s => s.key === 'bench');
+  assert.strictEqual(painfulSuggestion.delta, 0);
+  assert.ok(painfulSuggestion.reason.includes('痛みあり'));
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testRotationProgressionRules();
 testAdoptedProgressionAppliesOnceToNextMenu();
 testMaxCandidateAndAdoption();
 testDeloadMaxTestResult();
+testBlockSuggestionPainSeverity();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
 console.log('test_progression.js: all tests passed');
