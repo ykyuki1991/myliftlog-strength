@@ -120,7 +120,10 @@ function testRotationProgressionRules() {
   assert.strictEqual(hard.delta, 0);
   assert.strictEqual(hard.recommendation, 'hold');
 
-  const painful = api.evaluateRotationProgression(big3Log({ rpe: '8', pains: ['肩'] }));
+  const discomfort = api.evaluateRotationProgression(big3Log({ rpe: '8', pains: ['違和感'] }));
+  assert.strictEqual(discomfort.delta, 2.5);
+
+  const painful = api.evaluateRotationProgression(big3Log({ rpe: '8', pains: ['痛み'] }));
   assert.strictEqual(painful.delta, 0);
 
   const failed = api.evaluateRotationProgression(big3Log({ doneSets: 2 }));
