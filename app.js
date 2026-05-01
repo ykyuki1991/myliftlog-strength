@@ -95,8 +95,8 @@ const REST_TIME_SEC = {
   default: 120,
 };
 
-// 痛み選択肢
-const PAIN_OPTIONS = ['なし', '肘', '肩', '腰', '膝', 'その他'];
+// 状態選択肢。部位チェックだけで重量提案を止めないため、強度を中心に記録する。
+const PAIN_OPTIONS = ['なし', '違和感', '痛み', '強い痛み'];
 
 // RPE選択肢
 const RPE_OPTIONS = ['未入力', '6', '7', '8', '8.5', '9', '9.5', '10'];
@@ -115,6 +115,77 @@ const DELOAD_MAX_TEST_MODES = {
   fiveRm: '5RM測定',
   trueOneRm: '真の1RM測定',
 };
+
+const ACCESSORY_PRESET_GROUPS = [
+  {
+    group: '胸',
+    presets: [
+      { key: 'incline_db', name: 'インクラインDBプレス', slotName: '胸補助', setsText: '3', plannedSets: 3, reps: '8〜10', targetRpe: '8〜9', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], weightType: 'dumbbell' },
+      { key: 'db_press', name: 'ダンベルプレス', slotName: '胸補助', setsText: '3', plannedSets: 3, reps: '8〜10', targetRpe: '8〜9', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], weightType: 'dumbbell' },
+      { key: 'machine_chest_press', name: 'マシンチェストプレス', slotName: '胸補助', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], weightType: 'upper_machine' },
+      { key: 'pec_fly', name: 'ペックフライ', slotName: '胸補助', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'upper_machine' },
+      { key: 'cable_fly', name: 'ケーブルフライ', slotName: '胸補助', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'cable' },
+      { key: 'dips', name: 'ディップス', slotName: '胸・三頭補助', setsText: '2〜3', plannedSets: 3, reps: '6〜10', targetRpe: '8〜9', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'], weightType: 'bodyweight' },
+    ],
+  },
+  {
+    group: '背中',
+    presets: [
+      { key: 'chinning', name: 'チンニング', slotName: 'チンニング', setsText: '2〜3', plannedSets: 3, reps: '5〜8', targetRpe: '8', categories: ['背中', 'チンニング系'], fatigueTags: ['肘負荷', '握力負荷'], weightType: 'bodyweight' },
+      { key: 'latpulldown', name: 'ラットプルダウン', slotName: '背中', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中'], fatigueTags: ['肘負荷'], weightType: 'upper_machine' },
+      { key: 'seated_row', name: 'シーテッドロウ', slotName: '背中', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], weightType: 'upper_machine' },
+      { key: 'machine_row', name: 'マシンロウ', slotName: '背中', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], weightType: 'upper_machine' },
+      { key: 'cable_row', name: 'ケーブルロウ', slotName: '背中', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], weightType: 'cable' },
+      { key: 'one_hand_db_row', name: 'ワンハンドDBロウ', slotName: '背中', setsText: '2〜3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['腰負荷', '握力負荷'], weightType: 'dumbbell' },
+      { key: 'barbell_row', name: 'バーベルロウ', slotName: '背中', setsText: '2〜3', plannedSets: 3, reps: '6〜10', targetRpe: '8', categories: ['背中', 'ロウ系', 'デッド・腰背部負荷'], fatigueTags: ['腰負荷', '握力負荷'], weightType: 'barbell' },
+    ],
+  },
+  {
+    group: '脚',
+    presets: [
+      { key: 'legpress', name: 'レッグプレス', slotName: '脚前側補助', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], weightType: 'leg_machine' },
+      { key: 'hack_squat', name: 'ハックスクワット', slotName: '脚前側補助', setsText: '2〜3', plannedSets: 3, reps: '8〜10', targetRpe: '8', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], weightType: 'leg_machine' },
+      { key: 'leg_extension', name: 'レッグエクステンション', slotName: '脚前側補助', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], weightType: 'leg_machine' },
+      { key: 'leg_curl', name: 'レッグカール', slotName: '脚後側補助', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['脚後側', '脚補助'], fatigueTags: ['低リスク'], weightType: 'leg_machine' },
+      { key: 'bulgarian_split_squat', name: 'ブルガリアンスクワット', slotName: '脚前側補助', setsText: '2', plannedSets: 2, reps: '8〜12', targetRpe: '8', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], weightType: 'dumbbell' },
+      { key: 'romanian_deadlift', name: 'ルーマニアンデッドリフト', slotName: '脚後側補助', setsText: '2〜3', plannedSets: 3, reps: '6〜10', targetRpe: '8', categories: ['脚後側', 'デッド・腰背部負荷'], fatigueTags: ['腰負荷', '握力負荷'], weightType: 'barbell' },
+      { key: 'calf', name: 'カーフレイズ', slotName: 'カーフ', setsText: '2〜4', plannedSets: 4, reps: '12〜20', targetRpe: '8〜9', categories: ['カーフ', '脚補助'], fatigueTags: ['低リスク'], weightType: 'leg_machine' },
+      { key: 'seated_calf', name: 'シーテッドカーフレイズ', slotName: 'カーフ', setsText: '2〜4', plannedSets: 4, reps: '12〜20', targetRpe: '8〜9', categories: ['カーフ', '脚補助'], fatigueTags: ['低リスク'], weightType: 'leg_machine' },
+    ],
+  },
+  {
+    group: '肩',
+    presets: [
+      { key: 'shoulder', name: 'ショルダープレス', slotName: '肩', setsText: '2〜3', plannedSets: 3, reps: '5〜8', targetRpe: '7〜8', categories: ['肩', '肩プレス系'], fatigueTags: ['肩負荷'], weightType: 'dumbbell' },
+      { key: 'machine_shoulder_press', name: 'マシンショルダープレス', slotName: '肩', setsText: '2〜3', plannedSets: 3, reps: '6〜10', targetRpe: '7〜8', categories: ['肩', '肩プレス系'], fatigueTags: ['肩負荷'], weightType: 'upper_machine' },
+      { key: 'side_raise', name: 'サイドレイズ', slotName: '肩', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['肩', '横肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'dumbbell' },
+      { key: 'cable_side_raise', name: 'ケーブルサイドレイズ', slotName: '肩', setsText: '2〜3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['肩', '横肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'cable' },
+      { key: 'rear_delt_fly', name: 'リアデルトフライ', slotName: 'リアデルト系', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['肩', '後ろ肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'upper_machine' },
+      { key: 'face_pull', name: 'フェイスプル', slotName: 'リアデルト系', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['肩', '後ろ肩', '背中', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'cable' },
+      { key: 'front_raise', name: 'フロントレイズ', slotName: '肩', setsText: '2', plannedSets: 2, reps: '10〜15', targetRpe: '8', categories: ['肩'], fatigueTags: ['肩負荷'], weightType: 'dumbbell' },
+    ],
+  },
+  {
+    group: '腕',
+    presets: [
+      { key: 'preacher', name: 'ワンハンドDBプリーチャーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
+      { key: 'preacher_curl', name: 'プリーチャーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'upper_machine' },
+      { key: 'hammer_curl', name: 'ハンマーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
+      { key: 'cable_curl', name: 'ケーブルカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'cable' },
+      { key: 'lying_ext', name: 'ライイングエクステンション', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'barbell' },
+      { key: 'cable_pressdown', name: 'ケーブルプレスダウン', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'cable' },
+      { key: 'oh_triceps_ext', name: 'オーバーヘッドトライセプスエクステンション', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷', '肩負荷'], weightType: 'cable' },
+    ],
+  },
+  {
+    group: 'カスタム',
+    presets: [
+      { key: 'custom', name: '自由入力', slotName: '補助スロット', setsText: '2', plannedSets: 2, reps: '8〜12', targetRpe: '8', categories: [], fatigueTags: [], weightType: 'upper_machine', custom: true },
+    ],
+  },
+];
+
+const ACCESSORY_PRESETS = ACCESSORY_PRESET_GROUPS.flatMap(group => group.presets.map(preset => ({ ...preset, group: group.group })));
 
 const ACCESSORY_CATEGORIES = [
   '胸', '背中', '肩', '腕', '脚前側', '脚後側', 'カーフ',
@@ -163,7 +234,7 @@ const DEFAULT_ACCESSORY_SLOTS = {
   3: [
     { slotId: 'd3-shoulder', slotName: '肩', key: 'shoulder', name: 'ショルダープレス', setsText: '2〜3', plannedSets: 3, reps: '5〜8', targetRpe: '7〜8', categories: ['肩', '肩補助', '肩プレス系'], fatigueTags: ['肩負荷'], weightType: 'upper_machine', restType: 'shoulder' },
     { slotId: 'd3-side-raise', slotName: '肩', key: 'side_raise', name: 'サイドレイズ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['肩', '肩補助', '横肩'], fatigueTags: ['低リスク', '肩負荷'], weightType: 'dumbbell', restType: 'default' },
-    { slotId: 'd3-back-friendly', slotName: '腰に優しい背中', key: 'friendly_row', name: '腰に優しいロウ系', setsText: '2〜3', plannedSets: 3, reps: '8〜10', targetRpe: '8', categories: ['背中', 'ロウ系'], fatigueTags: ['腰に優しい', '低リスク'], weightType: 'upper_machine', restType: 'row' },
+    { slotId: 'd3-back-friendly', slotName: '背中', key: 'friendly_row', name: 'ロウ系', setsText: '2〜3', plannedSets: 3, reps: '8〜10', targetRpe: '8', categories: ['背中', 'ロウ系'], fatigueTags: ['腰に優しい', '低リスク'], weightType: 'upper_machine', restType: 'row' },
     { slotId: 'd3-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['カーフ'], fatigueTags: ['低リスク'], weightType: 'calf', restType: 'calf' },
   ],
   5: [
@@ -179,7 +250,7 @@ const DEFAULT_ACCESSORY_SLOTS = {
     { slotId: 'd6-arm-ext', slotName: '腕', key: 'lying_ext', name: 'ライイングエクステンション', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'arm', restType: 'arm' },
   ],
   7: [
-    { slotId: 'd7-back-friendly', slotName: '腰に優しい背中', key: 'friendly_row', name: '腰に優しいロウ系', setsText: '2', plannedSets: 2, reps: '8〜12', targetRpe: '8', categories: ['背中', 'ロウ系'], fatigueTags: ['腰に優しい', '低リスク'], weightType: 'upper_machine', restType: 'row' },
+    { slotId: 'd7-back-friendly', slotName: '背中', key: 'friendly_row', name: 'ロウ系', setsText: '2', plannedSets: 2, reps: '8〜12', targetRpe: '8', categories: ['背中', 'ロウ系'], fatigueTags: ['腰に優しい', '低リスク'], weightType: 'upper_machine', restType: 'row' },
     { slotId: 'd7-chin', slotName: 'チンニング', key: 'chinning', name: 'チンニング', setsText: '2', plannedSets: 2, reps: '5〜8', targetRpe: '8', categories: ['背中', 'チンニング系'], fatigueTags: ['肘負荷', '握力負荷'], weightType: 'bodyweight', restType: 'chinning' },
     { slotId: 'd7-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['カーフ'], fatigueTags: ['低リスク'], weightType: 'calf', restType: 'calf' },
   ],
@@ -300,6 +371,40 @@ function parseRpeValue(value) {
   return Math.max(...nums.map(Number));
 }
 
+function getAccessoryPreset(keyOrName) {
+  const value = String(keyOrName || '');
+  return ACCESSORY_PRESETS.find(p => p.key === value || p.name === value) || null;
+}
+
+function inferPresetKey(slot = {}) {
+  const byKey = getAccessoryPreset(slot.key);
+  if (byKey) return byKey.key;
+  const byName = getAccessoryPreset(slot.name);
+  return byName ? byName.key : 'custom';
+}
+
+function accessoryPresetOptionsHtml(selectedKey = 'custom') {
+  return ACCESSORY_PRESET_GROUPS.map(group => `
+    <optgroup label="${group.group}">
+      ${group.presets.map(preset => `<option value="${preset.key}" ${preset.key === selectedKey ? 'selected' : ''}>${preset.name}</option>`).join('')}
+    </optgroup>
+  `).join('');
+}
+
+function applyAccessoryPresetToSlot(base = {}, presetKey = 'custom') {
+  const preset = getAccessoryPreset(presetKey) || getAccessoryPreset('custom');
+  const keepCustomName = preset?.custom && base.name && base.name !== '新規補助種目';
+  return normalizeAccessorySlot({
+    ...base,
+    ...preset,
+    slotId: base.slotId || preset.slotId,
+    key: preset.custom ? (base.key || `custom_${uid()}`) : preset.key,
+    name: keepCustomName ? base.name : preset.name,
+    plannedWeight: base.plannedWeight ?? base.weight ?? null,
+    restType: base.restType || preset.restType || 'default',
+  });
+}
+
 function isBig3Key(key) {
   return Object.prototype.hasOwnProperty.call(BIG3_LIFTS, key);
 }
@@ -309,11 +414,11 @@ function isLightBig3Menu(menuType = '') {
 }
 
 function hasFormIssue(note = '') {
-  return /フォーム|崩|不安|違和感|乱れ/.test(String(note || ''));
+  return /フォーム|崩|不安|乱れ/.test(String(note || ''));
 }
 
 function hasLogPain(log) {
-  return (log?.pains || []).some(p => p && p !== 'なし');
+  return (log?.pains || []).some(p => ['痛み', '強い痛み'].includes(p));
 }
 
 function isLogFailed(log) {
@@ -742,6 +847,8 @@ function inferAccessoryWeightType(slot) {
   if (cats.includes('チンニング系') || name.includes('チンニング') || name.includes('ディップス')) return 'bodyweight';
   if (cats.includes('腕') || name.includes('カール') || name.includes('エクステンション')) return 'arm';
   if (name.includes('DB') || name.includes('ダンベル')) return 'dumbbell';
+  if (name.includes('ケーブル') || name.includes('フェイスプル')) return 'cable';
+  if (name.includes('バーベル')) return 'barbell';
   return 'upper_machine';
 }
 
@@ -811,26 +918,27 @@ function getAccessoryLoadWarnings(settings = store.settings) {
   const warnings = [];
   Object.entries(ACCESSORY_LOAD_LIMITS).forEach(([key, limit]) => {
     const value = summary[key] || 0;
-    if (value >= limit.danger) warnings.push({ level: 'danger', message: `${key} が危険ライン (${value}/${limit.danger}セット) です。関連補助のセット削減を検討してください。` });
-    else if (value >= limit.caution) warnings.push({ level: 'caution', message: `${key} が注意ライン (${value}/${limit.caution}セット) です。疲労や痛みを見ながら進めてください。` });
+    const label = key === 'デッド・腰背部負荷' ? '腰負荷' : key;
+    if (value >= limit.danger) warnings.push({ level: 'danger', message: `${label}高負荷` });
+    else if (value >= limit.caution) warnings.push({ level: 'caution', message: `${label}多め` });
   });
-  if ((summary['背中'] || 0) < 10) warnings.push({ level: 'caution', message: `背中系が8日で10セット未満です (${summary['背中'] || 0}セット)。ベンチ・デッドの安定のため追加を検討してください。` });
-  if (!plan.some(ex => ex.categories.includes('脚補助'))) warnings.push({ level: 'caution', message: '脚補助がゼロです。スクワット補助として脚前側/脚後側の追加を検討してください。' });
-  if (!plan.some(ex => ex.categories.includes('肩'))) warnings.push({ level: 'caution', message: '肩補助がゼロです。肩の耐性作りとして低リスク種目の追加を検討してください。' });
-  if ((summary['横肩'] || 0) === 0) warnings.push({ level: 'caution', message: '横肩の直接刺激が不足しています。サイドレイズの追加を検討してください。' });
-  if ((summary['後ろ肩'] || 0) === 0) warnings.push({ level: 'caution', message: '後ろ肩の直接刺激が不足しています。リアデルトフライやフェイスプルの追加を検討してください。' });
+  if ((summary['背中'] || 0) < 10) warnings.push({ level: 'caution', message: '背中少なめ' });
+  if (!plan.some(ex => ex.categories.includes('脚補助'))) warnings.push({ level: 'caution', message: '脚補助不足' });
+  if (!plan.some(ex => ex.categories.includes('肩'))) warnings.push({ level: 'caution', message: '肩補助不足' });
+  if ((summary['横肩'] || 0) === 0) warnings.push({ level: 'caution', message: '横肩不足' });
+  if ((summary['後ろ肩'] || 0) === 0) warnings.push({ level: 'caution', message: '後ろ肩不足' });
   const shoulderAccessories = plan.filter(ex => ex.categories.includes('肩') || ex.categories.includes('肩補助'));
   if (shoulderAccessories.length > 0 && shoulderAccessories.every(ex => ex.categories.includes('肩プレス系'))) {
-    warnings.push({ level: 'caution', message: '肩補助が前肩寄りです。サイドレイズやリア系の追加を検討してください。' });
+    warnings.push({ level: 'caution', message: '肩が前側寄り' });
   }
-  if (!plan.some(ex => ex.categories.includes('腕'))) warnings.push({ level: 'caution', message: '腕補助がゼロです。肘の状態を見ながら最小限の腕補助を検討してください。' });
-  if (!plan.some(ex => ex.categories.includes('背中') && ex.fatigueTags.includes('腰に優しい'))) warnings.push({ level: 'caution', message: '腰に優しい背中種目がゼロです。Day3/Day7に腰に優しいロウ系を入れると疲労干渉を抑えやすくなります。' });
+  if (!plan.some(ex => ex.categories.includes('腕'))) warnings.push({ level: 'caution', message: '腕補助不足' });
+  if (!plan.some(ex => ex.categories.includes('背中') && ex.fatigueTags.includes('腰に優しい'))) warnings.push({ level: 'caution', message: '背中少なめ' });
   plan.filter(ex => (ex.day === 3 || ex.day === 7) && ex.categories.includes('ロウ系') && ex.fatigueTags.includes('腰負荷'))
-    .forEach(ex => warnings.push({ level: 'caution', message: `Day${ex.day} の ${ex.name} に腰負荷タグがあります。腰に優しい背中種目への変更を検討してください。` }));
+    .forEach(ex => warnings.push({ level: 'caution', message: `Day${ex.day} 腰負荷あり` }));
   if ((summary['肩負荷'] || 0) >= 24 && (summary['ベンチ系プレス'] || 0) >= ACCESSORY_LOAD_LIMITS['ベンチ系プレス'].caution) {
-    warnings.push({ level: 'caution', message: '肩負荷全体が多めで、ベンチ系プレスも多い状態です。肩痛がある日は低リスク種目への変更やセット削減を検討してください。' });
+    warnings.push({ level: 'caution', message: '肩負荷多め' });
   }
-  return warnings;
+  return warnings.filter((w, idx, arr) => arr.findIndex(other => other.message === w.message) === idx);
 }
 
 function getAccessorySafetyWarnings(slot, day = null) {
@@ -838,14 +946,14 @@ function getAccessorySafetyWarnings(slot, day = null) {
   const normalized = normalizeAccessorySlot(slot);
   if (!normalized) return warnings;
   if ((Number(day) === 3 || Number(day) === 7) && normalized.fatigueTags.includes('腰負荷')) {
-    warnings.push(`Day${day}に腰負荷タグ付き種目を入れています。腰に優しい種目か確認してください。`);
+    warnings.push(`Day${day}: 腰負荷あり`);
   }
   const recentPainLogs = store.logs.filter(l => Array.isArray(l.pains) && l.pains.some(p => p && p !== 'なし'));
-  if (normalized.fatigueTags.includes('肩負荷') && recentPainLogs.some(l => l.pains.includes('肩'))) {
-    warnings.push('肩痛ログがあります。肩負荷タグ付き種目の追加・増量は痛みを見ながら行ってください。');
+  if (normalized.fatigueTags.includes('肩負荷') && recentPainLogs.some(l => l.pains.includes('痛み') || l.pains.includes('強い痛み'))) {
+    warnings.push('痛みログあり。肩負荷は慎重に');
   }
-  if (normalized.fatigueTags.includes('肘負荷') && recentPainLogs.some(l => l.pains.includes('肘'))) {
-    warnings.push('肘痛ログがあります。肘負荷タグ付き種目の追加・増量は痛みを見ながら行ってください。');
+  if (normalized.fatigueTags.includes('肘負荷') && recentPainLogs.some(l => l.pains.includes('痛み') || l.pains.includes('強い痛み'))) {
+    warnings.push('痛みログあり。肘負荷は慎重に');
   }
   return warnings;
 }
@@ -867,12 +975,18 @@ function allDoneSetsHitUpper(ex) {
 }
 
 function hasPain(ex) {
-  return (ex.pains || []).some(p => p && p !== 'なし');
+  return (ex.pains || []).some(p => ['痛み', '強い痛み'].includes(p));
+}
+
+function hasStrongPain(ex) {
+  return (ex.pains || []).includes('強い痛み');
 }
 
 function weightStepText(weightType) {
   switch (weightType) {
     case 'dumbbell': return '片手+1〜2kg';
+    case 'cable': return '+1〜2.5kg';
+    case 'barbell': return '+2.5〜5kg';
     case 'leg_machine': return '+5〜10kg';
     case 'bodyweight': return '上限回数達成後に+2.5kg加重';
     case 'arm': return '+1〜2kg';
@@ -915,7 +1029,8 @@ function suggestAccessoryProgression(ex, mode = store.settings.accessoryManageme
   const twoEasy = recentClass.length >= 2 && recentClass.every(v => v === 'easy');
   const twoHeavy = recentClass.length >= 2 && recentClass.every(v => v === 'heavy');
 
-  if (painful) return `痛みあり: 重量据え置き、1セット削減、または ${ex.fatigueTags?.join('・') || '関連タグ'} の少ない種目変更を提案`;
+  if (hasStrongPain(ex)) return '強い痛み: 据え置き、セット削減、種目変更を提案';
+  if (painful) return '痛みあり: 重量アップは慎重に。違和感程度なら記録のみ';
   if (mode === 'aggressive') {
     if (hitUpper && rpe != null && rpe <= 7) return `軽すぎ: ${weightStepText(ex.weightType)} か1セット追加を提案`;
     if (hitUpper && rpe != null && rpe >= 8 && rpe <= 9) return '適正: この負荷を継続';
@@ -1541,7 +1656,7 @@ function renderToday() {
 
   const exHtml = session.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx)).join('');
   const accessoryWarnings = getAccessoryLoadWarnings(store.settings)
-    .filter(w => w.message.includes('横肩') || w.message.includes('後ろ肩') || w.message.includes('肩補助'))
+    .filter(w => w.message.includes('横肩') || w.message.includes('後ろ肩') || w.message.includes('肩'))
     .map(w => `<div class="load-warning load-warning-caution"><span>注意</span>${w.message}</div>`)
     .join('');
 
@@ -1554,7 +1669,6 @@ function renderToday() {
     ${exHtml}
     <div class="section">
       <button class="btn-primary btn-block" id="btnAddTodayAccessory">＋補助種目を追加</button>
-      <div class="muted mt-8" style="font-size:12px;">今日だけ追加、または今後の同じDayにも反映できます。</div>
     </div>
     <div class="section">
       <button class="btn-success btn-block" id="btnFinishSession">トレーニング完了</button>
@@ -1633,7 +1747,7 @@ function renderExerciseCard(ex, exIdx) {
         ${rpeChips}
       </div>
       <div class="row-rpe-pain">
-        <div class="muted" style="width:100%;font-size:12px;">痛み:</div>
+        <div class="muted" style="width:100%;font-size:12px;">状態:</div>
         ${painChips}
       </div>
 
@@ -1822,34 +1936,45 @@ function openAdjustModal(exIdx) {
 
 function slotFormHtml(prefix, ex) {
   const slotOptions = ['補助スロット', '脚前側補助', 'カーフ', '胸補助', '背中', '腕', '肩', 'リアデルト系', '腰に優しい背中', 'チンニング', '胸・三頭補助'];
+  const selectedPreset = inferPresetKey(ex);
   return `
-    <label class="field"><span>スロット</span>
-      <input type="text" id="${prefix}-slotName" value="${ex.slotName || '補助スロット'}" list="${prefix}-slot-options" />
-      <datalist id="${prefix}-slot-options">
-        ${slotOptions.map(v => `<option value="${v}"></option>`).join('')}
-      </datalist>
-    </label>
-    <label class="field"><span>種目名</span><input type="text" id="${prefix}-name" value="${ex.name || ''}" /></label>
-    <label class="field"><span>セット数</span><input type="number" min="0" id="${prefix}-sets" value="${ex.plannedSets || 1}" /></label>
-    <label class="field"><span>レップ範囲</span><input type="text" id="${prefix}-reps" value="${ex.plannedReps || ex.reps || ''}" /></label>
-    <label class="field"><span>目標RPE</span><input type="text" id="${prefix}-rpe" value="${ex.targetRpe || '8'}" /></label>
-    <label class="field"><span>予定重量(kg)</span><input type="number" step="0.5" id="${prefix}-weight" value="${ex.plannedWeight ?? ''}" placeholder="未設定でもOK" /></label>
-    <label class="field"><span>カテゴリ（、区切り）</span><input type="text" id="${prefix}-categories" value="${(ex.categories || []).join('、')}" /></label>
-    <div class="accessory-meta accessory-form-chips">${ACCESSORY_CATEGORIES.map(c => `<span class="accessory-chip" data-chip-target="${prefix}-categories" data-chip-value="${c}">${c}</span>`).join('')}</div>
-    <label class="field"><span>疲労タグ（、区切り）</span><input type="text" id="${prefix}-tags" value="${(ex.fatigueTags || []).join('、')}" /></label>
-    <div class="accessory-meta accessory-form-chips">${ACCESSORY_FATIGUE_TAGS.map(t => `<span class="accessory-chip accessory-chip-fatigue" data-chip-target="${prefix}-tags" data-chip-value="${t}">${t}</span>`).join('')}</div>
-    <label class="field"><span>重量タイプ</span>
-      <select id="${prefix}-weightType">
-        ${[
-          ['dumbbell', 'ダンベル片手種目'],
-          ['upper_machine', '上半身マシン・バーベル'],
-          ['leg_machine', '脚マシン'],
-          ['bodyweight', '自重種目'],
-          ['arm', '腕種目'],
-          ['calf', 'カーフ'],
-        ].map(([v, label]) => `<option value="${v}" ${ex.weightType === v ? 'selected' : ''}>${label}</option>`).join('')}
+    <label class="field"><span>種目</span>
+      <select id="${prefix}-preset" data-preset-select="${prefix}">
+        ${accessoryPresetOptionsHtml(selectedPreset)}
       </select>
     </label>
+    <label class="field"><span>種目名</span><input type="text" id="${prefix}-name" value="${ex.name || ''}" placeholder="自由入力の場合のみ編集" /></label>
+    <label class="field"><span>セット数</span><input type="number" min="0" id="${prefix}-sets" value="${ex.plannedSets || 1}" /></label>
+    <label class="field"><span>回数</span><input type="text" id="${prefix}-reps" value="${ex.plannedReps || ex.reps || ''}" /></label>
+    <label class="field"><span>RPE</span><input type="text" id="${prefix}-rpe" value="${ex.targetRpe || '8'}" /></label>
+    <label class="field"><span>予定重量(kg)</span><input type="number" step="0.5" id="${prefix}-weight" value="${ex.plannedWeight ?? ''}" placeholder="未設定でもOK" /></label>
+    <details class="accessory-details">
+      <summary>詳細設定</summary>
+      <label class="field"><span>スロット</span>
+        <input type="text" id="${prefix}-slotName" value="${ex.slotName || '補助スロット'}" list="${prefix}-slot-options" />
+        <datalist id="${prefix}-slot-options">
+          ${slotOptions.map(v => `<option value="${v}"></option>`).join('')}
+        </datalist>
+      </label>
+      <label class="field"><span>カテゴリ</span><input type="text" id="${prefix}-categories" value="${(ex.categories || []).join('、')}" /></label>
+      <div class="accessory-meta accessory-form-chips">${ACCESSORY_CATEGORIES.map(c => `<span class="accessory-chip" data-chip-target="${prefix}-categories" data-chip-value="${c}">${c}</span>`).join('')}</div>
+      <label class="field"><span>疲労タグ</span><input type="text" id="${prefix}-tags" value="${(ex.fatigueTags || []).join('、')}" /></label>
+      <div class="accessory-meta accessory-form-chips">${ACCESSORY_FATIGUE_TAGS.map(t => `<span class="accessory-chip accessory-chip-fatigue" data-chip-target="${prefix}-tags" data-chip-value="${t}">${t}</span>`).join('')}</div>
+      <label class="field"><span>重量タイプ</span>
+        <select id="${prefix}-weightType">
+          ${[
+            ['dumbbell', 'ダンベル片手'],
+            ['upper_machine', '上半身マシン'],
+            ['leg_machine', 'マシン脚'],
+            ['bodyweight', '自重'],
+            ['cable', 'ケーブル'],
+            ['barbell', 'バーベル/EZバー'],
+            ['arm', '腕種目'],
+            ['calf', 'カーフ'],
+          ].map(([v, label]) => `<option value="${v}" ${ex.weightType === v ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </label>
+    </details>
   `;
 }
 
@@ -1858,11 +1983,13 @@ function readSlotForm(prefix, base = {}) {
   const plannedSets = Math.max(0, parseInt(document.getElementById(`${prefix}-sets`).value, 10) || 0);
   const reps = document.getElementById(`${prefix}-reps`).value.trim() || '8〜12';
   const plannedWeightRaw = document.getElementById(`${prefix}-weight`)?.value ?? '';
+  const presetKey = document.getElementById(`${prefix}-preset`)?.value || inferPresetKey(base);
+  const preset = getAccessoryPreset(presetKey);
   return normalizeAccessorySlot({
     ...base,
     slotName: document.getElementById(`${prefix}-slotName`)?.value.trim() || base.slotName || '補助スロット',
     name,
-    key: base.key || accessoryKeyFromName(name),
+    key: preset && !preset.custom ? preset.key : (base.key || accessoryKeyFromName(name)),
     plannedSets,
     setsText: String(plannedSets),
     reps,
@@ -1885,6 +2012,29 @@ function bindSlotFormChips(prefix) {
       input.value = next.join('、');
     };
   });
+}
+
+function fillSlotFormFromPreset(prefix, presetKey) {
+  const preset = getAccessoryPreset(presetKey);
+  if (!preset) return;
+  const setValue = (id, value) => {
+    const el = document.getElementById(`${prefix}-${id}`);
+    if (el) el.value = value ?? '';
+  };
+  setValue('name', preset.custom ? '' : preset.name);
+  setValue('slotName', preset.slotName);
+  setValue('sets', preset.plannedSets);
+  setValue('reps', preset.reps);
+  setValue('rpe', preset.targetRpe);
+  setValue('categories', (preset.categories || []).join('、'));
+  setValue('tags', (preset.fatigueTags || []).join('、'));
+  setValue('weightType', preset.weightType);
+}
+
+function bindAccessoryPresetSelect(prefix) {
+  const select = document.getElementById(`${prefix}-preset`);
+  if (!select) return;
+  select.onchange = () => fillSlotFormFromPreset(prefix, select.value);
 }
 
 function applySlotToExercise(ex, updated) {
@@ -1922,6 +2072,7 @@ function openAccessoryTodayModal(exIdx) {
     </div>
   `, () => {
     bindSlotFormChips('accToday');
+    bindAccessoryPresetSelect('accToday');
     document.getElementById('acc-today-only').onclick = () => {
       const updated = readSlotForm('accToday', ex);
       applySlotToExercise(ex, updated);
@@ -1985,6 +2136,7 @@ function openAccessoryTodayAddModal() {
     </div>
   `, () => {
     bindSlotFormChips('accAddToday');
+    bindAccessoryPresetSelect('accAddToday');
     document.getElementById('acc-add-today-only').onclick = () => {
       const updated = readSlotForm('accAddToday', base);
       const ex = accessoryExerciseFromSlot(updated, store.settings, session.isDeload, session.day);
@@ -2095,6 +2247,7 @@ function openAccessorySlotSettingsModal(day, slot) {
     </div>
   `, () => {
     bindSlotFormChips('accSlot');
+    bindAccessoryPresetSelect('accSlot');
     document.getElementById('acc-slot-save').onclick = () => {
       const updated = readSlotForm('accSlot', slot);
       if (!confirmAccessoryChange('この補助種目の変更を今後にも反映しますか？', updated, day)) return;
@@ -2137,6 +2290,7 @@ function openAccessorySlotAddModal(day) {
     </div>
   `, () => {
     bindSlotFormChips('accSlotAdd');
+    bindAccessoryPresetSelect('accSlotAdd');
     document.getElementById('acc-slot-add-save').onclick = () => {
       const updated = readSlotForm('accSlotAdd', base);
       if (!confirmAccessoryChange('この補助種目を今後のメニューに追加しますか？', updated, day)) return;
@@ -3057,11 +3211,11 @@ function renderAccessorySlotEditor(context = 'settings') {
   const dayLabels = {
     1: 'Day1: 脚前側補助 / カーフ',
     2: 'Day2: 胸補助 / 背中 / 腕',
-    3: 'Day3: 肩（前肩・横肩） / 腰に優しい背中 / カーフ',
+    3: 'Day3: 肩（前肩・横肩） / 背中 / カーフ',
     4: 'Day4: 休息日',
     5: 'Day5: 脚前側補助 / カーフ',
     6: 'Day6: 胸・三頭補助 / 背中 / リアデルト系 / 腕',
-    7: 'Day7: 腰に優しい背中 / チンニング / カーフ',
+    7: 'Day7: 背中 / チンニング / カーフ',
     8: 'Day8: 休息日',
   };
   const heading = context === 'block' ? '補助種目管理' : '補助種目編集';
@@ -3087,8 +3241,8 @@ function renderAccessorySlotEditor(context = 'settings') {
                 <div class="strong">${slot.slotName}: ${slot.name}</div>
                 <div class="muted" style="font-size:12px;">${slot.setsText || slot.plannedSets}セット / ${slot.reps}回 / 目標RPE${slot.targetRpe}</div>
                 <div class="accessory-meta" style="margin:6px 0 0;">
-                  ${(slot.categories || []).map(c => `<span class="accessory-chip">${c}</span>`).join('')}
-                  ${(slot.fatigueTags || []).map(t => `<span class="accessory-chip accessory-chip-fatigue">${t}</span>`).join('')}
+                  ${(slot.categories || []).slice(0, 3).map(c => `<span class="accessory-chip">${c}</span>`).join('')}
+                  ${(slot.fatigueTags || []).slice(0, 2).map(t => `<span class="accessory-chip accessory-chip-fatigue">${t}</span>`).join('')}
                 </div>
               </div>
               <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="-1" ${idx === 0 ? 'disabled style="opacity:0.45;"' : ''}>上へ</button>
@@ -3432,6 +3586,10 @@ if (typeof window !== 'undefined') {
     setupRestTimerControls,
     setupRestTimerLifecycleEvents,
     getDayMenu,
+    getAccessoryPreset,
+    applyAccessoryPresetToSlot,
+    accessoryPresetOptionsHtml,
+    fillSlotFormFromPreset,
     estimateMaxFromSet,
     createEstimatedMaxEntry,
     upsertEstimatedMaxFromLog,

@@ -118,11 +118,30 @@ function testLoadSummaryAndWarnings() {
   const savedSlots = store.settings.accessorySlots;
   store.settings.accessorySlots = { 1: [], 2: [], 3: [], 5: [], 6: [], 7: [] };
   const cutWarnings = api.getAccessoryLoadWarnings(store.settings);
-  assert.ok(cutWarnings.some(w => w.message.includes('背中系が8日で10セット未満')));
-  assert.ok(cutWarnings.some(w => w.message.includes('脚補助がゼロ')));
-  assert.ok(cutWarnings.some(w => w.message.includes('横肩の直接刺激')));
-  assert.ok(cutWarnings.some(w => w.message.includes('後ろ肩の直接刺激')));
+  assert.ok(cutWarnings.some(w => w.message.includes('背中少なめ')));
+  assert.ok(cutWarnings.some(w => w.message.includes('脚補助不足')));
+  assert.ok(cutWarnings.some(w => w.message.includes('横肩不足')));
+  assert.ok(cutWarnings.some(w => w.message.includes('後ろ肩不足')));
   store.settings.accessorySlots = savedSlots;
+}
+
+function testAccessoryPresetSelection() {
+  const html = api.accessoryPresetOptionsHtml('side_raise');
+  const order = ['label="胸"', 'label="背中"', 'label="脚"', 'label="肩"', 'label="腕"', 'label="カスタム"'].map(label => html.indexOf(label));
+  assert.ok(order.every(i => i >= 0));
+  assert.deepStrictEqual([...order].sort((a, b) => a - b), order);
+
+  const sideRaise = api.applyAccessoryPresetToSlot({}, 'side_raise');
+  assert.strictEqual(sideRaise.name, 'サイドレイズ');
+  assert.strictEqual(sideRaise.plannedSets, 3);
+  assert.strictEqual(sideRaise.reps, '12〜20');
+  assert.strictEqual(sideRaise.targetRpe, '8〜9');
+  assert.ok(sideRaise.categories.includes('横肩'));
+  assert.ok(sideRaise.fatigueTags.includes('低リスク'));
+  assert.strictEqual(sideRaise.weightType, 'dumbbell');
+
+  const custom = api.applyAccessoryPresetToSlot({ name: '自作種目', plannedSets: 2, reps: '10〜12', targetRpe: '8' }, 'custom');
+  assert.strictEqual(custom.name, '自作種目');
 }
 
 function testUpdateMoveResetAndBlockEditor() {
@@ -164,10 +183,13 @@ function testAccessoryProgression() {
     pains: [],
   };
   assert.ok(api.suggestAccessoryProgression(ex).includes('軽すぎ'));
+  ex.pains = ['違和感'];
+  assert.ok(api.suggestAccessoryProgression(ex).includes('軽すぎ'));
   ex.rpe = '9';
+  ex.pains = [];
   assert.ok(api.suggestAccessoryProgression(ex).includes('適正'));
-  ex.pains = ['肩'];
-  assert.ok(api.suggestAccessoryProgression(ex).includes('痛みあり'));
+  ex.pains = ['強い痛み'];
+  assert.ok(api.suggestAccessoryProgression(ex).includes('強い痛み'));
 }
 
 function testTodayScreenRenders() {
@@ -183,6 +205,7 @@ testBig3Unaffected();
 testEightDayMenusAndAccessorySlots();
 testAddDeleteAccessory();
 testLoadSummaryAndWarnings();
+testAccessoryPresetSelection();
 testUpdateMoveResetAndBlockEditor();
 testAccessoryProgression();
 testTodayScreenRenders();
