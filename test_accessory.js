@@ -182,9 +182,9 @@ function testAccessoryProgression() {
     rpe: '7',
     pains: [],
   };
-  assert.ok(api.suggestAccessoryProgression(ex).includes('軽すぎ'));
+  assert.ok(api.suggestAccessoryProgression(ex).includes('軽い'));
   ex.pains = ['違和感'];
-  assert.ok(api.suggestAccessoryProgression(ex).includes('軽すぎ'));
+  assert.ok(api.suggestAccessoryProgression(ex).includes('軽い'));
   ex.rpe = '9';
   ex.pains = [];
   assert.ok(api.suggestAccessoryProgression(ex).includes('適正'));
@@ -198,6 +198,8 @@ function testTodayScreenRenders() {
   if (!html.includes('今日は休み')) {
     assert.ok(html.includes('＋補助種目を追加'));
     assert.ok(html.includes('補助編集'));
+    assert.ok(!html.includes('膝負荷'), 'today accessory cards should not show fatigue tags by default');
+    assert.ok(!html.includes('脚補助'), 'today accessory cards should keep category details out of the card');
   }
 }
 
