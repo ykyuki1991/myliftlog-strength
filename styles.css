@@ -922,6 +922,9 @@ label.field > span {
   padding: 12px 4px;
   border-radius: var(--radius-sm);
   font-size: 13px;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
 }
 
 .rotation-cell.current {
@@ -929,9 +932,17 @@ label.field > span {
   color: #fff;
 }
 
+.rotation-cell.actual-current:not(.current) {
+  border-color: rgba(74,222,128,0.45);
+}
+
 .rotation-cell.deload {
   background: rgba(251,146,60,0.4);
   color: #fff;
+}
+
+.rotation-cell.current.deload {
+  background: var(--accent-strong);
 }
 
 .ui-details {
@@ -978,10 +989,50 @@ label.field > span {
 }
 
 .load-summary {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin: 8px 0 12px;
+}
+
+.major-load-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(39,52,73,0.44);
+}
+
+.major-load-card .name {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.today-progress-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.today-exercise-section h3 {
+  margin: 12px 4px 8px;
+  font-size: 15px;
+}
+
+.completed-exercises > summary {
+  color: var(--text-dim);
+}
+
+.completed-exercises .exercise-card {
+  opacity: 0.88;
+}
+
+.complete-menu-banner .big {
+  font-size: 20px;
+  font-weight: 900;
 }
 
 .emax-summary-row {
@@ -1221,6 +1272,10 @@ label.field > span {
 }
 
 @media (max-width: 430px) {
+  .load-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .app-header {
     padding-left: 12px;
     padding-right: 12px;

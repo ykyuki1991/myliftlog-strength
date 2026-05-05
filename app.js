@@ -258,6 +258,8 @@ const DEFAULT_ACCESSORY_SLOTS = {
 
 // ===== ストア =====
 let store = loadStore();
+let blockViewRotation = null;
+let accessoryEditorOpenDay = null;
 
 function defaultStore() {
   return {
@@ -1693,7 +1695,22 @@ function renderToday() {
     ? `<div class="deload-banner"><div class="label">疲労抜きローテ</div><div class="muted">RPE6以下を目安に。痛みがあれば腕トレ・ディップスはスキップ可</div></div>`
     : '';
 
-  const exHtml = session.exercises.map((ex, exIdx) => renderExerciseCard(ex, exIdx)).join('');
+  const isExerciseComplete = (ex) => (ex.sets || []).length > 0 && ex.sets.every(set => set.done);
+  const incomplete = session.exercises
+    .map((ex, exIdx) => ({ ex, exIdx }))
+    .filter(item => !isExerciseComplete(item.ex));
+  const completed = session.exercises
+    .map((ex, exIdx) => ({ ex, exIdx }))
+    .filter(item => isExerciseComplete(item.ex));
+  const incompleteHtml = incomplete.length
+    ? incomplete.map(({ ex, exIdx }) => renderExerciseCard(ex, exIdx)).join('')
+    : '<div class="section complete-menu-banner"><div class="big">今日のメニュー完了</div><div class="muted">完了済みを開くと修正できます</div></div>';
+  const completedHtml = completed.length
+    ? `<details class="section ui-details completed-exercises">
+        <summary><span>完了済み ${completed.length}件</span></summary>
+        ${completed.map(({ ex, exIdx }) => renderExerciseCard(ex, exIdx)).join('')}
+      </details>`
+    : '';
   const todayWarnings = getAccessoryLoadWarnings(store.settings)
     .filter(w => /横肩|後ろ肩|肩|肘|腰|背中/.test(w.message));
   const warningChips = todayWarnings
@@ -1710,7 +1727,15 @@ function renderToday() {
     ${deloadBanner}
     ${renderDeloadMaxTestPanel(session)}
     ${accessoryWarnings ? `<div class="section compact-section">${accessoryWarnings}</div>` : ''}
-    ${exHtml}
+    <div class="section today-progress-summary">
+      <span class="status-pill status-caution">未完了 ${incomplete.length}</span>
+      <span class="status-pill status-ok">完了済み ${completed.length}</span>
+    </div>
+    <div class="today-exercise-section">
+      <h3>未完了</h3>
+      ${incompleteHtml}
+    </div>
+    ${completedHtml}
     <div class="section">
       <button class="btn-primary btn-block" id="btnAddTodayAccessory">＋補助種目を追加</button>
     </div>
@@ -2288,6 +2313,7 @@ function moveAccessorySlot(day, slotId, direction) {
 }
 
 function openAccessorySlotSettingsModal(day, slot) {
+  accessoryEditorOpenDay = String(day);
   openModal('補助種目を今後にも反映', `
     <div class="muted mb-8">Day${day} / ${slot.slotName}</div>
     ${slotFormHtml('accSlot', { ...slot, plannedReps: slot.reps, plannedSets: slot.plannedSets })}
@@ -2319,6 +2345,7 @@ function openAccessorySlotSettingsModal(day, slot) {
 }
 
 function openAccessorySlotAddModal(day) {
+  accessoryEditorOpenDay = String(day);
   const base = normalizeAccessorySlot({
     slotId: `custom_${day}_${uid()}`,
     slotName: '補助スロット',
@@ -2354,9 +2381,21 @@ function openAccessorySlotAddModal(day) {
 }
 
 function bindAccessorySlotEditorActions() {
+  document.querySelectorAll('[data-accessory-day]').forEach(detail => {
+    detail.addEventListener('toggle', () => {
+      if (detail.open) accessoryEditorOpenDay = String(detail.dataset.accessoryDay);
+    });
+  });
+  document.querySelectorAll('button[data-current-accessory-day]').forEach(btn => {
+    btn.onclick = () => {
+      accessoryEditorOpenDay = String(store.currentState.day);
+      render();
+    };
+  });
   document.querySelectorAll('button[data-edit-slot-id]').forEach(btn => {
     btn.onclick = () => {
       const day = btn.dataset.editSlotDay;
+      accessoryEditorOpenDay = String(day);
       const slotId = btn.dataset.editSlotId;
       const slot = (store.settings.accessorySlots?.[day] || []).find(s => s.slotId === slotId);
       if (slot) openAccessorySlotSettingsModal(day, slot);
@@ -2365,6 +2404,7 @@ function bindAccessorySlotEditorActions() {
   document.querySelectorAll('button[data-delete-slot-id]').forEach(btn => {
     btn.onclick = () => {
       if (!confirm('この補助種目を今後のメニューから削除しますか？BIG3本体は削除されません。')) return;
+      accessoryEditorOpenDay = String(btn.dataset.deleteSlotDay);
       deleteAccessorySlot(btn.dataset.deleteSlotDay, btn.dataset.deleteSlotId);
       saveStore();
       render();
@@ -2372,11 +2412,15 @@ function bindAccessorySlotEditorActions() {
     };
   });
   document.querySelectorAll('button[data-add-slot-day]').forEach(btn => {
-    btn.onclick = () => openAccessorySlotAddModal(btn.dataset.addSlotDay);
+    btn.onclick = () => {
+      accessoryEditorOpenDay = String(btn.dataset.addSlotDay);
+      openAccessorySlotAddModal(btn.dataset.addSlotDay);
+    };
   });
   document.querySelectorAll('button[data-reset-slot-day]').forEach(btn => {
     btn.onclick = () => {
       if (!confirm(`Day${btn.dataset.resetSlotDay} の補助種目を初期おすすめに戻しますか？`)) return;
+      accessoryEditorOpenDay = String(btn.dataset.resetSlotDay);
       resetAccessorySlotsForDay(btn.dataset.resetSlotDay);
       saveStore();
       render();
@@ -2385,6 +2429,7 @@ function bindAccessorySlotEditorActions() {
   });
   document.querySelectorAll('button[data-move-slot-id]').forEach(btn => {
     btn.onclick = () => {
+      accessoryEditorOpenDay = String(btn.dataset.moveSlotDay);
       moveAccessorySlot(btn.dataset.moveSlotDay, btn.dataset.moveSlotId, parseInt(btn.dataset.moveDir, 10));
       saveStore();
       render();
@@ -2785,9 +2830,14 @@ function setupRestTimerLifecycleEvents() {
 // ===== ブロック画面 =====
 function renderBlock() {
   const s = store.currentState;
+  const viewRotation = blockViewRotation || s.rotation;
   const cells = [1, 2, 3, 4].map(r => {
-    const cls = r === s.rotation ? 'current' : (r === 4 ? 'deload' : '');
-    return `<div class="rotation-cell ${cls}">R${r}${r === 4 ? '<br><span class="muted" style="font-size:11px;">疲労抜き</span>' : ''}</div>`;
+    const cls = [
+      r === viewRotation ? 'current' : '',
+      r === 4 ? 'deload' : '',
+      r === s.rotation ? 'actual-current' : '',
+    ].filter(Boolean).join(' ');
+    return `<button class="rotation-cell ${cls}" data-block-rotation="${r}">R${r}${r === s.rotation ? '<br><span class="status-pill status-ok">現在</span>' : ''}${r === 4 ? '<br><span class="muted" style="font-size:11px;">疲労抜き</span>' : ''}</button>`;
   }).join('');
 
   const suggestion = computeNextBlockSuggestion();
@@ -2822,10 +2872,10 @@ function renderBlock() {
     ? ''
     : '<div class="muted mt-8" style="font-size:12px;">完了後に採用可</div>';
 
-  // 1ローテ予定一覧（現在のローテの8日分）
+  // 1ローテ予定一覧（選択中ローテの8日分）
   const rotationOverview = [1,2,3,4,5,6,7,8].map(d => {
-    const m = getDayMenu(d, s.rotation, store.settings);
-    const isCurrent = d === s.day;
+    const m = getDayMenu(d, viewRotation, store.settings);
+    const isCurrent = viewRotation === s.rotation && d === s.day;
     let summary;
     if (m.isRest) {
       summary = '<div class="muted" style="font-size:12px;">休み</div>';
@@ -2866,10 +2916,11 @@ function renderBlock() {
         <div><span class="label">Day</span><div class="value-big">${s.day}/8</div></div>
       </div>
       <div class="rotation-grid">${cells}</div>
+      ${viewRotation !== s.rotation ? `<button class="btn-secondary btn-small mt-8" id="btnBackToCurrentRotation">現在ローテへ戻る</button>` : ''}
     </div>
 
     <div class="section">
-      <h2>8日分の予定（R${s.rotation}）</h2>
+      <h2>8日分の予定（R${viewRotation}）${viewRotation === s.rotation ? '<span class="status-pill status-ok">現在</span>' : ''}</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         8日分の予定
       </div>
@@ -2907,6 +2958,22 @@ function renderBlock() {
 function afterBlock() {
   const sug = computeNextBlockSuggestion();
   const blockComplete = isCurrentBlockComplete();
+
+  document.querySelectorAll('button[data-block-rotation]').forEach(btn => {
+    btn.onclick = () => {
+      const r = parseInt(btn.dataset.blockRotation, 10);
+      if (!r || r < 1 || r > 4) return;
+      blockViewRotation = r;
+      render();
+    };
+  });
+  const backRotationBtn = document.getElementById('btnBackToCurrentRotation');
+  if (backRotationBtn) {
+    backRotationBtn.onclick = () => {
+      blockViewRotation = store.currentState.rotation;
+      render();
+    };
+  }
 
   document.getElementById('btnAcceptSug').onclick = () => {
     if (!blockComplete) { showToast('ブロック完了前は採用できません（参考表示）'); return; }
@@ -3219,8 +3286,64 @@ function importData() {
 }
 
 // ===== 設定画面 =====
+function summarizeMajorAccessoryLoad(settings = store.settings) {
+  const groups = {
+    chest: { label: '胸', sets: 0 },
+    back: { label: '背中', sets: 0 },
+    shoulder: { label: '肩', sets: 0 },
+    arm: { label: '腕', sets: 0 },
+    leg: { label: '脚', sets: 0 },
+  };
+  const matches = {
+    chest: ['胸', 'ベンチ系プレス'],
+    back: ['背中', 'ロウ系', 'チンニング系'],
+    shoulder: ['肩', '横肩', '後ろ肩', '肩補助', '肩プレス系'],
+    arm: ['腕'],
+    leg: ['脚前側', '脚後側', '脚補助', 'カーフ', 'デッド・腰背部負荷'],
+  };
+  [1,2,3,4,5,6,7,8].forEach(day => {
+    const isDeload = false;
+    buildAccessoryExercises(day, settings, isDeload).forEach(ex => {
+      const sets = parseInt(ex.plannedSets, 10) || 0;
+      Object.entries(matches).forEach(([key, cats]) => {
+        if ((ex.categories || []).some(c => cats.includes(c))) groups[key].sets += sets;
+      });
+    });
+  });
+  return groups;
+}
+
+function getMajorLoadStatus(key, sets, warnings = []) {
+  const hasWarning = (pattern) => warnings.some(w => pattern.test(w.message));
+  if (key === 'chest') {
+    if (sets >= 30) return { label: '高め', className: 'status-danger' };
+    if (sets >= 25) return { label: '注意', className: 'status-caution' };
+  }
+  if (key === 'back') {
+    if (sets < 10 || hasWarning(/背中少なめ/)) return { label: '少なめ', className: 'status-low' };
+    if (sets >= 28) return { label: '高め', className: 'status-danger' };
+    if (sets >= 22) return { label: '注意', className: 'status-caution' };
+  }
+  if (key === 'shoulder') {
+    if (hasWarning(/肩補助不足|横肩不足|後ろ肩不足/)) return { label: '少なめ', className: 'status-low' };
+    if (sets >= 18 || hasWarning(/肩負荷多め/)) return { label: '注意', className: 'status-caution' };
+  }
+  if (key === 'arm') {
+    if (sets === 0 || hasWarning(/腕補助不足/)) return { label: '少なめ', className: 'status-low' };
+    if (sets >= 18) return { label: '高め', className: 'status-danger' };
+    if (sets >= 14) return { label: '注意', className: 'status-caution' };
+  }
+  if (key === 'leg') {
+    if (sets === 0 || hasWarning(/脚補助不足/)) return { label: '少なめ', className: 'status-low' };
+    if (sets >= 24) return { label: '高め', className: 'status-danger' };
+    if (sets >= 18) return { label: '注意', className: 'status-caution' };
+  }
+  return { label: '適正', className: 'status-ok' };
+}
+
 function renderAccessoryLoadCheck(context = 'full') {
   const summary = summarizeAccessoryLoad(store.settings);
+  const majorSummary = summarizeMajorAccessoryLoad(store.settings);
   const warnings = getAccessoryLoadWarnings(store.settings);
   const getLoadStatus = (key, value) => {
     const limit = ACCESSORY_LOAD_LIMITS[key];
@@ -3231,27 +3354,20 @@ function renderAccessoryLoadCheck(context = 'full') {
     if (key === '背中' && value < 10) return { label: '不足', className: 'status-low' };
     return { label: '適正', className: 'status-ok' };
   };
-  const statuses = ACCESSORY_SUMMARY_KEYS.map(k => getLoadStatus(k, summary[k] || 0));
-  const statusCounts = statuses.reduce((acc, status) => {
-    acc[status.label] = (acc[status.label] || 0) + 1;
-    return acc;
-  }, {});
-  const dangerCount = warnings.filter(w => w.level === 'danger').length;
-  const cautionCount = warnings.filter(w => w.level !== 'danger').length;
-  const overall = dangerCount
-    ? { label: '高負荷', className: 'status-danger' }
-    : warnings.some(w => /不足|少なめ/.test(w.message))
-      ? { label: '不足', className: 'status-low' }
-      : cautionCount
-        ? { label: '注意', className: 'status-caution' }
-        : { label: '適正', className: 'status-ok' };
+  const majorRows = Object.entries(majorSummary).map(([key, group]) => {
+    const status = getMajorLoadStatus(key, group.sets, warnings);
+    return { key, ...group, status };
+  });
+  const attentionRows = majorRows.filter(row => row.status.label !== '適正');
   const conclusion = `
     <div class="load-summary">
-      <span class="status-pill ${overall.className}">${overall.label}</span>
-      <span class="status-pill status-ok">適正 ${statusCounts['適正'] || 0}</span>
-      <span class="status-pill status-caution">注意 ${cautionCount}</span>
-      <span class="status-pill status-danger">高負荷 ${dangerCount}</span>
-      <span class="status-pill status-low">不足 ${statusCounts['不足'] || 0}</span>
+      ${majorRows.map(row => `
+        <div class="major-load-card">
+          <div class="name">${row.label}</div>
+          <div class="muted">${row.sets}セット</div>
+          <span class="status-pill ${row.status.className}">${row.status.label}</span>
+        </div>
+      `).join('')}
     </div>
   `;
   const rows = ACCESSORY_SUMMARY_KEYS.map(k => `
@@ -3263,14 +3379,18 @@ function renderAccessoryLoadCheck(context = 'full') {
   `).join('');
   const warnHtml = warnings.length === 0
     ? '<div class="muted">大きな警告なし</div>'
-    : warnings.map(w => `<div class="load-warning ${w.level === 'danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${w.level === 'danger' ? '危険' : '注意'}</span>${w.message}</div>`).join('');
+    : attentionRows.length
+      ? attentionRows.map(row => `<div class="load-warning ${row.status.className === 'status-danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${row.status.label}</span>${row.label}: ${row.status.label}</div>`).join('')
+      : warnings.slice(0, 3).map(w => `<div class="load-warning ${w.level === 'danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${w.level === 'danger' ? '危険' : '注意'}</span>${w.message}</div>`).join('');
   const body = `
-    <div class="muted" style="font-size:12px;margin-bottom:8px;">8日負荷チェック</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">胸・背中・肩・腕・脚</div>
     ${conclusion}
     <div class="mt-8">${warnHtml}</div>
     <details class="ui-details">
       <summary>詳細数値</summary>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">細かいカテゴリ・疲労タグ</div>
       ${rows}
+      <div class="mt-8">${warnings.length ? warnings.map(w => `<div class="load-warning ${w.level === 'danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${w.level === 'danger' ? '危険' : '注意'}</span>${w.message}</div>`).join('') : '<div class="muted">詳細警告なし</div>'}</div>
     </details>
   `;
   if (context === 'settings') {
@@ -3291,7 +3411,7 @@ function renderAccessoryLoadCheck(context = 'full') {
 
 function renderAccessorySlotEditor(context = 'settings') {
   const slots = store.settings.accessorySlots || defaultAccessorySlots();
-  const currentDay = String(store.currentState.day);
+  const selectedDay = accessoryEditorOpenDay || String(store.currentState.day);
   const dayLabels = {
     1: 'Day1: 脚前側補助 / カーフ',
     2: 'Day2: 胸補助 / 背中 / 腕',
@@ -3308,13 +3428,14 @@ function renderAccessorySlotEditor(context = 'settings') {
     : '今後の基本プログラムを編集';
   const body = `
     <div class="muted" style="font-size:12px;margin-bottom:8px;">${intro}</div>
+    ${selectedDay !== String(store.currentState.day) ? `<button class="btn-secondary btn-small mb-8" data-current-accessory-day="1">現在Dayへ戻る</button>` : ''}
     <details class="ui-details compact-details">
       <summary>候補を確認</summary>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">カテゴリ: ${ACCESSORY_CATEGORIES.join('、')}</div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">疲労タグ: ${ACCESSORY_FATIGUE_TAGS.join('、')}</div>
     </details>
     ${Object.keys(dayLabels).map(day => `
-      <details class="subsection ui-details accessory-day-details" ${context === 'block' && day === currentDay ? 'open' : ''}>
+      <details class="subsection ui-details accessory-day-details" data-accessory-day="${day}" ${day === selectedDay ? 'open' : ''}>
         <summary>
           <span>${dayLabels[day]}</span>
           <span class="status-pill status-ok">${(slots[day] || []).length}種目</span>
@@ -3731,6 +3852,7 @@ if (typeof window !== 'undefined') {
     buildAccessoryExercises,
     accessoryExerciseFromSlot,
     summarizeAccessoryLoad,
+    summarizeMajorAccessoryLoad,
     getAccessoryLoadWarnings,
     getAccessorySafetyWarnings,
     suggestAccessoryProgression,

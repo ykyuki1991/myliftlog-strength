@@ -160,6 +160,9 @@ function testUpdateMoveResetAndBlockEditor() {
 
   const blockHtml = api.renderBlock();
   assert.ok(blockHtml.includes('補助種目管理'));
+  assert.ok(blockHtml.includes('data-block-rotation="1"'));
+  assert.ok(blockHtml.includes('data-block-rotation="4"'));
+  assert.ok(blockHtml.includes('data-accessory-day="3"'));
   assert.ok(blockHtml.includes('<details class="rotation-day-card'));
   assert.ok(blockHtml.includes('推定MAX要約'));
   assert.ok(!blockHtml.includes('<h2>推定MAX履歴</h2>'));
@@ -171,7 +174,20 @@ function testUpdateMoveResetAndBlockEditor() {
 function testLoadCheckAndSettingsAreOrganized() {
   const loadHtml = api.renderAccessoryLoadCheck();
   assert.ok(loadHtml.indexOf('load-summary') < loadHtml.indexOf('詳細数値'));
-  assert.ok(loadHtml.includes('8日負荷チェック'));
+  assert.ok(loadHtml.includes('胸・背中・肩・腕・脚'));
+  assert.ok(loadHtml.includes('胸'));
+  assert.ok(loadHtml.includes('背中'));
+  assert.ok(loadHtml.includes('肩'));
+  assert.ok(loadHtml.includes('腕'));
+  assert.ok(loadHtml.includes('脚'));
+  assert.ok(loadHtml.includes('細かいカテゴリ・疲労タグ'));
+
+  const major = api.summarizeMajorAccessoryLoad(store.settings);
+  assert.ok(major.chest.sets > 0);
+  assert.ok(major.back.sets > 0);
+  assert.ok(major.shoulder.sets > 0);
+  assert.ok(major.arm.sets > 0);
+  assert.ok(major.leg.sets > 0);
 
   const settingsHtml = api.renderSettings();
   assert.ok(settingsHtml.includes('<details class="section ui-details">'));
@@ -208,13 +224,21 @@ function testAccessoryProgression() {
 }
 
 function testTodayScreenRenders() {
-  const html = api.renderToday();
+  let html = api.renderToday();
   assert.ok(html.includes('トレーニング') || html.includes('休み'));
   if (!html.includes('今日は休み')) {
     assert.ok(html.includes('＋補助種目を追加'));
     assert.ok(html.includes('補助編集'));
+    assert.ok(html.includes('未完了'));
+    assert.ok(html.includes('完了済み'));
     assert.ok(!html.includes('膝負荷'), 'today accessory cards should not show fatigue tags by default');
     assert.ok(!html.includes('脚補助'), 'today accessory cards should keep category details out of the card');
+
+    const session = Object.values(store.daySessions).at(-1);
+    session.exercises[0].sets.forEach(set => { set.done = true; });
+    html = api.renderToday();
+    assert.ok(html.includes('完了済み 1件'));
+    assert.ok(html.includes('completed-exercises'));
   }
 }
 
