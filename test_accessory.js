@@ -76,6 +76,18 @@ function testBig3Unaffected() {
   assert.strictEqual(bench.plannedSets, 5);
 }
 
+function testBig3LightDayRepSetShape() {
+  const day3 = api.getDayMenu(3, 1, store.settings);
+  const benchLight = day3.exercises.find(ex => ex.key === 'bench' && ex.menuType === 'bench-light');
+  assert.strictEqual(benchLight.plannedReps, 6);
+  assert.strictEqual(benchLight.plannedSets, 3);
+
+  const day7 = api.getDayMenu(7, 1, store.settings);
+  const squatLight = day7.exercises.find(ex => ex.key === 'squat' && ex.menuType === 'squat-light');
+  assert.strictEqual(squatLight.plannedReps, 5);
+  assert.strictEqual(squatLight.plannedSets, 3);
+}
+
 function testEightDayMenusAndAccessorySlots() {
   for (let day = 1; day <= 8; day++) {
     const menu = api.getDayMenu(day, 1, store.settings);
@@ -242,7 +254,55 @@ function testTodayScreenRenders() {
   }
 }
 
+function testSetCompletionAndMainSetEdit() {
+  api.renderToday();
+  const session = Object.values(store.daySessions).at(-1);
+  const ex = session.exercises.find(item => item.isBig3);
+  const exIdx = session.exercises.indexOf(ex);
+  const originalSets = ex.plannedSets;
+  ex.sets.forEach(set => { set.done = false; });
+
+  assert.strictEqual(api.isExerciseComplete(ex), false);
+  let result = api.toggleNextSetCompletion(session, exIdx);
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(ex.sets[0].done, true);
+
+  let html = api.renderToday();
+  assert.ok(html.includes('set-row-done'), 'done sets should render with green row class');
+
+  ex.sets.forEach(set => { set.done = true; });
+  assert.strictEqual(api.isExerciseComplete(ex), true);
+  html = api.renderToday();
+  assert.ok(html.includes('完了済み 1件'));
+  assert.ok(html.includes('exercise-card-complete'));
+
+  result = api.toggleNextSetCompletion(session, exIdx);
+  assert.strictEqual(result.reverted, true);
+  assert.strictEqual(api.isExerciseComplete(ex), false);
+  html = api.renderToday();
+  assert.ok(html.includes('未完了'));
+
+  let edit = api.applyMainSetEdit(ex, { plannedWeight: 100, plannedReps: 4, plannedSets: originalSets + 2 });
+  assert.strictEqual(edit.ok, true);
+  assert.strictEqual(ex.plannedWeight, 100);
+  assert.strictEqual(ex.plannedReps, 4);
+  assert.strictEqual(ex.plannedSets, originalSets + 2);
+  assert.strictEqual(ex.sets.length, originalSets + 2);
+  assert.strictEqual(ex.sets.at(-1).reps, 4);
+  assert.strictEqual(api.isExerciseComplete(ex), false);
+
+  ex.sets.forEach(set => { set.done = true; });
+  edit = api.applyMainSetEdit(ex, { plannedWeight: 102.5, plannedReps: 3, plannedSets: 3 });
+  assert.strictEqual(edit.ok, false);
+  assert.strictEqual(edit.reason, 'needs-confirm');
+  edit = api.applyMainSetEdit(ex, { plannedWeight: 102.5, plannedReps: 3, plannedSets: 3 }, { confirmDiscard: true });
+  assert.strictEqual(edit.ok, true);
+  assert.strictEqual(ex.sets.length, 3);
+  assert.strictEqual(api.isExerciseComplete(ex), true);
+}
+
 testBig3Unaffected();
+testBig3LightDayRepSetShape();
 testEightDayMenusAndAccessorySlots();
 testAddDeleteAccessory();
 testLoadSummaryAndWarnings();
@@ -251,6 +311,7 @@ testUpdateMoveResetAndBlockEditor();
 testLoadCheckAndSettingsAreOrganized();
 testAccessoryProgression();
 testTodayScreenRenders();
+testSetCompletionAndMainSetEdit();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted during today render');
 console.log('test_accessory.js: all tests passed');
