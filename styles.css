@@ -499,6 +499,10 @@ label.field > span {
   background: #2dd4bf;
 }
 
+.exercise-card-complete {
+  border-color: rgba(74,222,128,0.38);
+}
+
 .exercise-card .head {
   display: flex;
   justify-content: space-between;

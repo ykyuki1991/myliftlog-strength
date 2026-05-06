@@ -1320,7 +1320,7 @@ function getDayMenu(day, rotation, settings) {
           [78.9, 81.6, 82.9], [3, 3, 3], [4, 3, 3], 'halfDead-heavy-backoff'));
       }
       exercises.push(benchByPct('bench', 'ベンチプレス（軽め）', M.bench,
-        [65.2, 67.4, 69.6], [3, 3, 3], [6, 6, 5], 'bench-light', 'bench_volume'));
+        [65.2, 67.4, 69.6], [6, 6, 6], [3, 3, 3], 'bench-light', 'bench_volume'));
       if (isHighIntensity) {
         // 高強度モード補助: マシンロー / ショルダープレス / カーフレイズ
         exercises.push(accessoryWith('machine_row', 'マシンロー', '10', 3, 'row', null, 4));
@@ -1376,7 +1376,7 @@ function getDayMenu(day, rotation, settings) {
       exercises.push(benchByPct('floorDead', '床引きデッド', M.floorDead,
         [70.6, 73.5, 76.5], [3, 3, 3], [5, 5, 4], 'floorDead-main', 'squat_dead_volume'));
       exercises.push(benchByPct('squat', 'スクワット（軽め）', M.squat,
-        [62.5, 64.1, 65.6], [2, 2, 2], [6, 6, 6], 'squat-light', 'squat_dead_volume'));
+        [62.5, 64.1, 65.6], [5, 5, 5], [3, 3, 3], 'squat-light', 'squat_dead_volume'));
       if (isHighIntensity) {
         // 高強度モード補助: ラットプルダウン / マシンロー / シーテッドロー / プリーチャー
         exercises.push(accessoryWith('latpulldown', 'ラットプルダウン', '8〜12', 3, 'row', null, 4));
@@ -1476,6 +1476,77 @@ function getOrCreateTodaySession() {
     saveStore();
   }
   return store.daySessions[key];
+}
+
+function isExerciseComplete(ex) {
+  return (ex?.sets || []).length > 0 && ex.sets.every(set => !!set.done);
+}
+
+function firstPendingSetIndex(ex) {
+  return (ex?.sets || []).findIndex(set => !set.done);
+}
+
+function hasSetRecord(set) {
+  if (!set) return false;
+  return !!set.done;
+}
+
+function resizeExerciseSets(ex) {
+  const target = Math.max(0, parseInt(ex.plannedSets, 10) || 0);
+  const defaultReps = typeof ex.plannedReps === 'number' ? ex.plannedReps : '';
+  ex.sets = ex.sets || [];
+  while (ex.sets.length < target) {
+    ex.sets.push({ weight: ex.plannedWeight, reps: defaultReps, done: false });
+  }
+  if (ex.sets.length > target) ex.sets = ex.sets.slice(0, target);
+}
+
+function applyMainSetEdit(ex, values, options = {}) {
+  if (!ex?.isBig3) return { ok: false, reason: 'not-big3' };
+  const plannedWeight = parseFloat(values.plannedWeight);
+  const plannedReps = parseInt(values.plannedReps, 10);
+  const plannedSets = parseInt(values.plannedSets, 10);
+  if (!Number.isFinite(plannedWeight) || plannedWeight < 0 || plannedReps < 1 || plannedSets < 1) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  const currentSets = ex.sets || [];
+  const removedSets = currentSets.slice(plannedSets);
+  const removingRecordedSets = removedSets.some(hasSetRecord);
+  if (removingRecordedSets && options.confirmDiscard !== true) {
+    return { ok: false, reason: 'needs-confirm' };
+  }
+
+  ex.plannedWeight = plannedWeight;
+  ex.plannedReps = plannedReps;
+  ex.plannedSets = plannedSets;
+  ex.todayEdited = true;
+
+  const nextSets = currentSets.slice(0, plannedSets).map(set => {
+    if (set.done) return { ...set };
+    return { ...set, weight: plannedWeight, reps: plannedReps };
+  });
+  while (nextSets.length < plannedSets) {
+    nextSets.push({ weight: plannedWeight, reps: plannedReps, done: false });
+  }
+  ex.sets = nextSets;
+  return { ok: true, removingRecordedSets };
+}
+
+function toggleNextSetCompletion(session, exIdx) {
+  const ex = session?.exercises?.[exIdx];
+  if (!ex) return { ok: false, reason: 'missing-exercise' };
+  const nextIdx = firstPendingSetIndex(ex);
+  if (nextIdx >= 0) {
+    ex.sets[nextIdx].done = true;
+    return { ok: true, completedSet: nextIdx, allDone: isExerciseComplete(ex), reverted: false };
+  }
+  const lastIdx = (ex.sets || []).length - 1;
+  if (lastIdx >= 0) {
+    ex.sets[lastIdx].done = false;
+    return { ok: true, completedSet: lastIdx, allDone: false, reverted: true };
+  }
+  return { ok: false, reason: 'no-sets' };
 }
 
 // 今日のセッションを再計算（メニューを最新に更新、未実施部分のみ）
@@ -1695,7 +1766,6 @@ function renderToday() {
     ? `<div class="deload-banner"><div class="label">疲労抜きローテ</div><div class="muted">RPE6以下を目安に。痛みがあれば腕トレ・ディップスはスキップ可</div></div>`
     : '';
 
-  const isExerciseComplete = (ex) => (ex.sets || []).length > 0 && ex.sets.every(set => set.done);
   const incomplete = session.exercises
     .map((ex, exIdx) => ({ ex, exIdx }))
     .filter(item => !isExerciseComplete(item.ex));
@@ -1747,14 +1817,15 @@ function renderToday() {
 
 function renderExerciseCard(ex, exIdx) {
   const session = store.daySessions[todaySessionKey()];
-  const firstPendingSetIndex = ex.sets.findIndex(set => !set.done);
+  const pendingSetIndex = firstPendingSetIndex(ex);
+  const complete = isExerciseComplete(ex);
   const cardTypeClass = ex.isAccessory
     ? 'exercise-card-accessory'
     : (ex.isBig3 ? 'exercise-card-big3' : 'exercise-card-main');
   const setsHtml = ex.sets.map((set, setIdx) => {
     const rowStateClass = set.done
       ? 'set-row-done'
-      : (setIdx === firstPendingSetIndex ? 'set-row-current' : '');
+      : (setIdx === pendingSetIndex ? 'set-row-current' : '');
     return `
     <div class="set-grid set-row ${rowStateClass}">
       <div class="set-no">${setIdx + 1}</div>
@@ -1797,7 +1868,7 @@ function renderExerciseCard(ex, exIdx) {
   ` : '';
 
   return `
-    <div class="exercise-card ${cardTypeClass}" data-ex="${exIdx}">
+    <div class="exercise-card ${cardTypeClass} ${complete ? 'exercise-card-complete' : ''}" data-ex="${exIdx}">
       <div class="head">
         <div class="name">${ex.name}</div>
         <div class="menu-type">${ex.isAccessory ? '補助' : (ex.isBig3 ? 'BIG3' : 'メイン')}</div>
@@ -1827,8 +1898,9 @@ function renderExerciseCard(ex, exIdx) {
       <div class="actions">
         <button class="btn-secondary btn-small" data-action="rest" data-ex="${exIdx}">レスト開始</button>
         <button class="btn-warn btn-small" data-action="adjust" data-ex="${exIdx}">重量調整</button>
+        ${ex.isBig3 ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">BIG3編集</button>` : ''}
         ${ex.isAccessory ? `<button class="btn-secondary btn-small" data-action="editAccessory" data-ex="${exIdx}">補助編集</button>` : ''}
-        <button class="btn-success btn-small" data-action="completeSet" data-ex="${exIdx}">セット完了+レスト</button>
+        <button class="btn-success btn-small" data-action="completeSet" data-ex="${exIdx}">${complete ? '最後の完了を戻す' : 'セット完了+レスト'}</button>
       </div>
     </div>
   `;
@@ -1855,6 +1927,7 @@ function afterToday() {
         else if (field === 'reps') set.reps = parseInt(el.value) || 0;
       }
       saveStore();
+      if (field === 'done') render();
     });
   });
 
@@ -1905,18 +1978,17 @@ function afterToday() {
       if (action === 'rest') {
         startRestTimer(ex.restSec, ex.name);
       } else if (action === 'completeSet') {
-        // 未完了の最初のセットをdoneに、レスト開始
-        const next = ex.sets.find(s => !s.done);
-        if (next) {
-          next.done = true;
+        const result = toggleNextSetCompletion(session, exIdx);
+        if (result.ok) {
           saveStore();
-          startRestTimer(ex.restSec, ex.name);
+          if (!result.reverted) startRestTimer(ex.restSec, ex.name);
+          else showToast('最後のセットを未完了に戻しました');
           render();
-        } else {
-          startRestTimer(ex.restSec, ex.name);
         }
       } else if (action === 'adjust') {
         openAdjustModal(exIdx);
+      } else if (action === 'editMainSet') {
+        openMainSetEditModal(exIdx);
       } else if (action === 'editAccessory') {
         openAccessoryTodayModal(exIdx);
       }
@@ -2133,6 +2205,51 @@ function applySlotToExercise(ex, updated) {
   resizeExerciseSets(ex);
 }
 
+function openMainSetEditModal(exIdx) {
+  const session = store.daySessions[todaySessionKey()];
+  const ex = session?.exercises?.[exIdx];
+  if (!ex?.isBig3) return;
+  openModal('BIG3メイン編集', `
+    <div class="muted mb-8">${ex.name} / 今日だけ変更</div>
+    <label class="field">
+      <span>予定重量(kg)</span>
+      <input type="number" inputmode="decimal" step="0.5" id="mainEditWeight" value="${ex.plannedWeight ?? ''}" />
+    </label>
+    <label class="field">
+      <span>回数</span>
+      <input type="number" inputmode="numeric" min="1" id="mainEditReps" value="${ex.plannedReps ?? ''}" />
+    </label>
+    <label class="field">
+      <span>セット数</span>
+      <input type="number" inputmode="numeric" min="1" id="mainEditSets" value="${ex.plannedSets ?? ''}" />
+    </label>
+    <div class="btn-row">
+      <button class="btn-primary" id="main-edit-save">今日だけ変更</button>
+    </div>
+  `, () => {
+    document.getElementById('main-edit-save').onclick = () => {
+      const values = {
+        plannedWeight: document.getElementById('mainEditWeight').value,
+        plannedReps: document.getElementById('mainEditReps').value,
+        plannedSets: document.getElementById('mainEditSets').value,
+      };
+      let result = applyMainSetEdit(ex, values);
+      if (result.reason === 'needs-confirm') {
+        if (!confirm('削除されるセットに完了記録があります。セット数を減らしますか？')) return;
+        result = applyMainSetEdit(ex, values, { confirmDiscard: true });
+      }
+      if (!result.ok) {
+        showToast('入力値を確認してください');
+        return;
+      }
+      saveStore();
+      closeModal();
+      render();
+      showToast('BIG3予定を今日だけ変更しました');
+    };
+  });
+}
+
 function openAccessoryTodayModal(exIdx) {
   const session = store.daySessions[todaySessionKey()];
   const ex = session.exercises[exIdx];
@@ -2242,14 +2359,6 @@ function openAccessoryTodayAddModal() {
       showToast('今後にも反映して追加しました');
     };
   });
-}
-
-function resizeExerciseSets(ex) {
-  const target = Math.max(0, parseInt(ex.plannedSets, 10) || 0);
-  const defaultReps = typeof ex.plannedReps === 'number' ? ex.plannedReps : '';
-  while (ex.sets.length < target) ex.sets.push({ weight: ex.plannedWeight, reps: defaultReps, done: false });
-  const done = ex.sets.filter(s => s.done);
-  if (ex.sets.length > target && done.length <= target) ex.sets = ex.sets.slice(0, target);
 }
 
 function updateAccessorySlot(day, slotId, updatedSlot) {
@@ -3848,6 +3957,10 @@ if (typeof window !== 'undefined') {
     recordMaxTestResult,
     renderEstimatedMaxHistory,
     renderEstimatedMaxSummary,
+    isExerciseComplete,
+    firstPendingSetIndex,
+    applyMainSetEdit,
+    toggleNextSetCompletion,
     defaultAccessorySlots,
     buildAccessoryExercises,
     accessoryExerciseFromSlot,
