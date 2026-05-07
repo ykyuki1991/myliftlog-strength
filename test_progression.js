@@ -179,6 +179,77 @@ function testBlockSuggestionPainSeverity() {
   assert.ok(painfulSuggestion.reason.includes('痛みあり'));
 }
 
+function testMaxUpdateAndRotationProgressionAreCapped() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.maxes.bench = 130;
+  isolatedStore.logs = [big3Log({ plannedWeight: 100, ts: 1 })];
+
+  const cappedMenu = isolatedApi.getDayMenu(2, 2, isolatedStore.settings);
+  const cappedBench = cappedMenu.exercises.find(ex => ex.key === 'bench' && ex.menuType === 'bench-hi-main');
+  assert.strictEqual(cappedBench.plannedWeight, 102.5);
+  assert.ok(cappedBench.progressionCapped);
+  assert.ok(cappedBench.progressionCapped.targetWeight > cappedBench.plannedWeight);
+
+  isolatedStore.rotationProgressions = [{
+    id: 'rot-accepted',
+    liftKey: 'bench',
+    maxKey: 'bench',
+    liftName: 'ベンチプレス',
+    day: 2,
+    menuType: 'bench-hi-main',
+    delta: 2.5,
+    status: 'accepted',
+    createdAt: 2,
+    appliedAt: null,
+  }];
+  const cappedWithRotation = isolatedApi.getDayMenu(2, 2, isolatedStore.settings)
+    .exercises.find(ex => ex.key === 'bench' && ex.menuType === 'bench-hi-main');
+  assert.strictEqual(cappedWithRotation.plannedWeight, 102.5);
+  assert.ok(cappedWithRotation.rotationProgressionApplied);
+
+  isolatedStore.settings.maxes.bench = 115;
+  isolatedStore.logs = [];
+  const entry = isolatedApi.upsertEstimatedMaxFromLog(big3Log({ sets: [{ weight: 105, reps: 5, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.ok(isolatedApi.adoptEstimatedMax(entry.id));
+  assert.ok(isolatedStore.rotationProgressions.every(p => p.status !== 'accepted' && p.status !== 'suggested'));
+}
+
+function testDeloadAccessoryAndMaxTestTiming() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  const day1R4 = isolatedApi.getDayMenu(1, 4, isolatedStore.settings);
+  const legPress = day1R4.exercises.find(ex => ex.isAccessory && ex.key === 'legpress');
+  assert.strictEqual(legPress.isDeloadAccessory, true);
+  assert.strictEqual(legPress.normalPlannedSets, 3);
+  assert.strictEqual(legPress.plannedSets, 2);
+  assert.strictEqual(legPress.targetRpe, '6〜7');
+  assert.strictEqual(isolatedApi.suggestAccessoryProgression(legPress), 'デロード中: 重量UPなし');
+
+  assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(1).key, 'squat');
+  assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(2).key, 'bench');
+  assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(3).key, 'halfDead');
+  assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(7).key, 'floorDead');
+  assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(5), null);
+
+  isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
+  let html = isolatedApi.renderToday();
+  assert.ok(html.includes('スクワットの日'));
+  assert.ok(html.includes('通常デロード'));
+
+  const session = Object.values(isolatedStore.daySessions).at(-1);
+  assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'e1rm'));
+  assert.ok(session.exercises.some(ex => ex.menuType === 'max-test-e1rm' && ex.key === 'squat'));
+  assert.ok(!session.exercises.some(ex => ex.key === 'squat' && ex.menuType === 'squat-heavy-backoff'));
+
+  isolatedStore.currentState = { block: 1, rotation: 4, day: 5 };
+  html = isolatedApi.renderToday();
+  assert.ok(!html.includes('デロード時MAX測定'));
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testRotationProgressionRules();
@@ -186,6 +257,8 @@ testAdoptedProgressionAppliesOnceToNextMenu();
 testMaxCandidateAndAdoption();
 testDeloadMaxTestResult();
 testBlockSuggestionPainSeverity();
+testMaxUpdateAndRotationProgressionAreCapped();
+testDeloadAccessoryAndMaxTestTiming();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
 console.log('test_progression.js: all tests passed');

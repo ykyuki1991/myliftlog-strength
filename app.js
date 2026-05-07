@@ -43,6 +43,12 @@ const DEFAULT_SETTINGS = {
     face_pull:   { weight: null, reps: '12〜20', sets: 3 },
   },
   accessoryManagementMode: 'aggressive',
+  rotationIncreaseCaps: {
+    bench: 2.5,
+    squat: 2.5,
+    halfDead: 2.5,
+    floorDead: 2.5,
+  },
   accessorySlots: null,
   accessoryShoulderDefaultsAdded: true,
 };
@@ -114,6 +120,13 @@ const DELOAD_MAX_TEST_MODES = {
   threeRm: '3RM測定',
   fiveRm: '5RM測定',
   trueOneRm: '真の1RM測定',
+};
+
+const DELOAD_MAX_TEST_DAY_LIFTS = {
+  1: 'squat',
+  2: 'bench',
+  3: 'halfDead',
+  7: 'floorDead',
 };
 
 const ACCESSORY_PRESET_GROUPS = [
@@ -299,6 +312,7 @@ function loadStore() {
         ...def.settings,
         ...(parsed.settings || {}),
         maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
+        rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
         accessoryDefaults: mergedAccDefaults,
         accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
         accessorySlots: mergedAccessorySlots,
@@ -530,6 +544,52 @@ function getMaxUpdateCandidate(entry) {
   return { current, estimatedMax: entry.estimatedMax, candidate, diff: roundToIncrement(candidate - current, 0.5) };
 }
 
+function getRotationIncreaseCap(liftKey, settings = store.settings) {
+  const caps = settings.rotationIncreaseCaps || {};
+  const inc = settings.increment || 2.5;
+  return parseFloat(caps[liftKey]) || inc;
+}
+
+function getPreviousBig3ReferenceWeight(ex) {
+  if (!ex || !isBig3Key(ex.key)) return null;
+  const recent = [...(store.logs || [])]
+    .filter(log => !log.isDeload && log.exerciseKey === ex.key && log.menuType === ex.menuType)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+  if (!recent) return null;
+  const setWeights = (recent.sets || [])
+    .filter(set => set.done && set.weight != null)
+    .map(set => parseFloat(set.weight))
+    .filter(weight => Number.isFinite(weight));
+  const planned = parseFloat(recent.plannedWeight);
+  const reference = Math.max(Number.isFinite(planned) ? planned : 0, ...setWeights);
+  return reference > 0 ? reference : null;
+}
+
+function capBig3ProgressionToPrevious(ex, settings = store.settings) {
+  if (!ex || !isBig3Key(ex.key) || ex.plannedWeight == null || isLightBig3Menu(ex.menuType)) return ex;
+  const referenceWeight = getPreviousBig3ReferenceWeight(ex);
+  if (referenceWeight == null) return ex;
+  const cap = getRotationIncreaseCap(ex.key, settings);
+  const targetWeight = parseFloat(ex.plannedWeight);
+  const maxNext = roundToIncrement(referenceWeight + cap, settings.increment || 2.5);
+  if (!Number.isFinite(targetWeight) || targetWeight <= maxNext) return ex;
+  return {
+    ...ex,
+    plannedWeight: maxNext,
+    progressionCapped: {
+      referenceWeight,
+      targetWeight,
+      nextWeight: maxNext,
+      cap,
+    },
+  };
+}
+
+function capBig3ProgressionsToPrevious(exercises, isDeload, settings = store.settings) {
+  if (isDeload) return exercises;
+  return exercises.map(ex => capBig3ProgressionToPrevious(ex, settings));
+}
+
 function evaluateRotationProgression(log) {
   if (!log || !isBig3Key(log.exerciseKey) || log.isDeload || isLightBig3Menu(log.menuType)) return null;
   const lift = BIG3_LIFTS[log.exerciseKey];
@@ -660,6 +720,12 @@ function adoptEstimatedMax(entryId) {
   const candidate = getMaxUpdateCandidate(entry);
   if (!entry || !candidate) return false;
   store.settings.maxes[entry.maxKey] = candidate.candidate;
+  store.rotationProgressions = (store.rotationProgressions || []).map(p => {
+    if (p.liftKey === entry.liftKey && ['suggested', 'accepted'].includes(p.status) && !p.appliedAt) {
+      return { ...p, status: 'dismissed', dismissedReason: 'max-updated' };
+    }
+    return p;
+  });
   entry.adopted = true;
   entry.adoptedAt = Date.now();
   entry.adoptedMax = candidate.candidate;
@@ -789,33 +855,143 @@ function bindEstimatedMaxActions() {
   });
 }
 
-function renderDeloadMaxTestPanel(session) {
+function getDeloadMaxTestLiftForDay(day) {
+  const liftKey = DELOAD_MAX_TEST_DAY_LIFTS[Number(day)];
+  return liftKey ? BIG3_LIFTS[liftKey] : null;
+}
+
+function getDefaultDeloadMaxTestMode() {
   const mode = store.settings.deloadMaxTestMode || 'e1rm';
+  return mode === 'off' ? 'normal' : mode;
+}
+
+function deloadMaxTestModeLabel(mode) {
+  if (mode === 'normal') return '通常デロード';
+  return DELOAD_MAX_TEST_MODES[mode] || 'e1RM確認';
+}
+
+function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
+  const lift = BIG3_LIFTS[liftKey];
+  if (!lift || mode === 'normal') return [];
+  const max = settings.maxes[lift.maxKey] || 0;
+  const inc = settings.increment || 2.5;
+  const modePlan = {
+    e1rm: { pct: 90, reps: 1, rpe: '8〜9', note: '限界までは行かない' },
+    threeRm: { pct: 87.5, reps: 3, rpe: '9', note: '3RM測定' },
+    fiveRm: { pct: 82.5, reps: 5, rpe: '9', note: '5RM測定' },
+    trueOneRm: { pct: 97.5, reps: 1, rpe: '10', note: '安全環境のみ' },
+  }[mode] || { pct: 90, reps: 1, rpe: '8〜9', note: '限界までは行かない' };
+  return [
+    {
+      key: lift.key,
+      name: `${lift.name}（${deloadMaxTestModeLabel(mode)}）`,
+      menuType: `max-test-${mode}`,
+      plannedWeight: roundToIncrement(max * modePlan.pct / 100, inc),
+      plannedReps: modePlan.reps,
+      plannedSets: 1,
+      pctNote: `${modePlan.pct}% / RPE${modePlan.rpe}`,
+      restSec: REST_TIME_SEC.big3_top,
+      isBig3: true,
+      isDeloadMaxTest: true,
+      maxTestMode: mode,
+      maxTestNote: modePlan.note,
+    },
+    {
+      key: lift.key,
+      name: `${lift.name}（軽いバックオフ）`,
+      menuType: `max-test-${mode}-backoff`,
+      plannedWeight: roundToIncrement(max * 65 / 100, inc),
+      plannedReps: 3,
+      plannedSets: 1,
+      pctNote: '65%',
+      restSec: REST_TIME_SEC.big3_backoff,
+      isBig3: true,
+      isDeloadMaxTestBackoff: true,
+      maxTestMode: mode,
+    },
+  ];
+}
+
+function applyDeloadMaxTestModeToSession(session, mode) {
+  if (!session?.isDeload) return false;
+  const lift = getDeloadMaxTestLiftForDay(session.day);
+  if (!lift) return false;
+  session.maxTestMode = mode || 'normal';
+  if (session.maxTestMode === 'normal') {
+    recalculateTodaySession();
+    const refreshed = store.daySessions[session.key];
+    if (refreshed) refreshed.maxTestMode = 'normal';
+    saveStore();
+    return true;
+  }
+  const baseMenu = getDayMenu(session.day, session.rotation, store.settings);
+  const replacement = buildDeloadMaxTestExercises(lift.key, session.maxTestMode, store.settings);
+  const nextExercises = baseMenu.exercises
+    .filter(ex => !(ex.isBig3 && ex.key === lift.key))
+    .concat(replacement)
+    .map(ex => {
+      const oldEx = session.exercises.find(item => item.key === ex.key && item.menuType === ex.menuType);
+      if (oldEx) return { ...ex, sets: oldEx.sets, rpe: oldEx.rpe, pains: oldEx.pains, note: oldEx.note, completed: oldEx.completed };
+      return {
+        ...ex,
+        sets: Array.from({ length: ex.plannedSets || 1 }, () => ({
+          weight: ex.plannedWeight,
+          reps: typeof ex.plannedReps === 'number' ? ex.plannedReps : '',
+          done: false,
+        })),
+        rpe: '未入力',
+        pains: [],
+        note: '',
+        completed: false,
+      };
+    });
+  session.exercises = nextExercises;
+  saveStore();
+  return true;
+}
+
+function renderDeloadMaxTestPanel(session) {
   if (!session?.isDeload) return '';
-  const oneRmWarning = mode === 'trueOneRm'
+  const lift = getDeloadMaxTestLiftForDay(session.day);
+  if (!lift) return '';
+  const configuredMode = store.settings.deloadMaxTestMode || 'e1rm';
+  const selectedMode = session.maxTestMode || 'normal';
+  const suggestedMode = getDefaultDeloadMaxTestMode();
+  const oneRmWarning = selectedMode === 'trueOneRm'
     ? '<div class="load-warning load-warning-danger"><span>危険</span>真の1RM測定はケガリスクが高いため、補助者や安全環境がある場合のみ推奨です。</div>'
     : '';
+  const buttons = [
+    ['normal', '通常デロード'],
+    ['e1rm', 'e1RM確認'],
+    ['threeRm', '3RM測定'],
+    ['fiveRm', '5RM測定'],
+    ['trueOneRm', '1RM測定'],
+  ].map(([mode, label]) => `<button class="${selectedMode === mode ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="setDeloadMaxMode" data-mode="${mode}">${label}</button>`).join('');
   return `
     <div class="section">
       <h2>デロード時MAX測定</h2>
-      <div class="muted mb-8">今回はデロード週です。設定: ${DELOAD_MAX_TEST_MODES[mode] || 'e1RM確認'}</div>
+      <div class="muted mb-8">${lift.name}の日です。初期候補: ${deloadMaxTestModeLabel(suggestedMode)} / 現在: ${deloadMaxTestModeLabel(selectedMode)}</div>
+      <div class="muted mb-8">MAX測定を選ぶと、${lift.name}の通常デロード部分を測定用に置き換えます。</div>
       ${oneRmWarning}
       <div class="btn-row">
-        <button class="btn-secondary" id="btnNormalDeload">通常デロードを行う</button>
+        ${buttons}
         <button class="btn-primary" id="btnOpenMaxTest">MAX測定を入力</button>
       </div>
     </div>
   `;
 }
 
-function openMaxTestModal() {
-  const mode = store.settings.deloadMaxTestMode || 'e1rm';
+function openMaxTestModal(modeOverride = null, liftKeyOverride = null) {
+  const session = store.daySessions[todaySessionKey()];
+  const liftForDay = getDeloadMaxTestLiftForDay(session?.day);
+  const mode = modeOverride || session?.maxTestMode || store.settings.deloadMaxTestMode || 'e1rm';
+  const selectedLift = liftKeyOverride || liftForDay?.key || 'bench';
   openModal('MAX測定を入力', `
     <div class="muted mb-8">推定MAXを計算します。採用するまでMAX設定は変わりません。</div>
     ${mode === 'trueOneRm' ? '<div class="load-warning load-warning-danger"><span>危険</span>真の1RM測定は補助者や安全環境がある場合のみ推奨です。</div>' : ''}
     <label class="field"><span>種目</span>
       <select id="maxTestLift">
-        ${Object.values(BIG3_LIFTS).map(l => `<option value="${l.key}">${l.name}</option>`).join('')}
+        ${Object.values(BIG3_LIFTS).map(l => `<option value="${l.key}" ${l.key === selectedLift ? 'selected' : ''}>${l.name}</option>`).join('')}
       </select>
     </label>
     <label class="field"><span>重量(kg)</span><input type="number" step="0.5" id="maxTestWeight" /></label>
@@ -903,7 +1079,10 @@ function accessoryExerciseFromSlot(slot, settings, isDeload, day = null) {
   const def = accDefaults[slot.key] || {};
   const plannedSets = isDeload ? Math.max(1, Math.ceil(slot.plannedSets / 2)) : slot.plannedSets;
   const plannedReps = def.reps != null ? def.reps : slot.reps;
-  const plannedWeight = def.weight != null ? def.weight : slot.plannedWeight;
+  const normalWeight = def.weight != null ? def.weight : slot.plannedWeight;
+  const plannedWeight = isDeload && normalWeight != null
+    ? roundToIncrement(normalWeight * 0.9, settings.increment || 2.5)
+    : normalWeight;
   return {
     key: slot.key,
     name: slot.name,
@@ -912,7 +1091,12 @@ function accessoryExerciseFromSlot(slot, settings, isDeload, day = null) {
     plannedReps,
     plannedSets,
     setsText: slot.setsText,
-    targetRpe: slot.targetRpe,
+    targetRpe: isDeload ? '6〜7' : slot.targetRpe,
+    normalPlannedSets: slot.plannedSets,
+    normalTargetRpe: slot.targetRpe,
+    normalPlannedWeight: normalWeight ?? null,
+    isDeloadAccessory: !!isDeload,
+    deloadTargetRpe: isDeload ? '6〜7' : null,
     categories: [...slot.categories],
     fatigueTags: [...slot.fatigueTags],
     slotId: slot.slotId,
@@ -1060,6 +1244,7 @@ function getRecentAccessoryLogs(ex, limit = 2) {
 
 function suggestAccessoryProgression(ex, mode = store.settings.accessoryManagementMode || 'aggressive') {
   if (!ex?.isAccessory) return '';
+  if (ex.isDeloadAccessory) return 'デロード中: 重量UPなし';
   const rpe = parseRpeValue(ex.rpe);
   const painful = hasPain(ex);
   const hitUpper = allDoneSetsHitUpper(ex);
@@ -1412,6 +1597,7 @@ function getDayMenu(day, rotation, settings) {
   });
 
   exercises = applyAcceptedRotationProgressionsToMenu(exercises, day, isDeload, settings);
+  exercises = capBig3ProgressionsToPrevious(exercises, isDeload, settings);
 
   return {
     day,
@@ -1854,7 +2040,9 @@ function renderExerciseCard(ex, exIdx) {
     <div class="accessory-meta" aria-label="補助種目情報">
       <span class="accessory-chip accessory-chip-slot">${ex.slotName || '補助'}</span>
       <span class="accessory-chip accessory-chip-rpe">目標RPE ${ex.targetRpe || '-'}</span>
+      ${ex.isDeloadAccessory ? `<span class="accessory-chip accessory-chip-slot">デロード補助</span>` : ''}
     </div>
+    ${ex.isDeloadAccessory ? `<div class="muted">通常${ex.normalPlannedSets}セット → ${ex.plannedSets}セット / 重量UP提案なし</div>` : ''}
     <div class="accessory-suggestion"><span class="suggestion-label">提案</span><span>${accessoryStatus}</span></div>
   ` : '';
   const rotationProgression = ex.isBig3 ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
@@ -1865,6 +2053,10 @@ function renderExerciseCard(ex, exIdx) {
       ${rotationProgression?.status === 'suggested' && rotationProgression.delta ? `<button class="btn-secondary btn-small" data-action="adoptRotation" data-progression-id="${rotationProgression.id}">採用</button>` : ''}
       ${ex.rotationProgressionApplied ? `<span class="status-pill status-ok">採用済み +${ex.rotationProgressionApplied}kg</span>` : ''}
     </div>
+    ${ex.progressionCapped ? `<div class="accessory-suggestion big3-progression">
+      <span class="suggestion-label">段階反映中</span>
+      <span>目標重量:${ex.progressionCapped.targetWeight}kg / 次回予定:${ex.progressionCapped.nextWeight}kg</span>
+    </div>` : ''}
   ` : '';
 
   return `
@@ -1973,6 +2165,13 @@ function afterToday() {
         }
         return;
       }
+      if (action === 'setDeloadMaxMode') {
+        if (applyDeloadMaxTestModeToSession(session, b.dataset.mode || 'normal')) {
+          showToast(`${deloadMaxTestModeLabel(b.dataset.mode || 'normal')}に切り替えました`);
+          render();
+        }
+        return;
+      }
       const exIdx = parseInt(b.dataset.ex);
       const ex = session.exercises[exIdx];
       if (action === 'rest') {
@@ -2002,7 +2201,10 @@ function afterToday() {
   if (addTodayAccessoryBtn) addTodayAccessoryBtn.onclick = openAccessoryTodayAddModal;
 
   const openMaxTestBtn = document.getElementById('btnOpenMaxTest');
-  if (openMaxTestBtn) openMaxTestBtn.onclick = openMaxTestModal;
+  if (openMaxTestBtn) openMaxTestBtn.onclick = () => {
+    const lift = getDeloadMaxTestLiftForDay(session?.day);
+    openMaxTestModal(session?.maxTestMode === 'normal' ? getDefaultDeloadMaxTestMode() : session?.maxTestMode, lift?.key);
+  };
   const normalDeloadBtn = document.getElementById('btnNormalDeload');
   if (normalDeloadBtn) normalDeloadBtn.onclick = () => showToast('通常デロードとして進めます');
 
@@ -2571,6 +2773,11 @@ function finishTodaySession() {
       plannedReps: ex.plannedReps,
       plannedSets: ex.plannedSets,
       targetRpe: ex.targetRpe,
+      isDeloadAccessory: !!ex.isDeloadAccessory,
+      normalPlannedSets: ex.normalPlannedSets,
+      deloadPlannedSets: ex.isDeloadAccessory ? ex.plannedSets : null,
+      normalTargetRpe: ex.normalTargetRpe,
+      deloadTargetRpe: ex.deloadTargetRpe,
       categories: ex.categories || [],
       fatigueTags: ex.fatigueTags || [],
       weightType: ex.weightType,
@@ -3952,6 +4159,12 @@ if (typeof window !== 'undefined') {
     adoptRotationProgression,
     findPendingRotationProgressionForExercise,
     applyAcceptedRotationProgressionsToMenu,
+    capBig3ProgressionToPrevious,
+    capBig3ProgressionsToPrevious,
+    getRotationIncreaseCap,
+    getDeloadMaxTestLiftForDay,
+    buildDeloadMaxTestExercises,
+    applyDeloadMaxTestModeToSession,
     getMaxUpdateCandidate,
     adoptEstimatedMax,
     recordMaxTestResult,
