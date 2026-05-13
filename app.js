@@ -1283,6 +1283,12 @@ function todayStr() {
   return `${y}-${m}-${day}`;
 }
 
+function todayDisplayLabel() {
+  const d = new Date();
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${weekdays[d.getDay()]})`;
+}
+
 function fmtDate(s) {
   return s;
 }
@@ -1978,17 +1984,20 @@ function renderToday() {
     : '';
 
   return `
-    <h2 class="screen-title">${session.dayName}</h2>
-    <div class="muted mb-12">${todayStr()} / B${s.block} R${s.rotation} D${s.day}</div>
+    <section class="today-hero">
+      <div class="today-hero-meta">ブロック${s.block} / ローテ${s.rotation} / Day${s.day}</div>
+      <div class="today-hero-title">${session.dayName}</div>
+      <div class="today-hero-date">${todayDisplayLabel()}</div>
+    </section>
     ${deloadBanner}
     ${renderDeloadMaxTestPanel(session)}
     ${accessoryWarnings ? `<div class="section compact-section">${accessoryWarnings}</div>` : ''}
-    <div class="section today-progress-summary">
-      <span class="status-pill status-caution">未完了 ${incomplete.length}</span>
+    <div class="today-progress-summary">
+      <div class="today-section-title"><span class="section-dot"></span>未完了</div>
+      <span class="status-pill status-caution">${incomplete.length}種目</span>
       <span class="status-pill status-ok">完了済み ${completed.length}</span>
     </div>
     <div class="today-exercise-section">
-      <h3>未完了</h3>
       ${incompleteHtml}
     </div>
     ${completedHtml}
@@ -2008,13 +2017,15 @@ function renderExerciseCard(ex, exIdx) {
   const cardTypeClass = ex.isAccessory
     ? 'exercise-card-accessory'
     : (ex.isBig3 ? 'exercise-card-big3' : 'exercise-card-main');
+  const iconText = ex.isBig3 ? 'B3' : (ex.isAccessory ? '補' : '主');
+  const headlineWeight = ex.plannedWeight != null ? `${ex.plannedWeight}kg` : '';
   const setsHtml = ex.sets.map((set, setIdx) => {
     const rowStateClass = set.done
       ? 'set-row-done'
       : (setIdx === pendingSetIndex ? 'set-row-current' : '');
     return `
     <div class="set-grid set-row ${rowStateClass}">
-      <div class="set-no">${setIdx + 1}</div>
+      <div class="set-no"><span class="current-marker">›</span>${setIdx + 1}</div>
       <input type="number" inputmode="decimal" step="0.5" placeholder="重量" value="${set.weight ?? ''}"
         data-ex="${exIdx}" data-set="${setIdx}" data-field="weight" />
       <input type="number" inputmode="numeric" placeholder="回数" value="${set.reps ?? ''}"
@@ -2062,8 +2073,17 @@ function renderExerciseCard(ex, exIdx) {
   return `
     <div class="exercise-card ${cardTypeClass} ${complete ? 'exercise-card-complete' : ''}" data-ex="${exIdx}">
       <div class="head">
-        <div class="name">${ex.name}</div>
-        <div class="menu-type">${ex.isAccessory ? '補助' : (ex.isBig3 ? 'BIG3' : 'メイン')}</div>
+        <div class="exercise-card-title">
+          <div class="exercise-icon">${iconText}</div>
+          <div>
+            <div class="name">${ex.name}</div>
+            <div class="exercise-subline">
+              <span class="menu-type">${ex.isAccessory ? '補助' : (ex.isBig3 ? 'BIG3' : 'メイン')}</span>
+              ${ex.pctNote ? `<span>${ex.pctNote}</span>` : ''}
+            </div>
+          </div>
+        </div>
+        ${headlineWeight ? `<div class="headline-weight">${headlineWeight}</div>` : ''}
       </div>
       ${planLine}
       ${big3Meta}
