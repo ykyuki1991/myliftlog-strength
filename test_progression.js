@@ -312,13 +312,28 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.ok(isolatedApi.getDayMenu(3, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'halfDead' && ex.isRequiredR4MaxTest));
   assert.ok(isolatedApi.getDayMenu(7, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'floorDead' && ex.isRequiredR4MaxTest));
 
-  isolatedStore.settings.r4AdjustmentModes = { b1: 'maintain' };
+  ['normalDeload', 'lightDeload', 'maintain', 'normalish'].forEach(mode => {
+    isolatedStore.settings.r4AdjustmentModes = { 'b1-r4': mode };
+    assert.ok(isolatedApi.getDayMenu(1, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'squat' && ex.isRequiredR4MaxTest), `${mode} should keep squat max-test`);
+    assert.ok(isolatedApi.getDayMenu(2, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'bench' && ex.isRequiredR4MaxTest), `${mode} should keep bench max-test`);
+    assert.ok(isolatedApi.getDayMenu(3, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'halfDead' && ex.isRequiredR4MaxTest), `${mode} should keep half-dead max-test`);
+    assert.ok(isolatedApi.getDayMenu(7, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'floorDead' && ex.isRequiredR4MaxTest), `${mode} should keep floor-dead max-test`);
+  });
+
+  isolatedStore.settings.r4AdjustmentModes = { 'b1-r4': 'maintain' };
   isolatedStore.logs = [big3Log({ exerciseKey: 'squat', menuType: 'max-test-e1rm', plannedWeight: 120, sets: [{ weight: 120, reps: 1, done: true }], ts: 1 })];
   const maintainedR4 = isolatedApi.getDayMenu(1, 4, isolatedStore.settings);
   const squatMaxTest = maintainedR4.exercises.find(ex => ex.key === 'squat' && ex.isRequiredR4MaxTest);
   assert.ok(squatMaxTest, 'R4 mode changes should keep required max-test slot');
   assert.ok(!squatMaxTest.progressionCapped, 'MAX測定枠 should not be capped as normal progression');
   assert.strictEqual(isolatedApi.evaluateRotationProgression(big3Log({ menuType: 'max-test-e1rm', rpe: '8', doneSets: 1, plannedSets: 1 })), null);
+
+  isolatedStore.settings.maxes.bench = 115;
+  isolatedStore.estimatedMaxHistory = [{ liftKey: 'bench', estimatedMax: 130, maxUseKind: 'candidate', useForMaxUpdate: true, ts: 10 }];
+  const benchMaxTest = isolatedApi.getDayMenu(2, 4, isolatedStore.settings).exercises.find(ex => ex.key === 'bench' && ex.isRequiredR4MaxTest);
+  assert.ok(benchMaxTest.plannedWeight >= 110, 'R4 max-test should challenge current/recent estimated max');
+  assert.strictEqual(benchMaxTest.plannedReps, 3);
+  assert.ok(benchMaxTest.pctNote.includes('基準130kg'));
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   let html = isolatedApi.renderToday();
@@ -333,6 +348,36 @@ function testDeloadAccessoryAndMaxTestTiming() {
   isolatedStore.currentState = { block: 1, rotation: 4, day: 5 };
   html = isolatedApi.renderToday();
   assert.ok(!html.includes('デロード時MAX測定'));
+}
+
+function testFutureMainSetOverride() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.logs = [big3Log({ plannedWeight: 100, plannedReps: 5, plannedSets: 3, ts: 1 })];
+  const originalLog = JSON.stringify(isolatedStore.logs[0]);
+  const todayBench = isolatedApi.getDayMenu(2, 1, isolatedStore.settings)
+    .exercises.find(ex => ex.key === 'bench' && ex.menuType === 'bench-hi-main');
+  todayBench.sets = Array.from({ length: todayBench.plannedSets }, () => ({
+    weight: todayBench.plannedWeight,
+    reps: todayBench.plannedReps,
+    done: false,
+  }));
+
+  const result = isolatedApi.applyMainSetEdit(todayBench, { plannedWeight: 97.5, plannedReps: 4, plannedSets: 2 });
+  assert.strictEqual(result.ok, true);
+  assert.ok(isolatedApi.saveMainSetOverride(2, todayBench));
+
+  const futureBench = isolatedApi.getDayMenu(2, 2, isolatedStore.settings)
+    .exercises.find(ex => ex.key === 'bench' && ex.menuType === 'bench-hi-main');
+  assert.strictEqual(futureBench.plannedWeight, 97.5);
+  assert.strictEqual(futureBench.plannedReps, 4);
+  assert.strictEqual(futureBench.plannedSets, 2);
+
+  const otherDayBench = isolatedApi.getDayMenu(6, 2, isolatedStore.settings)
+    .exercises.find(ex => ex.key === 'bench' && ex.menuType === 'bench-volume2');
+  assert.notStrictEqual(otherDayBench.plannedSets, 2, 'future edit should not leak to other Day/menuType');
+  assert.strictEqual(JSON.stringify(isolatedStore.logs[0]), originalLog, 'future edit should not rewrite past logs');
 }
 
 function testAdaptiveR4ProposalAndSelection() {
@@ -395,6 +440,7 @@ testDeloadMaxTestResult();
 testBlockSuggestionPainSeverity();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
+testFutureMainSetOverride();
 testAdaptiveR4ProposalAndSelection();
 testLogDailyAndMonthlyViews();
 testFloorDeadDayUsesBulgarianInsteadOfSquat();

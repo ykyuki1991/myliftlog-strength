@@ -51,6 +51,8 @@ const DEFAULT_SETTINGS = {
   },
   // R4は固定デロードではなく、状態を見てユーザーが選ぶ調整ローテとして扱う。
   r4AdjustmentModes: {},
+  // BIG3メイン編集の「今後も変更」。Day×種目×メニュー種別単位で保存し、過去ログは変更しない。
+  mainSetOverrides: {},
   accessorySlots: null,
   accessoryShoulderDefaultsAdded: true,
   day7BulgarianDefaultAdded: true,
@@ -327,6 +329,7 @@ function loadStore() {
         maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
         rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
         r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
+        mainSetOverrides: { ...def.settings.mainSetOverrides, ...(parsed.settings?.mainSetOverrides || {}) },
         accessoryDefaults: mergedAccDefaults,
         accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
         accessorySlots: mergedAccessorySlots,
@@ -1054,17 +1057,28 @@ function deloadMaxTestModeLabel(mode) {
   return DELOAD_MAX_TEST_MODES[mode] || 'e1RM確認';
 }
 
+function recentEstimatedMaxBasis(liftKey, settings = store.settings) {
+  const lift = BIG3_LIFTS[liftKey];
+  if (!lift) return 0;
+  const currentMax = parseFloat(settings.maxes?.[lift.maxKey]) || 0;
+  const recent = [...(store.estimatedMaxHistory || [])]
+    .filter(entry => entry.liftKey === liftKey && (entry.adopted || entry.maxUseKind === 'candidate' || entry.useForMaxUpdate))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+  const recentMax = parseFloat(recent?.estimatedMax) || 0;
+  return Math.max(currentMax, recentMax);
+}
+
 function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
   const lift = BIG3_LIFTS[liftKey];
   if (!lift || mode === 'normal') return [];
-  const max = settings.maxes[lift.maxKey] || 0;
+  const max = recentEstimatedMaxBasis(liftKey, settings);
   const inc = settings.increment || 2.5;
   const modePlan = {
-    e1rm: { pct: 90, reps: 1, rpe: '8〜9', note: '限界までは行かない' },
-    threeRm: { pct: 87.5, reps: 3, rpe: '9', note: '3RM測定' },
-    fiveRm: { pct: 82.5, reps: 5, rpe: '9', note: '5RM測定' },
-    trueOneRm: { pct: 97.5, reps: 1, rpe: '10', note: '安全環境のみ' },
-  }[mode] || { pct: 90, reps: 1, rpe: '8〜9', note: '限界までは行かない' };
+    e1rm: { pct: 88, reps: 3, rpe: '8〜9', note: '3回前後で推定MAX確認' },
+    threeRm: { pct: 90, reps: 3, rpe: '9', note: '3RM測定' },
+    fiveRm: { pct: 84, reps: 5, rpe: '9', note: '5RM測定' },
+    trueOneRm: { pct: 100, reps: 1, rpe: '10', note: '安全環境のみ' },
+  }[mode] || { pct: 88, reps: 3, rpe: '8〜9', note: '3回前後で推定MAX確認' };
   return [
     {
       key: lift.key,
@@ -1073,7 +1087,7 @@ function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
       plannedWeight: roundToIncrement(max * modePlan.pct / 100, inc),
       plannedReps: modePlan.reps,
       plannedSets: 1,
-      pctNote: `${modePlan.pct}% / RPE${modePlan.rpe}`,
+      pctNote: `${modePlan.pct}% / RPE${modePlan.rpe} / 基準${max}kg`,
       restSec: REST_TIME_SEC.big3_top,
       isBig3: true,
       isDeloadMaxTest: true,
@@ -1135,7 +1149,8 @@ function applyDeloadMaxTestModeToSession(session, mode) {
     return true;
   }
   const baseMenu = getDayMenu(session.day, session.rotation, store.settings);
-  const replacement = buildDeloadMaxTestExercises(lift.key, session.maxTestMode, store.settings);
+  const replacement = buildDeloadMaxTestExercises(lift.key, session.maxTestMode, store.settings)
+    .map((item, idx) => session.rotation === 4 && idx === 0 ? { ...item, isRequiredR4MaxTest: true, name: `${lift.name}（MAX測定）` } : item);
   const nextExercises = baseMenu.exercises
     .filter(ex => !(ex.isBig3 && ex.key === lift.key))
     .concat(replacement)
@@ -1820,6 +1835,7 @@ function getDayMenu(day, rotation, settings) {
   exercises = applyRequiredR4MaxTestSlot(exercises, day, rotation, settings);
   exercises = exercises.filter(ex => !ex.isAccessory);
   exercises.push(...buildAccessoryExercises(day, settings, isDeload));
+  exercises = applyMainSetOverridesToMenu(exercises, day, settings);
 
   // 手動調整を適用
   exercises = exercises.map(ex => {
@@ -1958,6 +1974,44 @@ function applyMainSetEdit(ex, values, options = {}) {
   }
   ex.sets = nextSets;
   return { ok: true, removingRecordedSets };
+}
+
+function mainSetOverrideKey(day, ex) {
+  if (!ex?.isBig3) return null;
+  return `Day${day}-${ex.key}-${ex.menuType}`;
+}
+
+function saveMainSetOverride(day, ex) {
+  const key = mainSetOverrideKey(day, ex);
+  if (!key) return false;
+  store.settings.mainSetOverrides = store.settings.mainSetOverrides || {};
+  store.settings.mainSetOverrides[key] = {
+    plannedWeight: ex.plannedWeight,
+    plannedReps: ex.plannedReps,
+    plannedSets: ex.plannedSets,
+    updatedAt: Date.now(),
+  };
+  if (store.manualAdjustments) delete store.manualAdjustments[key];
+  return true;
+}
+
+function applyMainSetOverridesToMenu(exercises, day, settings = store.settings) {
+  const overrides = settings.mainSetOverrides || {};
+  return exercises.map(ex => {
+    const key = mainSetOverrideKey(day, ex);
+    const override = key ? overrides[key] : null;
+    if (!override) return ex;
+    const plannedWeight = parseFloat(override.plannedWeight);
+    const plannedReps = parseInt(override.plannedReps, 10);
+    const plannedSets = parseInt(override.plannedSets, 10);
+    return {
+      ...ex,
+      plannedWeight: Number.isFinite(plannedWeight) ? plannedWeight : ex.plannedWeight,
+      plannedReps: plannedReps > 0 ? plannedReps : ex.plannedReps,
+      plannedSets: plannedSets > 0 ? plannedSets : ex.plannedSets,
+      mainSetOverridden: true,
+    };
+  });
 }
 
 function toggleNextSetCompletion(session, exIdx) {
@@ -2663,7 +2717,7 @@ function openMainSetEditModal(exIdx) {
   const ex = session?.exercises?.[exIdx];
   if (!ex?.isBig3) return;
   openModal('BIG3メイン編集', `
-    <div class="muted mb-8">${ex.name} / 今日だけ変更</div>
+    <div class="muted mb-8">${ex.name}</div>
     <label class="field">
       <span>予定重量(kg)</span>
       <input type="number" inputmode="decimal" step="0.5" id="mainEditWeight" value="${ex.plannedWeight ?? ''}" />
@@ -2678,9 +2732,10 @@ function openMainSetEditModal(exIdx) {
     </label>
     <div class="btn-row">
       <button class="btn-primary" id="main-edit-save">今日だけ変更</button>
+      <button class="btn-warn" id="main-edit-save-future">今後も変更</button>
     </div>
   `, () => {
-    document.getElementById('main-edit-save').onclick = () => {
+    const save = (applyFuture) => {
       const values = {
         plannedWeight: document.getElementById('mainEditWeight').value,
         plannedReps: document.getElementById('mainEditReps').value,
@@ -2695,11 +2750,17 @@ function openMainSetEditModal(exIdx) {
         showToast('入力値を確認してください');
         return;
       }
+      if (applyFuture) {
+        if (!confirm('同じDay・種目・枠の今後の予定にも反映します。過去ログは変更しません。')) return;
+        saveMainSetOverride(session.day, ex);
+      }
       saveStore();
       closeModal();
       render();
-      showToast('BIG3予定を今日だけ変更しました');
+      showToast(applyFuture ? 'BIG3予定を今後も変更しました' : 'BIG3予定を今日だけ変更しました');
     };
+    document.getElementById('main-edit-save').onclick = () => save(false);
+    document.getElementById('main-edit-save-future').onclick = () => save(true);
   });
 }
 
@@ -4463,6 +4524,7 @@ if (typeof window !== 'undefined') {
     buildDeloadMaxTestExercises,
     buildRequiredR4MaxTestExercise,
     applyRequiredR4MaxTestSlot,
+    recentEstimatedMaxBasis,
     applyDeloadMaxTestModeToSession,
     isIntensityMainMenu,
     isMaxTestMenu,
@@ -4474,6 +4536,8 @@ if (typeof window !== 'undefined') {
     isExerciseComplete,
     firstPendingSetIndex,
     applyMainSetEdit,
+    saveMainSetOverride,
+    applyMainSetOverridesToMenu,
     toggleNextSetCompletion,
     defaultAccessorySlots,
     buildAccessoryExercises,
