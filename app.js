@@ -717,8 +717,10 @@ function getMaxUpdateCandidate(entry) {
   if (entry.useForMaxUpdate === false || (entry.maxUseKind && entry.maxUseKind !== 'candidate')) return null;
   const current = store.settings.maxes[entry.maxKey] || entry.currentMax || 0;
   if (entry.estimatedMax <= current) return null;
+  const increment = store.settings.increment || 2.5;
   const capped = Math.min(entry.estimatedMax, current + 5);
-  const candidate = roundToIncrement(Math.max(current + 2.5, capped), store.settings.increment || 2.5);
+  const candidate = Math.floor(capped / increment) * increment;
+  if (candidate <= current) return null;
   return { current, estimatedMax: entry.estimatedMax, candidate, diff: roundToIncrement(candidate - current, 0.5) };
 }
 
@@ -744,7 +746,7 @@ function getPreviousBig3ReferenceWeight(ex) {
 }
 
 function capBig3ProgressionToPrevious(ex, settings = store.settings) {
-  if (!ex || !isBig3Key(ex.key) || ex.plannedWeight == null || isLightBig3Menu(ex.menuType)) return ex;
+  if (!ex || !isBig3Key(ex.key) || ex.plannedWeight == null || isLightBig3Menu(ex.menuType) || isMaxTestMenu(ex.menuType)) return ex;
   const referenceWeight = getPreviousBig3ReferenceWeight(ex);
   if (referenceWeight == null) return ex;
   const cap = getRotationIncreaseCap(ex.key, settings);
@@ -769,7 +771,7 @@ function capBig3ProgressionsToPrevious(exercises, isDeload, settings = store.set
 }
 
 function evaluateRotationProgression(log) {
-  if (!log || !isBig3Key(log.exerciseKey) || log.isDeload || isLightBig3Menu(log.menuType)) return null;
+  if (!log || !isBig3Key(log.exerciseKey) || log.isDeload || isLightBig3Menu(log.menuType) || isMaxTestMenu(log.menuType)) return null;
   const lift = BIG3_LIFTS[log.exerciseKey];
   const rpe = parseRpeValue(log.rpe);
   const failed = isLogFailed(log);
@@ -855,7 +857,7 @@ function findPendingRotationProgressionForExercise(ex, day = null, includeSugges
 function applyAcceptedRotationProgressionsToMenu(exercises, day, isDeload, settings = store.settings) {
   if (isDeload) return exercises;
   return exercises.map(ex => {
-    if (!ex || !isBig3Key(ex.key) || ex.plannedWeight == null || isLightBig3Menu(ex.menuType)) return ex;
+    if (!ex || !isBig3Key(ex.key) || ex.plannedWeight == null || isLightBig3Menu(ex.menuType) || isMaxTestMenu(ex.menuType)) return ex;
     const progression = findPendingRotationProgressionForExercise(ex, day, false);
     if (!progression || !progression.delta) return ex;
     return {

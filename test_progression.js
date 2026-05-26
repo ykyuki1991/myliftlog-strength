@@ -216,6 +216,13 @@ function testMaxCandidateAndAdoption() {
   assert.ok(candidate.candidate <= candidate.current + 5);
   assert.ok(api.adoptEstimatedMax(entry.id));
   assert.strictEqual(store.settings.maxes.bench, candidate.candidate);
+
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.maxes.bench = 115;
+  const tooSmallGap = isolatedApi.createEstimatedMaxEntry(big3Log({ rpe: '8', sets: [{ weight: 105, reps: 1, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(isolatedApi.getMaxUpdateCandidate(tooSmallGap), null, 'MAX候補 should not round above estimated max');
 }
 
 function testDeloadMaxTestResult() {
@@ -304,6 +311,14 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.ok(isolatedApi.getDayMenu(2, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'bench' && ex.isRequiredR4MaxTest));
   assert.ok(isolatedApi.getDayMenu(3, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'halfDead' && ex.isRequiredR4MaxTest));
   assert.ok(isolatedApi.getDayMenu(7, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'floorDead' && ex.isRequiredR4MaxTest));
+
+  isolatedStore.settings.r4AdjustmentModes = { b1: 'maintain' };
+  isolatedStore.logs = [big3Log({ exerciseKey: 'squat', menuType: 'max-test-e1rm', plannedWeight: 120, sets: [{ weight: 120, reps: 1, done: true }], ts: 1 })];
+  const maintainedR4 = isolatedApi.getDayMenu(1, 4, isolatedStore.settings);
+  const squatMaxTest = maintainedR4.exercises.find(ex => ex.key === 'squat' && ex.isRequiredR4MaxTest);
+  assert.ok(squatMaxTest, 'R4 mode changes should keep required max-test slot');
+  assert.ok(!squatMaxTest.progressionCapped, 'MAX測定枠 should not be capped as normal progression');
+  assert.strictEqual(isolatedApi.evaluateRotationProgression(big3Log({ menuType: 'max-test-e1rm', rpe: '8', doneSets: 1, plannedSets: 1 })), null);
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   let html = isolatedApi.renderToday();
