@@ -83,9 +83,11 @@ function testBig3LightDayRepSetShape() {
   assert.strictEqual(benchLight.plannedSets, 3);
 
   const day7 = api.getDayMenu(7, 1, store.settings);
-  const squatLight = day7.exercises.find(ex => ex.key === 'squat' && ex.menuType === 'squat-light');
-  assert.strictEqual(squatLight.plannedReps, 5);
-  assert.strictEqual(squatLight.plannedSets, 3);
+  assert.ok(!day7.exercises.some(ex => ex.key === 'squat' && ex.menuType === 'squat-light'));
+  const bulgarian = day7.exercises.find(ex => ex.key === 'bulgarian_split_squat');
+  assert.ok(bulgarian);
+  assert.strictEqual(bulgarian.plannedReps, '8〜12');
+  assert.strictEqual(bulgarian.plannedSets, 2);
 }
 
 function testEightDayMenusAndAccessorySlots() {

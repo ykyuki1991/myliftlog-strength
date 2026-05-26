@@ -109,6 +109,32 @@ function testRirAndEstimatedMax() {
   const entry = api.createEstimatedMaxEntry(big3Log({ rpe: '8' }));
   assert.ok(entry.estimatedMax > 115);
   assert.strictEqual(entry.confidence, '高');
+  assert.strictEqual(entry.maxUseLabel, '採用候補');
+  assert.strictEqual(entry.useForMaxUpdate, true);
+}
+
+function testEstimatedMaxFiltering() {
+  const intensity = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-hi-main', rpe: '8.5', sets: [{ weight: 105, reps: 3, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(intensity.maxUseLabel, '採用候補');
+  assert.strictEqual(intensity.useForMaxUpdate, true);
+
+  const light = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-light', rpe: '8', sets: [{ weight: 80, reps: 6, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(light.maxUseLabel, '参考');
+  assert.strictEqual(light.useForMaxUpdate, false);
+
+  const volume = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-volume', rpe: '8', sets: [{ weight: 85, reps: 6, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(volume.maxUseLabel, '参考');
+  assert.strictEqual(volume.useForMaxUpdate, false);
+
+  const deload = api.createEstimatedMaxEntry(big3Log({ isDeload: true, rpe: '8' }));
+  assert.strictEqual(deload.maxUseLabel, '除外');
+  assert.strictEqual(deload.useForMaxUpdate, false);
+
+  const painful = api.createEstimatedMaxEntry(big3Log({ pains: ['痛み'], rpe: '8' }));
+  assert.strictEqual(painful.maxUseLabel, '除外');
+
+  const noRpe = api.createEstimatedMaxEntry(big3Log({ rpe: '未入力' }));
+  assert.strictEqual(noRpe, null);
 }
 
 function testRotationProgressionRules() {
@@ -250,8 +276,59 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.ok(!html.includes('デロード時MAX測定'));
 }
 
+function testAdaptiveR4ProposalAndSelection() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
+  isolatedStore.logs = [
+    big3Log({ date: '2026-05-01', day: 1, rotation: 3, block: 1, ts: 1 }),
+    big3Log({ date: '2026-05-05', day: 2, rotation: 3, block: 1, ts: 2 }),
+  ];
+  const proposal = isolatedApi.getR4AdjustmentProposal('2026-05-06');
+  assert.strictEqual(proposal.cumulativeUnexpectedRestDays, 3);
+  assert.strictEqual(proposal.recommendedMode, 'lightDeload');
+  assert.ok(proposal.modes.some(mode => mode.key === 'maintain'));
+  assert.ok(isolatedApi.selectR4AdjustmentMode('maintain'));
+  assert.strictEqual(isolatedApi.getSelectedR4AdjustmentMode(isolatedStore.settings), 'maintain');
+  const menu = isolatedApi.getDayMenu(1, 4, isolatedStore.settings);
+  assert.strictEqual(menu.isAdjustmentRotation, true);
+  assert.strictEqual(menu.isDeload, false);
+}
+
+function testLogDailyAndMonthlyViews() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.logs = [
+    big3Log({ date: '2026-05-14', exerciseName: 'ベンチプレス', ts: 1 }),
+    big3Log({ date: '2026-05-15', exerciseName: 'スクワット', exerciseKey: 'squat', menuType: 'squat-hi-main', ts: 2 }),
+  ];
+  const logHtml = isolatedApi.renderLog();
+  assert.ok(logHtml.includes('日別'));
+  assert.ok(logHtml.includes('月別'));
+  assert.ok(logHtml.includes('log-card'));
+  const monthHtml = isolatedApi.renderMonthlyLogView();
+  assert.ok(monthHtml.includes('2026年05月'));
+  assert.ok(monthHtml.includes('実施 2日'));
+}
+
+function testFloorDeadDayUsesBulgarianInsteadOfSquat() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  const menu = isolatedApi.getDayMenu(7, 1, isolatedStore.settings);
+  assert.ok(menu.exercises.some(ex => ex.key === 'floorDead'), 'floor dead should remain on the floor-dead day');
+  assert.ok(!menu.exercises.some(ex => ex.key === 'squat'), 'squat should not be scheduled on the floor-dead day');
+  const bulgarian = menu.exercises.find(ex => ex.key === 'bulgarian_split_squat');
+  assert.ok(bulgarian, 'Bulgarian split squat should be available as accessory');
+  assert.strictEqual(bulgarian.plannedSets, 2);
+  assert.strictEqual(bulgarian.targetRpe, '7〜8');
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
+testEstimatedMaxFiltering();
 testRotationProgressionRules();
 testAdoptedProgressionAppliesOnceToNextMenu();
 testMaxCandidateAndAdoption();
@@ -259,6 +336,9 @@ testDeloadMaxTestResult();
 testBlockSuggestionPainSeverity();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
+testAdaptiveR4ProposalAndSelection();
+testLogDailyAndMonthlyViews();
+testFloorDeadDayUsesBulgarianInsteadOfSquat();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
 console.log('test_progression.js: all tests passed');

@@ -892,6 +892,45 @@ label.field > span {
   margin-top: 8px;
 }
 
+.log-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.log-card {
+  margin: 0;
+}
+
+.log-card-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+
+.log-detail-row {
+  border-top: 1px solid rgba(148,163,184,0.22);
+  padding: 10px 0;
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+}
+
+.log-detail-row:first-of-type {
+  border-top: 0;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.r4-adjustment-panel .btn-row {
+  gap: 6px;
+}
+
 .tabs {
   display: flex;
   gap: 4px;

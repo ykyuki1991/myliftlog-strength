@@ -49,8 +49,11 @@ const DEFAULT_SETTINGS = {
     halfDead: 2.5,
     floorDead: 2.5,
   },
+  // R4は固定デロードではなく、状態を見てユーザーが選ぶ調整ローテとして扱う。
+  r4AdjustmentModes: {},
   accessorySlots: null,
   accessoryShoulderDefaultsAdded: true,
+  day7BulgarianDefaultAdded: true,
 };
 
 // 補助種目キー → 表示名（設定画面の補助重量編集UI、フォールバック用）
@@ -127,6 +130,14 @@ const DELOAD_MAX_TEST_DAY_LIFTS = {
   2: 'bench',
   3: 'halfDead',
   7: 'floorDead',
+};
+
+const R4_ADJUSTMENT_MODES = {
+  normalDeload: { label: '通常デロード', short: '通常', deload: true, deloadPct: 65 },
+  lightDeload: { label: '軽めデロード', short: '軽め', deload: true, deloadPct: 70 },
+  maintain: { label: '維持', short: '維持', deload: false },
+  normalish: { label: '通常寄り', short: '通常寄り', deload: false },
+  custom: { label: 'カスタム', short: 'カスタム', deload: false },
 };
 
 const ACCESSORY_PRESET_GROUPS = [
@@ -263,6 +274,7 @@ const DEFAULT_ACCESSORY_SLOTS = {
     { slotId: 'd6-arm-ext', slotName: '腕', key: 'lying_ext', name: 'ライイングエクステンション', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'arm', restType: 'arm' },
   ],
   7: [
+    { slotId: 'd7-bulgarian', slotName: '脚前側補助', key: 'bulgarian_split_squat', name: 'ブルガリアンスクワット', setsText: '2', plannedSets: 2, reps: '8〜12', targetRpe: '7〜8', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], weightType: 'dumbbell', restType: 'default' },
     { slotId: 'd7-back-friendly', slotName: '背中', key: 'friendly_row', name: 'ロウ系', setsText: '2', plannedSets: 2, reps: '8〜12', targetRpe: '8', categories: ['背中', 'ロウ系'], fatigueTags: ['腰に優しい', '低リスク'], weightType: 'upper_machine', restType: 'row' },
     { slotId: 'd7-chin', slotName: 'チンニング', key: 'chinning', name: 'チンニング', setsText: '2', plannedSets: 2, reps: '5〜8', targetRpe: '8', categories: ['背中', 'チンニング系'], fatigueTags: ['肘負荷', '握力負荷'], weightType: 'bodyweight', restType: 'chinning' },
     { slotId: 'd7-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['カーフ'], fatigueTags: ['低リスク'], weightType: 'calf', restType: 'calf' },
@@ -304,7 +316,8 @@ function loadStore() {
       mergedAccDefaults[k] = { ...(mergedAccDefaults[k] || {}), ...userAccDefaults[k] };
     }
     const shoulderDefaultsAlreadyAdded = parsed.settings?.accessoryShoulderDefaultsAdded === true;
-    const mergedAccessorySlots = mergeAccessorySlots(parsed.settings?.accessorySlots, shoulderDefaultsAlreadyAdded);
+    const day7BulgarianDefaultAdded = parsed.settings?.day7BulgarianDefaultAdded === true;
+    const mergedAccessorySlots = mergeAccessorySlots(parsed.settings?.accessorySlots, shoulderDefaultsAlreadyAdded, day7BulgarianDefaultAdded);
     return {
       ...def,
       ...parsed,
@@ -313,10 +326,12 @@ function loadStore() {
         ...(parsed.settings || {}),
         maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
         rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
+        r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
         accessoryDefaults: mergedAccDefaults,
         accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
         accessorySlots: mergedAccessorySlots,
         accessoryShoulderDefaultsAdded: true,
+        day7BulgarianDefaultAdded: true,
       },
       currentState: { ...def.currentState, ...(parsed.currentState || {}) },
       rotationProgressions: Array.isArray(parsed.rotationProgressions) ? parsed.rotationProgressions : [],
@@ -348,17 +363,21 @@ function defaultAccessorySlots() {
   return deepClone(DEFAULT_ACCESSORY_SLOTS);
 }
 
-function mergeAccessorySlots(userSlots, shoulderDefaultsAlreadyAdded = true) {
+function mergeAccessorySlots(userSlots, shoulderDefaultsAlreadyAdded = true, day7BulgarianDefaultAdded = true) {
   const slots = defaultAccessorySlots();
   if (!userSlots || typeof userSlots !== 'object') return slots;
   for (const day of Object.keys(userSlots)) {
     if (Array.isArray(userSlots[day])) {
       const normalizedUserSlots = userSlots[day].map(normalizeAccessorySlot).filter(Boolean);
       const existingIds = new Set(normalizedUserSlots.map(slot => slot.slotId));
+      const dayNum = Number(day);
       const newlyRecommendedSlots = (slots[day] || [])
         .filter(slot => !existingIds.has(slot.slotId))
-        .filter(() => !shoulderDefaultsAlreadyAdded)
-        .filter(slot => ['d3-side-raise', 'd6-rear-delt'].includes(slot.slotId))
+        .filter(slot => {
+          if (!shoulderDefaultsAlreadyAdded && ['d3-side-raise', 'd6-rear-delt'].includes(slot.slotId)) return true;
+          if (!day7BulgarianDefaultAdded && dayNum === 7 && slot.slotId === 'd7-bulgarian') return true;
+          return false;
+        })
         .map(normalizeAccessorySlot)
         .filter(Boolean);
       slots[day] = [...normalizedUserSlots, ...newlyRecommendedSlots];
@@ -429,6 +448,11 @@ function isLightBig3Menu(menuType = '') {
   return String(menuType).includes('light');
 }
 
+function isIntensityMainMenu(menuType = '') {
+  const type = String(menuType || '');
+  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.startsWith('max-test-');
+}
+
 function hasFormIssue(note = '') {
   return /フォーム|崩|不安|乱れ/.test(String(note || ''));
 }
@@ -442,6 +466,118 @@ function isLogFailed(log) {
   return (parseInt(log?.doneSets, 10) || 0) < planned;
 }
 
+function dateDiffDays(a, b) {
+  const start = new Date(`${a}T00:00:00`);
+  const end = new Date(`${b}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.max(0, Math.round((end - start) / 86400000));
+}
+
+function r4AdjustmentKey(block = store.currentState.block) {
+  return `b${block}-r4`;
+}
+
+function getSelectedR4AdjustmentMode(settings = store.settings, block = store.currentState.block) {
+  const mode = settings.r4AdjustmentModes?.[r4AdjustmentKey(block)];
+  return R4_ADJUSTMENT_MODES[mode] ? mode : 'normalDeload';
+}
+
+function getR4AdjustmentProfile(mode = 'normalDeload') {
+  return R4_ADJUSTMENT_MODES[mode] || R4_ADJUSTMENT_MODES.normalDeload;
+}
+
+function countScheduledRestDaysBetween(fromState, toState) {
+  if (!fromState || !toState) return 0;
+  let cursor = { day: Number(fromState.day), rotation: Number(fromState.rotation), block: Number(fromState.block) };
+  let count = 0;
+  for (let guard = 0; guard < 40; guard++) {
+    cursor = nextDay(cursor);
+    if (cursor.block === Number(toState.block) && cursor.rotation === Number(toState.rotation) && cursor.day === Number(toState.day)) break;
+    if (cursor.day === 4 || cursor.day === 8) count++;
+  }
+  return count;
+}
+
+function getUnexpectedRestStats(referenceDate = todayStr()) {
+  const dates = [...(store.logs || [])]
+    .filter(log => log.date && !log.todayOnlyDeleted)
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const daily = [];
+  dates.forEach(log => {
+    const last = daily[daily.length - 1];
+    if (last && last.date === log.date) {
+      last.logs.push(log);
+    } else {
+      daily.push({ date: log.date, block: log.block, rotation: log.rotation, day: log.day, logs: [log] });
+    }
+  });
+
+  let cumulativeUnexpectedRestDays = 0;
+  for (let i = 1; i < daily.length; i++) {
+    const gap = Math.max(0, dateDiffDays(daily[i - 1].date, daily[i].date) - 1);
+    const scheduledRest = countScheduledRestDaysBetween(daily[i - 1], daily[i]);
+    cumulativeUnexpectedRestDays += Math.max(0, gap - scheduledRest);
+  }
+
+  const last = daily[daily.length - 1];
+  let consecutiveRestDays = 0;
+  if (last) {
+    const gap = Math.max(0, dateDiffDays(last.date, referenceDate) - 1);
+    const scheduledRest = countScheduledRestDaysBetween(last, store.currentState);
+    consecutiveRestDays = Math.max(0, gap - scheduledRest);
+  }
+
+  return { cumulativeUnexpectedRestDays, consecutiveRestDays, lastTrainingDate: last?.date || null };
+}
+
+function getR4AdjustmentProposal(referenceDate = todayStr()) {
+  const stats = getUnexpectedRestStats(referenceDate);
+  const recentLogs = [...(store.logs || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 12);
+  const hasPainOrFailure = recentLogs.some(log => hasLogPain(log) || isLogFailed(log) || hasFormIssue(log.note));
+  const hasEmaxDrop = Object.keys(BIG3_LIFTS).some(key => {
+    const recent = recentEstimatedMaxes(key, 2);
+    return recent.length >= 2 && recent.every(e => e.trendWarning);
+  });
+  let recommendedMode = 'normalDeload';
+  const reasons = [];
+
+  if (hasPainOrFailure || hasEmaxDrop) {
+    recommendedMode = 'normalDeload';
+    reasons.push('直近状態: 要注意');
+  } else if (stats.consecutiveRestDays >= 7) {
+    recommendedMode = 'lightDeload';
+    reasons.push('長めの連続休み: 慎重再開');
+  } else if (stats.cumulativeUnexpectedRestDays >= 6) {
+    recommendedMode = 'normalish';
+    reasons.push('予定外休み多め');
+  } else if (stats.cumulativeUnexpectedRestDays >= 4) {
+    recommendedMode = 'maintain';
+    reasons.push('疲労は抜け気味');
+  } else if (stats.cumulativeUnexpectedRestDays >= 2) {
+    recommendedMode = 'lightDeload';
+    reasons.push('軽め調整');
+  } else {
+    reasons.push('予定通り寄り');
+  }
+
+  return {
+    ...stats,
+    recommendedMode,
+    recommendedLabel: R4_ADJUSTMENT_MODES[recommendedMode].label,
+    reasons,
+    modes: Object.entries(R4_ADJUSTMENT_MODES).map(([key, value]) => ({ key, ...value })),
+  };
+}
+
+function selectR4AdjustmentMode(mode, block = store.currentState.block) {
+  if (!R4_ADJUSTMENT_MODES[mode]) return false;
+  store.settings.r4AdjustmentModes = store.settings.r4AdjustmentModes || {};
+  store.settings.r4AdjustmentModes[r4AdjustmentKey(block)] = mode;
+  saveStore();
+  recalculateTodaySession();
+  return true;
+}
+
 function estimateMaxFromSet(weight, reps, rpe, increment = 0.5) {
   const w = parseFloat(weight);
   const r = parseFloat(reps);
@@ -452,7 +588,7 @@ function estimateMaxFromSet(weight, reps, rpe, increment = 0.5) {
   const rir = Math.max(0, 10 - rpeValue);
   const value = roundToIncrement(w * (1 + (r + rir) / 30), increment);
   let confidence = '低';
-  if (r >= 1 && r <= 5 && rpeValue >= 8 && rpeValue <= 9) confidence = '高';
+  if (r >= 1 && r <= 5 && rpeValue >= 8 && rpeValue <= 9.5) confidence = '高';
   else if (r >= 6 && r <= 8 && rpeValue >= 7 && rpeValue <= 9) confidence = '中';
   return { value, rir, confidence, reason: `${w}kg×${r}回@RPE${rpeValue}` };
 }
@@ -461,21 +597,39 @@ function bestEstimatedMaxFromLog(log) {
   if (!log || !isBig3Key(log.exerciseKey)) return null;
   const doneSets = (log.sets || []).filter(s => s.done && s.weight && s.reps);
   if (doneSets.length === 0) return null;
-  const excluded = log.isDeload || hasLogPain(log) || isLogFailed(log) || hasFormIssue(log.note);
+  const excluded = log.isDeload || hasLogPain(log) || isLogFailed(log) || hasFormIssue(log.note) || !isIntensityMainMenu(log.menuType);
   const estimates = doneSets.map(set => {
     const estimate = estimateMaxFromSet(set.weight, set.reps, log.rpe);
     const reps = parseInt(set.reps, 10) || 0;
     if (excluded || reps >= 10 || estimate.value == null) estimate.confidence = '低';
     return { ...estimate, sourceWeight: parseFloat(set.weight), sourceReps: reps };
-  }).filter(e => e.value != null);
+  }).map(e => ({ ...e, status: classifyEstimatedMaxUse(log, e.sourceReps, e) }))
+    .filter(e => e.value != null);
   if (estimates.length === 0) {
     const fallback = doneSets[0];
     const estimate = estimateMaxFromSet(fallback.weight, fallback.reps, log.rpe);
-    return { ...estimate, sourceWeight: parseFloat(fallback.weight), sourceReps: parseInt(fallback.reps, 10) || 0, excluded };
+    const reps = parseInt(fallback.reps, 10) || 0;
+    const status = classifyEstimatedMaxUse(log, reps, estimate);
+    return { ...estimate, status, sourceWeight: parseFloat(fallback.weight), sourceReps: reps, excluded };
   }
-  const priority = { '高': 3, '中': 2, '低': 1 };
-  estimates.sort((a, b) => (priority[b.confidence] - priority[a.confidence]) || (b.value - a.value));
+  const priority = { candidate: 4, reference: 2, excluded: 1 };
+  estimates.sort((a, b) => (priority[b.status.kind] - priority[a.status.kind]) || (b.value - a.value));
   return { ...estimates[0], excluded };
+}
+
+function classifyEstimatedMaxUse(log, reps, estimate) {
+  const rpe = parseRpeValue(log?.rpe);
+  if (!estimate || estimate.value == null || rpe == null) return { kind: 'excluded', label: '除外', reason: 'RPE未入力' };
+  if (!isBig3Key(log?.exerciseKey)) return { kind: 'excluded', label: '除外', reason: '補助種目' };
+  if (log.isDeload) return { kind: 'excluded', label: '除外', reason: 'デロード日' };
+  if (hasLogPain(log)) return { kind: 'excluded', label: '除外', reason: '痛みあり' };
+  if (isLogFailed(log)) return { kind: 'excluded', label: '除外', reason: '失敗あり' };
+  if (hasFormIssue(log.note)) return { kind: 'excluded', label: '除外', reason: 'フォーム要確認' };
+  if (!isIntensityMainMenu(log.menuType)) return { kind: 'reference', label: '参考', reason: '強度メイン以外' };
+  if (reps >= 10) return { kind: 'excluded', label: '除外', reason: '高レップ' };
+  if (reps >= 1 && reps <= 5 && rpe >= 8 && rpe <= 9.5) return { kind: 'candidate', label: '採用候補', reason: '強度メイン' };
+  if (reps >= 6 && reps <= 8) return { kind: 'reference', label: '参考', reason: '6〜8回' };
+  return { kind: 'reference', label: '参考', reason: '測定意図低め' };
 }
 
 function createEstimatedMaxEntry(log, source = 'training') {
@@ -503,7 +657,10 @@ function createEstimatedMaxEntry(log, source = 'training') {
     rpe: log.rpe,
     rir: estimate.rir,
     confidence: estimate.confidence,
-    useForMaxUpdate: !estimate.excluded && estimate.confidence !== '低',
+    maxUseKind: estimate.status?.kind || 'excluded',
+    maxUseLabel: estimate.status?.label || '除外',
+    maxUseReason: estimate.status?.reason || '',
+    useForMaxUpdate: estimate.status?.kind === 'candidate',
     adopted: false,
     ts: Date.now(),
   };
@@ -537,6 +694,7 @@ function recentEstimatedMaxes(liftKey, limit = 2) {
 
 function getMaxUpdateCandidate(entry) {
   if (!entry || entry.estimatedMax == null) return null;
+  if (entry.useForMaxUpdate === false || (entry.maxUseKind && entry.maxUseKind !== 'candidate')) return null;
   const current = store.settings.maxes[entry.maxKey] || entry.currentMax || 0;
   if (entry.estimatedMax <= current) return null;
   const capped = Math.min(entry.estimatedMax, current + 5);
@@ -790,8 +948,8 @@ function renderEstimatedMaxHistory(limit = 6) {
     return `
       <div class="suggestion-row emax-row">
         <div>
-          <div class="name">${entry.liftName}推定MAX: ${entry.estimatedMax}kg <span class="status-pill ${entry.confidence === '高' ? 'status-ok' : entry.confidence === '中' ? 'status-caution' : 'status-low'}">信頼度:${entry.confidence}</span></div>
-          <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / 現MAX差 ${entry.diff > 0 ? '+' : ''}${entry.diff}kg / ${entry.date}</div>
+          <div class="name">${entry.liftName}推定MAX: ${entry.estimatedMax}kg <span class="status-pill ${entry.maxUseKind === 'candidate' ? 'status-ok' : entry.maxUseKind === 'reference' ? 'status-caution' : 'status-low'}">${entry.maxUseLabel || '除外'}</span></div>
+          <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.maxUseReason || '判定'} / 現MAX差 ${entry.diff > 0 ? '+' : ''}${entry.diff}kg / ${entry.date}</div>
           <div class="muted" style="font-size:12px;">MAX更新候補: ${candidate ? `${candidate.candidate}kg (${candidate.diff > 0 ? '+' : ''}${candidate.diff}kg)` : 'なし・様子見'}</div>
           ${entry.trendWarning ? `<div class="load-warning load-warning-caution"><span>注意</span>${entry.trendWarning}</div>` : ''}
         </div>
@@ -826,7 +984,7 @@ function renderEstimatedMaxSummary() {
           <div class="name">${lift.name}推定MAX: ${entry.estimatedMax}kg</div>
           <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.date}</div>
         </div>
-        <span class="status-pill ${candidate ? 'status-caution' : 'status-ok'}">${candidate ? 'MAX更新候補あり' : `信頼度:${entry.confidence}`}</span>
+        <span class="status-pill ${candidate ? 'status-caution' : entry.maxUseKind === 'candidate' ? 'status-ok' : 'status-low'}">${candidate ? 'MAX更新候補あり' : (entry.maxUseLabel || '参考')}</span>
         ${candidate && !entry.adopted ? `<button class="btn-success btn-small" data-adopt-emax="${entry.id}">採用</button>` : entry.adopted ? '<span class="status-pill status-ok">採用済み</span>' : ''}
       </div>
     `;
@@ -913,7 +1071,7 @@ function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
 }
 
 function applyDeloadMaxTestModeToSession(session, mode) {
-  if (!session?.isDeload) return false;
+  if (!session?.isDeload && !session?.isAdjustmentRotation) return false;
   const lift = getDeloadMaxTestLiftForDay(session.day);
   if (!lift) return false;
   session.maxTestMode = mode || 'normal';
@@ -951,7 +1109,7 @@ function applyDeloadMaxTestModeToSession(session, mode) {
 }
 
 function renderDeloadMaxTestPanel(session) {
-  if (!session?.isDeload) return '';
+  if (!session?.isAdjustmentRotation && !session?.isDeload) return '';
   const lift = getDeloadMaxTestLiftForDay(session.day);
   if (!lift) return '';
   const configuredMode = store.settings.deloadMaxTestMode || 'e1rm';
@@ -977,6 +1135,30 @@ function renderDeloadMaxTestPanel(session) {
         ${buttons}
         <button class="btn-primary" id="btnOpenMaxTest">MAX測定を入力</button>
       </div>
+    </div>
+  `;
+}
+
+function renderR4AdjustmentPanel(session = null) {
+  const isR4 = Number(session?.rotation ?? store.currentState.rotation) === 4;
+  if (!isR4) return '';
+  const proposal = getR4AdjustmentProposal();
+  const selected = getSelectedR4AdjustmentMode(store.settings);
+  const buttons = proposal.modes.map(mode => `
+    <button class="${selected === mode.key ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="setR4AdjustmentMode" data-r4-mode="${mode.key}">
+      ${mode.short}
+    </button>
+  `).join('');
+  return `
+    <div class="section r4-adjustment-panel">
+      <h2>R4調整提案</h2>
+      <div class="status-row">
+        <span class="status-pill status-caution">予定外休み ${proposal.cumulativeUnexpectedRestDays}日</span>
+        <span class="status-pill status-caution">連続休み ${proposal.consecutiveRestDays}日</span>
+        <span class="status-pill status-ok">おすすめ: ${proposal.recommendedLabel}</span>
+      </div>
+      <div class="muted mb-8">${proposal.reasons.join(' / ')}。最終選択はユーザーが行います。</div>
+      <div class="btn-row">${buttons}</div>
     </div>
   `;
 }
@@ -1020,7 +1202,7 @@ function openMaxTestModal(modeOverride = null, liftKeyOverride = null) {
         return;
       }
       const candidate = getMaxUpdateCandidate(result.entry);
-      box.innerHTML = `<div class="accessory-suggestion"><span class="suggestion-label">推定MAX</span><span>${result.entry.liftName}: ${result.entry.estimatedMax}kg / 信頼度:${result.entry.confidence} / 更新候補:${candidate ? `${candidate.candidate}kg` : 'なし'}</span></div>
+      box.innerHTML = `<div class="accessory-suggestion"><span class="suggestion-label">推定MAX</span><span>${result.entry.liftName}: ${result.entry.estimatedMax}kg / ${result.entry.maxUseLabel || '判定'} / 更新候補:${candidate ? `${candidate.candidate}kg` : 'なし'}</span></div>
         ${candidate ? `<button class="btn-success btn-small" data-adopt-emax="${result.entry.id}">この値を採用</button>` : ''}`;
       bindEstimatedMaxActions();
     };
@@ -1323,7 +1505,11 @@ function getDayMenu(day, rotation, settings) {
   const M = settings.maxes;
   const inc = settings.increment;
   const r = rotation;
-  const isDeload = r === 4;
+  const r4Mode = r === 4 ? getSelectedR4AdjustmentMode(settings) : null;
+  const r4Profile = getR4AdjustmentProfile(r4Mode);
+  const isAdjustmentRotation = r === 4;
+  const isDeload = isAdjustmentRotation && !!r4Profile.deload;
+  const deloadPct = r4Profile.deloadPct || 65;
   const volumeMode = settings.trainingVolumeMode || 'high';
   const isHigh = volumeMode === 'high';
   const strengthMode = settings.strengthMode || 'highIntensity';
@@ -1399,7 +1585,7 @@ function getDayMenu(day, rotation, settings) {
   const backoff = (key, name, max, pcts, repsArr, setsArr, menuType) => {
     let pct, reps, sets;
     if (isDeload) {
-      pct = 65;
+      pct = deloadPct;
       reps = 3;
       sets = 2;
     } else {
@@ -1423,7 +1609,7 @@ function getDayMenu(day, rotation, settings) {
   const benchByPct = (key, name, max, pcts, repsArr, setsArr, menuType, restType) => {
     let pct, reps, sets;
     if (isDeload) {
-      pct = 65;
+      pct = deloadPct;
       reps = 3;
       sets = 2;
     } else {
@@ -1555,13 +1741,11 @@ function getDayMenu(day, rotation, settings) {
       break;
     }
     case 7: {
-      dayName = 'Day7: 床引きデッド / スクワット軽め';
+      dayName = 'Day7: 床引きデッド / 脚補助';
       // 床引きデッドはハーフデッド強化の補助・フォーム維持目的のため、
       // 高強度モードでも軽〜中重量を維持。強化対象にしない。
       exercises.push(benchByPct('floorDead', '床引きデッド', M.floorDead,
         [70.6, 73.5, 76.5], [3, 3, 3], [5, 5, 4], 'floorDead-main', 'squat_dead_volume'));
-      exercises.push(benchByPct('squat', 'スクワット（軽め）', M.squat,
-        [62.5, 64.1, 65.6], [5, 5, 5], [3, 3, 3], 'squat-light', 'squat_dead_volume'));
       if (isHighIntensity) {
         // 高強度モード補助: ラットプルダウン / マシンロー / シーテッドロー / プリーチャー
         exercises.push(accessoryWith('latpulldown', 'ラットプルダウン', '8〜12', 3, 'row', null, 4));
@@ -1603,6 +1787,8 @@ function getDayMenu(day, rotation, settings) {
     day,
     rotation,
     isDeload,
+    isAdjustmentRotation,
+    r4AdjustmentMode: r4Mode,
     isRest: exercises.length === 0,
     name: dayName,
     exercises,
@@ -1641,6 +1827,8 @@ function getOrCreateTodaySession() {
       rotation: store.currentState.rotation,
       block: store.currentState.block,
       isDeload: menu.isDeload,
+      isAdjustmentRotation: menu.isAdjustmentRotation,
+      r4AdjustmentMode: menu.r4AdjustmentMode,
       isRest: menu.isRest,
       dayName: menu.name,
       exercises: menu.exercises.map(ex => ({
@@ -1807,6 +1995,8 @@ function recalculateTodaySession() {
   oldSession.exercises = newExercises;
   oldSession.dayName = menu.name;
   oldSession.isDeload = menu.isDeload;
+  oldSession.isAdjustmentRotation = menu.isAdjustmentRotation;
+  oldSession.r4AdjustmentMode = menu.r4AdjustmentMode;
   oldSession.isRest = menu.isRest;
   saveStore();
   return hasDoneSet;
@@ -1860,8 +2050,8 @@ function renderHome() {
   const volumeMode = store.settings.trainingVolumeMode || 'high';
   const modeBadge = `<div class="muted" style="font-size:12px;">ボリュームモード: <span class="${volumeMode === 'high' ? 'text-warn' : ''}">${volumeMode === 'high' ? '高ボリューム' : '標準'}</span></div>`;
 
-  const deloadBanner = menu.isDeload && !menu.isRest
-    ? `<div class="deload-banner"><div class="label">疲労抜きローテ（4ローテ目）</div><div class="muted">トップシングルなし、軽めの重量で身体を整える</div></div>`
+  const deloadBanner = menu.isAdjustmentRotation && !menu.isRest
+    ? `<div class="deload-banner"><div class="label">R4調整ローテ</div><div class="muted">${R4_ADJUSTMENT_MODES[menu.r4AdjustmentMode]?.label || '通常デロード'}を選択中</div></div>`
     : '';
 
   return `
@@ -1948,8 +2138,8 @@ function renderToday() {
     `;
   }
 
-  const deloadBanner = session.isDeload
-    ? `<div class="deload-banner"><div class="label">疲労抜きローテ</div><div class="muted">RPE6以下を目安に。痛みがあれば腕トレ・ディップスはスキップ可</div></div>`
+  const deloadBanner = session.isAdjustmentRotation
+    ? `<div class="deload-banner"><div class="label">R4調整ローテ</div><div class="muted">${R4_ADJUSTMENT_MODES[session.r4AdjustmentMode]?.label || '通常デロード'} / 手動変更可</div></div>`
     : '';
 
   const incomplete = session.exercises
@@ -1981,6 +2171,7 @@ function renderToday() {
     <h2 class="screen-title">${session.dayName}</h2>
     <div class="muted mb-12">${todayStr()} / B${s.block} R${s.rotation} D${s.day}</div>
     ${deloadBanner}
+    ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
     ${accessoryWarnings ? `<div class="section compact-section">${accessoryWarnings}</div>` : ''}
     <div class="section today-progress-summary">
@@ -2168,6 +2359,13 @@ function afterToday() {
       if (action === 'setDeloadMaxMode') {
         if (applyDeloadMaxTestModeToSession(session, b.dataset.mode || 'normal')) {
           showToast(`${deloadMaxTestModeLabel(b.dataset.mode || 'normal')}に切り替えました`);
+          render();
+        }
+        return;
+      }
+      if (action === 'setR4AdjustmentMode') {
+        if (selectR4AdjustmentMode(b.dataset.r4Mode)) {
+          showToast(`${R4_ADJUSTMENT_MODES[b.dataset.r4Mode]?.label || 'R4調整'}にしました`);
           render();
         }
         return;
@@ -2766,6 +2964,8 @@ function finishTodaySession() {
       block: session.block,
       rotation: session.rotation,
       isDeload: session.isDeload,
+      isAdjustmentRotation: !!session.isAdjustmentRotation,
+      r4AdjustmentMode: session.r4AdjustmentMode || null,
       exerciseKey: ex.key,
       exerciseName: ex.name,
       menuType: ex.menuType,
@@ -3153,7 +3353,7 @@ function renderBlock() {
       r === 4 ? 'deload' : '',
       r === s.rotation ? 'actual-current' : '',
     ].filter(Boolean).join(' ');
-    return `<button class="rotation-cell ${cls}" data-block-rotation="${r}">R${r}${r === s.rotation ? '<br><span class="status-pill status-ok">現在</span>' : ''}${r === 4 ? '<br><span class="muted" style="font-size:11px;">疲労抜き</span>' : ''}</button>`;
+    return `<button class="rotation-cell ${cls}" data-block-rotation="${r}">R${r}${r === s.rotation ? '<br><span class="status-pill status-ok">現在</span>' : ''}${r === 4 ? '<br><span class="muted" style="font-size:11px;">調整</span>' : ''}</button>`;
   }).join('');
 
   const suggestion = computeNextBlockSuggestion();
@@ -3435,74 +3635,27 @@ function computeNextBlockSuggestion() {
 }
 
 // ===== ログ画面 =====
-let logFilter = { type: 'all', exerciseKey: null };
+let logFilter = { type: 'daily', exerciseKey: null };
 
 function renderLog() {
   const tabs = `
     <div class="tabs">
-      <div class="tab ${logFilter.type === 'all' ? 'active' : ''}" data-type="all">全て</div>
-      <div class="tab ${logFilter.type === 'date' ? 'active' : ''}" data-type="date">日付別</div>
-      <div class="tab ${logFilter.type === 'bench' ? 'active' : ''}" data-type="bench" data-ex="bench">ベンチ</div>
-      <div class="tab ${logFilter.type === 'squat' ? 'active' : ''}" data-type="squat" data-ex="squat">スクワット</div>
-      <div class="tab ${logFilter.type === 'halfDead' ? 'active' : ''}" data-type="halfDead" data-ex="halfDead">ハーフデッド</div>
-      <div class="tab ${logFilter.type === 'floorDead' ? 'active' : ''}" data-type="floorDead" data-ex="floorDead">床引きデッド</div>
+      <button class="tab ${logFilter.type === 'daily' ? 'active' : ''}" data-type="daily">日別</button>
+      <button class="tab ${logFilter.type === 'monthly' ? 'active' : ''}" data-type="monthly">月別</button>
+      <button class="tab ${logFilter.type === 'emax' ? 'active' : ''}" data-type="emax">推定MAX</button>
     </div>
   `;
 
-  let logs = [...store.logs].sort((a, b) => b.ts - a.ts);
-  if (['bench', 'squat', 'halfDead', 'floorDead'].includes(logFilter.type)) {
-    logs = logs.filter(l => l.exerciseKey === logFilter.type);
-  }
-
-  let body;
-  if (logs.length === 0) {
-    body = '<div class="muted">記録がありません</div>';
-  } else {
-    body = `
-      <div style="overflow-x:auto;">
-      <table class="log-table">
-        <thead><tr>
-          <th>日付</th><th>D/B/R</th><th>種目</th><th>予定</th><th>実施</th><th>RPE</th><th>痛み</th><th>e1RM</th>
-        </tr></thead>
-        <tbody>
-          ${logs.map(l => {
-            const setsTxt = l.sets.map(s => s.done ? `${s.weight}×${s.reps}` : `(${s.weight}×${s.reps})`).join(', ');
-            const maxEntry = bestEstimatedMaxFromLog(l);
-            const maxE = maxEntry?.value || 0;
-            return `<tr>
-              <td>${l.date}</td>
-              <td>D${l.day}/B${l.block}/R${l.rotation}${l.isDeload ? '*' : ''}</td>
-              <td>${l.exerciseName}</td>
-              <td>${l.plannedWeight ?? '-'}kg×${l.plannedReps}×${l.plannedSets}</td>
-              <td>${setsTxt}</td>
-              <td>${l.rpe}</td>
-              <td>${l.pains.join(',') || '-'}</td>
-              <td>${maxE || '-'}</td>
-            </tr>${l.note ? `<tr><td colspan="8" class="muted">📝 ${l.note}</td></tr>` : ''}`;
-          }).join('')}
-        </tbody>
-      </table>
-      </div>
-    `;
-  }
-
-  // BIG3用シンプルグラフ
-  let graph = '';
-  if (['bench', 'squat', 'halfDead', 'floorDead'].includes(logFilter.type)) {
-    graph = renderSimpleGraph(logs, logFilter.type);
-  }
+  const body = logFilter.type === 'monthly'
+    ? renderMonthlyLogView()
+    : logFilter.type === 'emax'
+      ? `<div class="section"><h2>推定MAX履歴</h2>${renderEstimatedMaxHistory(20)}</div>`
+      : renderDailyLogView();
 
   return `
     <h2 class="screen-title">ログ</h2>
     ${tabs}
-    ${graph}
-    <div class="section">
-      ${body}
-    </div>
-    <div class="section">
-      <h2>推定MAX履歴</h2>
-      ${renderEstimatedMaxHistory(8)}
-    </div>
+    ${body}
     <div class="section">
       <h2>データ管理</h2>
       <div class="btn-row">
@@ -3511,6 +3664,91 @@ function renderLog() {
       </div>
     </div>
   `;
+}
+
+function logsByDate() {
+  const map = new Map();
+  [...(store.logs || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).forEach(log => {
+    const key = log.date || '日付なし';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(log);
+  });
+  return map;
+}
+
+function summarizeLogGroup(logs) {
+  const completed = logs.filter(log => (parseInt(log.doneSets, 10) || 0) >= (parseInt(log.plannedSets, 10) || 0));
+  const mainNames = logs.slice(0, 3).map(log => log.exerciseName).filter(Boolean).join(' / ') || '記録';
+  const hasCandidate = logs.some(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate);
+  return { completedCount: completed.length, totalCount: logs.length, mainNames, hasCandidate };
+}
+
+function renderLogDetail(logs) {
+  return logs.map(log => {
+    const setsTxt = (log.sets || []).map(s => s.done ? `${s.weight ?? '-'}kg×${s.reps ?? '-'}` : `(${s.weight ?? '-'}kg×${s.reps ?? '-'})`).join(' / ') || '-';
+    const emax = createEstimatedMaxEntry(log, 'log-preview');
+    return `
+      <div class="log-detail-row">
+        <div class="row between">
+          <strong>${log.exerciseName}</strong>
+          <span class="status-pill ${log.todayOnlyDeleted ? 'status-low' : 'status-ok'}">${log.doneSets || 0}/${log.plannedSets || 0}</span>
+        </div>
+        <div class="muted">${log.plannedWeight ?? '-'}kg × ${log.plannedReps ?? '-'} × ${log.plannedSets ?? '-'}</div>
+        <div>${setsTxt}</div>
+        <div class="muted">RPE ${log.rpe || '-'} / 状態 ${(log.pains || []).join(',') || '-'}</div>
+        ${emax ? `<div class="accessory-suggestion"><span class="suggestion-label">${emax.maxUseLabel}</span><span>${emax.estimatedMax}kg / ${emax.maxUseReason}</span></div>` : ''}
+        ${log.note ? `<div class="muted">メモ: ${log.note}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderDailyLogView(logMap = logsByDate()) {
+  if (logMap.size === 0) return '<div class="section"><div class="muted">記録がありません</div></div>';
+  return `<div class="log-card-list">${[...logMap.entries()].map(([date, logs]) => {
+    const first = logs[0] || {};
+    const summary = summarizeLogGroup(logs);
+    return `
+      <details class="section ui-details log-card">
+        <summary>
+          <span>
+            <span class="log-card-title">${fmtDate(date)} Day${first.day || '-'}</span>
+            <span class="muted">B${first.block || '-'} / R${first.rotation || '-'} / ${summary.mainNames}</span>
+          </span>
+          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補あり' : `${summary.completedCount}/${summary.totalCount}`}</span>
+        </summary>
+        ${renderLogDetail(logs)}
+      </details>
+    `;
+  }).join('')}</div>`;
+}
+
+function renderMonthlyLogView() {
+  const dateMap = logsByDate();
+  if (dateMap.size === 0) return '<div class="section"><div class="muted">記録がありません</div></div>';
+  const monthMap = new Map();
+  dateMap.forEach((logs, date) => {
+    const month = String(date).slice(0, 7);
+    if (!monthMap.has(month)) monthMap.set(month, new Map());
+    monthMap.get(month).set(date, logs);
+  });
+  return `<div class="log-card-list">${[...monthMap.entries()].map(([month, days]) => {
+    const logs = [...days.values()].flat();
+    const big3Counts = ['bench', 'squat', 'halfDead', 'floorDead'].map(key => logs.filter(log => log.exerciseKey === key).length);
+    const candidateCount = logs.filter(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate).length;
+    return `
+      <details class="section ui-details log-card">
+        <summary>
+          <span>
+            <span class="log-card-title">${month.replace('-', '年')}月</span>
+            <span class="muted">実施 ${days.size}日 / ベンチ${big3Counts[0]} スクワット${big3Counts[1]} デッド${big3Counts[2] + big3Counts[3]}</span>
+          </span>
+          <span class="status-pill ${candidateCount ? 'status-caution' : 'status-ok'}">MAX候補 ${candidateCount}</span>
+        </summary>
+        ${renderDailyLogView(days)}
+      </details>
+    `;
+  }).join('')}</div>`;
 }
 
 function renderSimpleGraph(logs, key) {
@@ -4152,6 +4390,8 @@ if (typeof window !== 'undefined') {
     accessoryPresetOptionsHtml,
     fillSlotFormFromPreset,
     estimateMaxFromSet,
+    bestEstimatedMaxFromLog,
+    classifyEstimatedMaxUse,
     createEstimatedMaxEntry,
     upsertEstimatedMaxFromLog,
     evaluateRotationProgression,
@@ -4162,6 +4402,10 @@ if (typeof window !== 'undefined') {
     capBig3ProgressionToPrevious,
     capBig3ProgressionsToPrevious,
     getRotationIncreaseCap,
+    getUnexpectedRestStats,
+    getR4AdjustmentProposal,
+    getSelectedR4AdjustmentMode,
+    selectR4AdjustmentMode,
     getDeloadMaxTestLiftForDay,
     buildDeloadMaxTestExercises,
     applyDeloadMaxTestModeToSession,
@@ -4190,6 +4434,9 @@ if (typeof window !== 'undefined') {
     renderAccessoryLoadCheck,
     renderSettings,
     renderToday,
+    renderLog,
+    renderDailyLogView,
+    renderMonthlyLogView,
     renderBlock,
     computeNextBlockSuggestion,
     getRestState: () => ({ ...restState }),
