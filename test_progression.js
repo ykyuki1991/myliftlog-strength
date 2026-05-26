@@ -118,8 +118,23 @@ function testEstimatedMaxFiltering() {
   assert.strictEqual(intensity.maxUseLabel, '採用候補');
   assert.strictEqual(intensity.useForMaxUpdate, true);
 
+  const benchMainFive = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-hi-main', rpe: '8', sets: [{ weight: 92.5, reps: 5, done: true }], doneSets: 1, plannedSets: 3 }));
+  assert.strictEqual(benchMainFive.maxUseLabel, '採用候補');
+  assert.strictEqual(benchMainFive.maxUseReason, '強度メイン');
+  assert.strictEqual(benchMainFive.useForMaxUpdate, true);
+
+  const halfDeadMainFive = api.createEstimatedMaxEntry(big3Log({ exerciseKey: 'halfDead', exerciseName: 'ハーフデッド', menuType: 'halfDead-hi-main', rpe: '9', sets: [{ weight: 167.5, reps: 5, done: true }], doneSets: 1, plannedSets: 3 }));
+  assert.strictEqual(halfDeadMainFive.maxUseLabel, '採用候補');
+  assert.strictEqual(halfDeadMainFive.useForMaxUpdate, true);
+
+  const lowerRpeSeven = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-hi-main', rpe: '7', sets: [{ weight: 90, reps: 7, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(lowerRpeSeven.maxUseLabel, '参考');
+  assert.strictEqual(lowerRpeSeven.maxUseReason, '6〜8回');
+  assert.strictEqual(lowerRpeSeven.useForMaxUpdate, false);
+
   const light = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-light', rpe: '8', sets: [{ weight: 80, reps: 6, done: true }], doneSets: 1, plannedSets: 1 }));
-  assert.strictEqual(light.maxUseLabel, '参考');
+  assert.strictEqual(light.maxUseLabel, '除外');
+  assert.strictEqual(light.maxUseReason, '軽め日');
   assert.strictEqual(light.useForMaxUpdate, false);
 
   const volume = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-volume', rpe: '8', sets: [{ weight: 85, reps: 6, done: true }], doneSets: 1, plannedSets: 1 }));
@@ -135,6 +150,31 @@ function testEstimatedMaxFiltering() {
 
   const noRpe = api.createEstimatedMaxEntry(big3Log({ rpe: '未入力' }));
   assert.strictEqual(noRpe, null);
+
+  const r4MaxTest = api.createEstimatedMaxEntry(big3Log({ isDeload: true, menuType: 'max-test-e1rm', rpe: '8.5', sets: [{ weight: 100, reps: 3, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(r4MaxTest.maxUseLabel, '採用候補');
+  assert.strictEqual(r4MaxTest.useForMaxUpdate, true);
+
+  const adoptedHtmlStore = api.getStore();
+  adoptedHtmlStore.estimatedMaxHistory = [{
+    id: 'adopted-excluded',
+    liftKey: 'bench',
+    liftName: 'ベンチプレス',
+    estimatedMax: 120,
+    sourceWeight: 100,
+    sourceReps: 5,
+    rpe: '8',
+    diff: 5,
+    date: '2026-05-01',
+    maxUseKind: 'excluded',
+    maxUseLabel: '除外',
+    maxUseReason: '旧判定',
+    adopted: true,
+    ts: 1,
+  }];
+  const historyHtml = api.renderEstimatedMaxHistory(1);
+  assert.ok(historyHtml.includes('採用済み'));
+  assert.ok(!historyHtml.includes('>除外<'));
 }
 
 function testRotationProgressionRules() {
@@ -260,6 +300,10 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(3).key, 'halfDead');
   assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(7).key, 'floorDead');
   assert.strictEqual(isolatedApi.getDeloadMaxTestLiftForDay(5), null);
+  assert.ok(day1R4.exercises.some(ex => ex.key === 'squat' && ex.isRequiredR4MaxTest && ex.menuType.startsWith('max-test-')));
+  assert.ok(isolatedApi.getDayMenu(2, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'bench' && ex.isRequiredR4MaxTest));
+  assert.ok(isolatedApi.getDayMenu(3, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'halfDead' && ex.isRequiredR4MaxTest));
+  assert.ok(isolatedApi.getDayMenu(7, 4, isolatedStore.settings).exercises.some(ex => ex.key === 'floorDead' && ex.isRequiredR4MaxTest));
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   let html = isolatedApi.renderToday();

@@ -448,9 +448,18 @@ function isLightBig3Menu(menuType = '') {
   return String(menuType).includes('light');
 }
 
+function isVolumeBig3Menu(menuType = '') {
+  return String(menuType || '').includes('volume') || String(menuType || '').includes('mid');
+}
+
+function isMaxTestMenu(menuType = '') {
+  const type = String(menuType || '');
+  return type.startsWith('max-test-') && !type.includes('backoff');
+}
+
 function isIntensityMainMenu(menuType = '') {
   const type = String(menuType || '');
-  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.startsWith('max-test-');
+  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || isMaxTestMenu(type);
 }
 
 function hasFormIssue(note = '') {
@@ -464,6 +473,14 @@ function hasLogPain(log) {
 function isLogFailed(log) {
   const planned = parseInt(log?.plannedSets, 10) || (log?.sets || []).length || 0;
   return (parseInt(log?.doneSets, 10) || 0) < planned;
+}
+
+function hasExplicitFailedSet(log) {
+  return (log?.sets || []).some(set => {
+    if (set.done) return false;
+    const reps = parseInt(set.reps, 10);
+    return Number.isFinite(reps) && reps > 0;
+  });
 }
 
 function dateDiffDays(a, b) {
@@ -597,11 +614,11 @@ function bestEstimatedMaxFromLog(log) {
   if (!log || !isBig3Key(log.exerciseKey)) return null;
   const doneSets = (log.sets || []).filter(s => s.done && s.weight && s.reps);
   if (doneSets.length === 0) return null;
-  const excluded = log.isDeload || hasLogPain(log) || isLogFailed(log) || hasFormIssue(log.note) || !isIntensityMainMenu(log.menuType);
   const estimates = doneSets.map(set => {
     const estimate = estimateMaxFromSet(set.weight, set.reps, log.rpe);
     const reps = parseInt(set.reps, 10) || 0;
-    if (excluded || reps >= 10 || estimate.value == null) estimate.confidence = '低';
+    const status = classifyEstimatedMaxUse(log, reps, estimate);
+    if (status.kind === 'excluded' || reps >= 10 || estimate.value == null) estimate.confidence = '低';
     return { ...estimate, sourceWeight: parseFloat(set.weight), sourceReps: reps };
   }).map(e => ({ ...e, status: classifyEstimatedMaxUse(log, e.sourceReps, e) }))
     .filter(e => e.value != null);
@@ -610,25 +627,28 @@ function bestEstimatedMaxFromLog(log) {
     const estimate = estimateMaxFromSet(fallback.weight, fallback.reps, log.rpe);
     const reps = parseInt(fallback.reps, 10) || 0;
     const status = classifyEstimatedMaxUse(log, reps, estimate);
-    return { ...estimate, status, sourceWeight: parseFloat(fallback.weight), sourceReps: reps, excluded };
+    return { ...estimate, status, sourceWeight: parseFloat(fallback.weight), sourceReps: reps, excluded: status.kind === 'excluded' };
   }
   const priority = { candidate: 4, reference: 2, excluded: 1 };
   estimates.sort((a, b) => (priority[b.status.kind] - priority[a.status.kind]) || (b.value - a.value));
-  return { ...estimates[0], excluded };
+  return { ...estimates[0], excluded: estimates[0].status.kind === 'excluded' };
 }
 
 function classifyEstimatedMaxUse(log, reps, estimate) {
   const rpe = parseRpeValue(log?.rpe);
   if (!estimate || estimate.value == null || rpe == null) return { kind: 'excluded', label: '除外', reason: 'RPE未入力' };
   if (!isBig3Key(log?.exerciseKey)) return { kind: 'excluded', label: '除外', reason: '補助種目' };
-  if (log.isDeload) return { kind: 'excluded', label: '除外', reason: 'デロード日' };
+  if (log.isDeload && !isMaxTestMenu(log.menuType)) return { kind: 'excluded', label: '除外', reason: 'デロード日' };
   if (hasLogPain(log)) return { kind: 'excluded', label: '除外', reason: '痛みあり' };
-  if (isLogFailed(log)) return { kind: 'excluded', label: '除外', reason: '失敗あり' };
+  if (hasExplicitFailedSet(log)) return { kind: 'excluded', label: '除外', reason: '失敗あり' };
   if (hasFormIssue(log.note)) return { kind: 'excluded', label: '除外', reason: 'フォーム要確認' };
-  if (!isIntensityMainMenu(log.menuType)) return { kind: 'reference', label: '参考', reason: '強度メイン以外' };
+  if (isLightBig3Menu(log.menuType)) return { kind: 'excluded', label: '除外', reason: '軽め日' };
   if (reps >= 10) return { kind: 'excluded', label: '除外', reason: '高レップ' };
+  if (isVolumeBig3Menu(log.menuType)) return { kind: 'reference', label: '参考', reason: 'ボリューム日' };
+  if (!isIntensityMainMenu(log.menuType)) return { kind: 'excluded', label: '除外', reason: '強度メインではない' };
   if (reps >= 1 && reps <= 5 && rpe >= 8 && rpe <= 9.5) return { kind: 'candidate', label: '採用候補', reason: '強度メイン' };
   if (reps >= 6 && reps <= 8) return { kind: 'reference', label: '参考', reason: '6〜8回' };
+  if (rpe >= 7 && rpe < 8) return { kind: 'reference', label: '参考', reason: 'RPE低め' };
   return { kind: 'reference', label: '参考', reason: '測定意図低め' };
 }
 
@@ -945,10 +965,12 @@ function renderEstimatedMaxHistory(limit = 6) {
   if (entries.length === 0) return '<div class="muted">推定MAX履歴はまだありません</div>';
   return entries.map(entry => {
     const candidate = getMaxUpdateCandidate(entry);
+    const statusKind = entry.adopted ? 'candidate' : (entry.maxUseKind || 'excluded');
+    const statusLabel = entry.adopted ? '採用済み' : (entry.maxUseLabel || '除外');
     return `
       <div class="suggestion-row emax-row">
         <div>
-          <div class="name">${entry.liftName}推定MAX: ${entry.estimatedMax}kg <span class="status-pill ${entry.maxUseKind === 'candidate' ? 'status-ok' : entry.maxUseKind === 'reference' ? 'status-caution' : 'status-low'}">${entry.maxUseLabel || '除外'}</span></div>
+          <div class="name">${entry.liftName}推定MAX: ${entry.estimatedMax}kg <span class="status-pill ${statusKind === 'candidate' ? 'status-ok' : statusKind === 'reference' ? 'status-caution' : 'status-low'}">${statusLabel}</span></div>
           <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.maxUseReason || '判定'} / 現MAX差 ${entry.diff > 0 ? '+' : ''}${entry.diff}kg / ${entry.date}</div>
           <div class="muted" style="font-size:12px;">MAX更新候補: ${candidate ? `${candidate.candidate}kg (${candidate.diff > 0 ? '+' : ''}${candidate.diff}kg)` : 'なし・様子見'}</div>
           ${entry.trendWarning ? `<div class="load-warning load-warning-caution"><span>注意</span>${entry.trendWarning}</div>` : ''}
@@ -978,13 +1000,15 @@ function renderEstimatedMaxSummary() {
       `;
     }
     const candidate = getMaxUpdateCandidate(entry);
+    const statusKind = entry.adopted ? 'candidate' : (entry.maxUseKind || 'excluded');
+    const statusLabel = entry.adopted ? '採用済み' : (entry.maxUseLabel || '参考');
     return `
       <div class="suggestion-row emax-summary-row">
         <div>
           <div class="name">${lift.name}推定MAX: ${entry.estimatedMax}kg</div>
           <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.date}</div>
         </div>
-        <span class="status-pill ${candidate ? 'status-caution' : entry.maxUseKind === 'candidate' ? 'status-ok' : 'status-low'}">${candidate ? 'MAX更新候補あり' : (entry.maxUseLabel || '参考')}</span>
+        <span class="status-pill ${candidate ? 'status-caution' : statusKind === 'candidate' ? 'status-ok' : statusKind === 'reference' ? 'status-caution' : 'status-low'}">${candidate ? 'MAX更新候補あり' : statusLabel}</span>
         ${candidate && !entry.adopted ? `<button class="btn-success btn-small" data-adopt-emax="${entry.id}">採用</button>` : entry.adopted ? '<span class="status-pill status-ok">採用済み</span>' : ''}
       </div>
     `;
@@ -1067,6 +1091,32 @@ function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
       isDeloadMaxTestBackoff: true,
       maxTestMode: mode,
     },
+  ];
+}
+
+function buildRequiredR4MaxTestExercise(liftKey, settings = store.settings) {
+  const defaultMode = getDefaultDeloadMaxTestMode();
+  const mode = defaultMode === 'normal' ? 'e1rm' : defaultMode;
+  const [main] = buildDeloadMaxTestExercises(liftKey, mode, settings);
+  if (!main) return null;
+  return {
+    ...main,
+    name: `${BIG3_LIFTS[liftKey].name}（MAX測定）`,
+    pctNote: `${main.pctNote} / MAX測定`,
+    isRequiredR4MaxTest: true,
+    maxTestMode: mode,
+  };
+}
+
+function applyRequiredR4MaxTestSlot(exercises, day, rotation, settings = store.settings) {
+  if (Number(rotation) !== 4) return exercises;
+  const lift = getDeloadMaxTestLiftForDay(day);
+  if (!lift) return exercises;
+  const maxTest = buildRequiredR4MaxTestExercise(lift.key, settings);
+  if (!maxTest) return exercises;
+  return [
+    maxTest,
+    ...exercises.filter(ex => !(ex?.isBig3 && ex.key === lift.key)),
   ];
 }
 
@@ -1765,6 +1815,7 @@ function getDayMenu(day, rotation, settings) {
       break;
   }
 
+  exercises = applyRequiredR4MaxTestSlot(exercises, day, rotation, settings);
   exercises = exercises.filter(ex => !ex.isAccessory);
   exercises.push(...buildAccessoryExercises(day, settings, isDeload));
 
@@ -4408,7 +4459,11 @@ if (typeof window !== 'undefined') {
     selectR4AdjustmentMode,
     getDeloadMaxTestLiftForDay,
     buildDeloadMaxTestExercises,
+    buildRequiredR4MaxTestExercise,
+    applyRequiredR4MaxTestSlot,
     applyDeloadMaxTestModeToSession,
+    isIntensityMainMenu,
+    isMaxTestMenu,
     getMaxUpdateCandidate,
     adoptEstimatedMax,
     recordMaxTestResult,
