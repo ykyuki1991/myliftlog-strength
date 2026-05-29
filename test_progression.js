@@ -356,7 +356,14 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.ok(html.includes('R4 MAX測定'));
   assert.ok(html.includes('MAX測定する'));
   assert.ok(html.includes('今回は測定しない'));
-  assert.ok(html.includes('測定方法'));
+  assert.ok(html.includes('方法'));
+  assert.ok(html.includes('Lv1'));
+  assert.ok(!html.includes('MAX測定以外の軽さを選びます'));
+  assert.ok(!html.includes('測定結果を入力'));
+  assert.ok(html.includes('測定セット'));
+  assert.ok(html.includes('バックオフ'));
+  assert.strictEqual(isolatedApi.r4IntensityLevelLabel('normalDeload'), 'Lv1');
+  assert.strictEqual(isolatedApi.r4IntensityLevelLabel('normalish'), 'Lv4');
 
   const session = Object.values(isolatedStore.daySessions).at(-1);
   assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'e1rm'));

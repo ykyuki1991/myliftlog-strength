@@ -521,12 +521,22 @@ function getR4AdjustmentProfile(mode = 'normalDeload') {
 
 function r4IntensityLevelLabel(mode) {
   return {
-    normalDeload: 'Lv1 疲労抜き',
-    lightDeload: 'Lv2 軽め',
-    maintain: 'Lv3 維持',
-    normalish: 'Lv4 通常寄り',
-    custom: 'Lv5 カスタム',
-  }[mode] || 'Lv1 疲労抜き';
+    normalDeload: 'Lv1',
+    lightDeload: 'Lv2',
+    maintain: 'Lv3',
+    normalish: 'Lv4',
+    custom: 'Lv5',
+  }[mode] || 'Lv1';
+}
+
+function r4IntensityLevelDescription(mode) {
+  return {
+    normalDeload: 'Lv1: 疲労抜き',
+    lightDeload: 'Lv2: 軽め',
+    maintain: 'Lv3: 維持',
+    normalish: 'Lv4: 通常寄り',
+    custom: 'Lv5: カスタム',
+  }[mode] || 'Lv1: 疲労抜き';
 }
 
 function countScheduledRestDaysBetween(fromState, toState) {
@@ -1120,12 +1130,12 @@ function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
     },
     {
       key: lift.key,
-      name: `${lift.name}（軽いバックオフ）`,
+      name: `${lift.name}（バックオフ）`,
       menuType: `max-test-${mode}-backoff`,
       plannedWeight: roundToIncrement(max * 65 / 100, inc),
       plannedReps: 3,
       plannedSets: 1,
-      pctNote: '65%',
+      pctNote: 'バックオフ 65%',
       restSec: REST_TIME_SEC.big3_backoff,
       isBig3: true,
       isDeloadMaxTestBackoff: true,
@@ -1253,7 +1263,7 @@ function renderDeloadMaxTestPanel(session) {
   const selectedMode = session.maxTestMode || 'normal';
   const suggestedMode = getDefaultDeloadMaxTestMode();
   const oneRmWarning = selectedMode === 'trueOneRm'
-    ? '<div class="load-warning load-warning-danger"><span>危険</span>真の1RM測定はケガリスクが高いため、補助者や安全環境がある場合のみ推奨です。</div>'
+    ? '<div class="load-warning load-warning-danger"><span>危険</span>1RMは安全環境のみ</div>'
     : '';
   const buttons = [
     ['e1rm', 'e1RM確認'],
@@ -1261,20 +1271,22 @@ function renderDeloadMaxTestPanel(session) {
     ['fiveRm', '5RM'],
     ['trueOneRm', '1RM'],
   ].map(([mode, label]) => `<button class="${selectedMode === mode ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="setDeloadMaxMode" data-mode="${mode}">${label}</button>`).join('');
+  const statusText = session.maxTestSkipped ? '測定なし' : `測定 ${deloadMaxTestModeLabel(selectedMode === 'normal' ? suggestedMode : selectedMode)}`;
   return `
     <div class="section">
       <h2>R4 MAX測定</h2>
-      <div class="muted mb-8">${lift.name}: ${session.maxTestSkipped ? '今回は測定しない' : `測定予定 (${deloadMaxTestModeLabel(selectedMode === 'normal' ? suggestedMode : selectedMode)})`}</div>
+      <div class="status-row">
+        <span class="status-pill status-ok">${lift.name}</span>
+        <span class="status-pill status-caution">${statusText}</span>
+      </div>
       ${oneRmWarning}
       <div class="btn-row">
         <button class="btn-primary" data-action="setDeloadMaxMode" data-mode="${suggestedMode === 'normal' ? 'e1rm' : suggestedMode}">MAX測定する</button>
         <button class="btn-secondary" data-action="setDeloadMaxMode" data-mode="normal">今回は測定しない</button>
       </div>
       <details class="ui-details mt-8">
-        <summary>測定方法</summary>
-        <div class="muted mb-8">通常は推定MAX確認で十分です。重量・回数・セットはBIG3編集で調整できます。</div>
+        <summary>方法</summary>
         <div class="btn-row">${buttons}</div>
-        <button class="btn-secondary btn-small" id="btnOpenMaxTest">測定結果を入力</button>
       </details>
     </div>
   `;
@@ -1290,16 +1302,21 @@ function renderR4AdjustmentPanel(session = null) {
       ${r4IntensityLevelLabel(mode.key)}
     </button>
   `).join('');
+  const levelHelp = proposal.modes.map(mode => `<span class="status-pill">${r4IntensityLevelDescription(mode.key)}</span>`).join('');
   return `
     <div class="section r4-adjustment-panel">
-      <h2>R4調整提案</h2>
+      <h2>R4調整</h2>
       <div class="status-row">
-        <span class="status-pill status-caution">予定外休み ${proposal.cumulativeUnexpectedRestDays}日</span>
-        <span class="status-pill status-caution">連続休み ${proposal.consecutiveRestDays}日</span>
-        <span class="status-pill status-ok">おすすめ: ${r4IntensityLevelLabel(proposal.recommendedMode)}</span>
+        <span class="status-pill status-caution">休み ${proposal.cumulativeUnexpectedRestDays}日</span>
+        <span class="status-pill status-caution">連続 ${proposal.consecutiveRestDays}日</span>
+        <span class="status-pill status-ok">おすすめ ${r4IntensityLevelLabel(proposal.recommendedMode)}</span>
       </div>
-      <div class="muted mb-8">${proposal.reasons.join(' / ')}。MAX測定以外の軽さを選びます。</div>
       <div class="btn-row">${buttons}</div>
+      <details class="ui-details mt-8">
+        <summary>Lvの目安</summary>
+        <div class="status-row">${levelHelp}</div>
+        <div class="muted mt-8">${proposal.reasons.join(' / ')}</div>
+      </details>
     </div>
   `;
 }
@@ -2320,7 +2337,7 @@ function renderToday() {
   }
 
   const deloadBanner = session.isAdjustmentRotation
-    ? `<div class="deload-banner"><div class="label">R4調整ローテ</div><div class="muted">${R4_ADJUSTMENT_MODES[session.r4AdjustmentMode]?.label || '通常デロード'} / 手動変更可</div></div>`
+    ? `<div class="deload-banner"><div class="label">R4調整</div><div class="muted">${r4IntensityLevelLabel(session.r4AdjustmentMode)}</div></div>`
     : '';
 
   const incomplete = session.exercises
@@ -2407,6 +2424,9 @@ function renderExerciseCard(ex, exIdx) {
   const planLine = ex.plannedWeight != null
     ? `<div class="plan-line">予定: <span class="strong">${ex.plannedWeight}kg × ${ex.plannedReps}回 × ${ex.plannedSets}セット</span> ${ex.pctNote ? `(${ex.pctNote})` : ''} ${ex.adjusted ? `<span class="text-warn">[調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}]</span>` : ''}</div>`
     : `<div class="plan-line">予定: <span class="strong">${ex.plannedReps}回 × ${ex.plannedSets}セット</span></div>`;
+  const big3RoleLabel = ex.isDeloadMaxTest
+    ? '測定セット'
+    : (ex.isDeloadMaxTestBackoff ? 'バックオフ' : (ex.isR4NonTest ? 'R4調整' : (ex.isBig3 ? 'BIG3' : 'メイン')));
   const accessoryStatus = suggestAccessoryProgression(ex);
   const accessoryMeta = ex.isAccessory ? `
     <div class="accessory-meta" aria-label="補助種目情報">
@@ -2435,7 +2455,7 @@ function renderExerciseCard(ex, exIdx) {
     <div class="exercise-card ${cardTypeClass} ${complete ? 'exercise-card-complete' : ''}" data-ex="${exIdx}">
       <div class="head">
         <div class="name">${ex.name}</div>
-        <div class="menu-type">${ex.isAccessory ? '補助' : (ex.isBig3 ? 'BIG3' : 'メイン')}</div>
+        <div class="menu-type">${ex.isAccessory ? '補助' : big3RoleLabel}</div>
       </div>
       ${planLine}
       ${big3Meta}
@@ -2579,11 +2599,6 @@ function afterToday() {
   const addTodayAccessoryBtn = document.getElementById('btnAddTodayAccessory');
   if (addTodayAccessoryBtn) addTodayAccessoryBtn.onclick = openAccessoryTodayAddModal;
 
-  const openMaxTestBtn = document.getElementById('btnOpenMaxTest');
-  if (openMaxTestBtn) openMaxTestBtn.onclick = () => {
-    const lift = getDeloadMaxTestLiftForDay(session?.day);
-    openMaxTestModal(session?.maxTestMode === 'normal' ? getDefaultDeloadMaxTestMode() : session?.maxTestMode, lift?.key);
-  };
   const normalDeloadBtn = document.getElementById('btnNormalDeload');
   if (normalDeloadBtn) normalDeloadBtn.onclick = () => showToast('通常デロードとして進めます');
 
@@ -4602,6 +4617,7 @@ if (typeof window !== 'undefined') {
     buildR4NonTestExercise,
     recentEstimatedMaxBasis,
     r4IntensityLevelLabel,
+    r4IntensityLevelDescription,
     applyDeloadMaxTestModeToSession,
     isIntensityMainMenu,
     isMaxTestMenu,
