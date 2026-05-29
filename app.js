@@ -119,6 +119,14 @@ const BIG3_LIFTS = {
   floorDead: { key: 'floorDead', maxKey: 'floorDead', name: '床引きデッド' },
 };
 
+const BIG3_KEY_ALIASES = {
+  floor_dead: 'floorDead',
+  floorDeadlift: 'floorDead',
+  floor_deadlift: 'floorDead',
+  'floor deadlift': 'floorDead',
+  '床引きデッド': 'floorDead',
+};
+
 const DELOAD_MAX_TEST_MODES = {
   off: 'OFF',
   e1rm: 'e1RM確認',
@@ -443,8 +451,13 @@ function applyAccessoryPresetToSlot(base = {}, presetKey = 'custom') {
   });
 }
 
+function normalizeBig3Key(key) {
+  const raw = String(key || '');
+  return BIG3_KEY_ALIASES[raw] || raw;
+}
+
 function isBig3Key(key) {
-  return Object.prototype.hasOwnProperty.call(BIG3_LIFTS, key);
+  return Object.prototype.hasOwnProperty.call(BIG3_LIFTS, normalizeBig3Key(key));
 }
 
 function isLightBig3Menu(menuType = '') {
@@ -462,7 +475,7 @@ function isMaxTestMenu(menuType = '') {
 
 function isIntensityMainMenu(menuType = '') {
   const type = String(menuType || '');
-  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || isMaxTestMenu(type);
+  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.includes('floorDead-main') || isMaxTestMenu(type);
 }
 
 function hasFormIssue(note = '') {
@@ -504,6 +517,16 @@ function getSelectedR4AdjustmentMode(settings = store.settings, block = store.cu
 
 function getR4AdjustmentProfile(mode = 'normalDeload') {
   return R4_ADJUSTMENT_MODES[mode] || R4_ADJUSTMENT_MODES.normalDeload;
+}
+
+function r4IntensityLevelLabel(mode) {
+  return {
+    normalDeload: 'Lv1 疲労抜き',
+    lightDeload: 'Lv2 軽め',
+    maintain: 'Lv3 維持',
+    normalish: 'Lv4 通常寄り',
+    custom: 'Lv5 カスタム',
+  }[mode] || 'Lv1 疲労抜き';
 }
 
 function countScheduledRestDaysBetween(fromState, toState) {
@@ -656,7 +679,8 @@ function classifyEstimatedMaxUse(log, reps, estimate) {
 }
 
 function createEstimatedMaxEntry(log, source = 'training') {
-  const lift = BIG3_LIFTS[log?.exerciseKey];
+  const normalizedLiftKey = normalizeBig3Key(log?.exerciseKey);
+  const lift = BIG3_LIFTS[normalizedLiftKey];
   if (!lift) return null;
   const estimate = bestEstimatedMaxFromLog(log);
   if (!estimate || estimate.value == null) return null;
@@ -775,7 +799,7 @@ function capBig3ProgressionsToPrevious(exercises, isDeload, settings = store.set
 
 function evaluateRotationProgression(log) {
   if (!log || !isBig3Key(log.exerciseKey) || log.isDeload || isLightBig3Menu(log.menuType) || isMaxTestMenu(log.menuType)) return null;
-  const lift = BIG3_LIFTS[log.exerciseKey];
+  const lift = BIG3_LIFTS[normalizeBig3Key(log.exerciseKey)];
   const rpe = parseRpeValue(log.rpe);
   const failed = isLogFailed(log);
   const painful = hasLogPain(log);
@@ -1110,30 +1134,56 @@ function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
   ];
 }
 
-function buildRequiredR4MaxTestExercise(liftKey, settings = store.settings) {
+function buildRequiredR4MaxTestExercises(liftKey, settings = store.settings) {
   const defaultMode = getDefaultDeloadMaxTestMode();
   const mode = defaultMode === 'normal' ? 'e1rm' : defaultMode;
-  const [main] = buildDeloadMaxTestExercises(liftKey, mode, settings);
+  const [main, backoff] = buildDeloadMaxTestExercises(liftKey, mode, settings);
   if (!main) return null;
-  return {
+  const requiredMain = {
     ...main,
     name: `${BIG3_LIFTS[liftKey].name}（MAX測定）`,
     pctNote: `${main.pctNote} / MAX測定`,
     isRequiredR4MaxTest: true,
     maxTestMode: mode,
   };
+  return backoff ? [requiredMain, backoff] : [requiredMain];
+}
+
+function buildRequiredR4MaxTestExercise(liftKey, settings = store.settings) {
+  return buildRequiredR4MaxTestExercises(liftKey, settings)?.[0] || null;
 }
 
 function applyRequiredR4MaxTestSlot(exercises, day, rotation, settings = store.settings) {
   if (Number(rotation) !== 4) return exercises;
   const lift = getDeloadMaxTestLiftForDay(day);
   if (!lift) return exercises;
-  const maxTest = buildRequiredR4MaxTestExercise(lift.key, settings);
-  if (!maxTest) return exercises;
+  const maxTestExercises = buildRequiredR4MaxTestExercises(lift.key, settings);
+  if (!maxTestExercises?.length) return exercises;
   return [
-    maxTest,
+    ...maxTestExercises,
     ...exercises.filter(ex => !(ex?.isBig3 && ex.key === lift.key)),
   ];
+}
+
+function buildR4NonTestExercise(liftKey, settings = store.settings) {
+  const lift = BIG3_LIFTS[liftKey];
+  if (!lift) return null;
+  const profile = getR4AdjustmentProfile(getSelectedR4AdjustmentMode(settings));
+  const pct = profile.deloadPct || 75;
+  const inc = settings.increment || 2.5;
+  const max = parseFloat(settings.maxes?.[lift.maxKey]) || 0;
+  return {
+    key: lift.key,
+    name: `${lift.name}（R4調整）`,
+    menuType: `${lift.key}-r4-adjust`,
+    plannedWeight: roundToIncrement(max * pct / 100, inc),
+    plannedReps: 3,
+    plannedSets: 2,
+    pctNote: `${pct}% / 測定なし`,
+    restSec: REST_TIME_SEC.big3_backoff,
+    isBig3: true,
+    isR4NonTest: true,
+  };
 }
 
 function applyDeloadMaxTestModeToSession(session, mode) {
@@ -1142,12 +1192,33 @@ function applyDeloadMaxTestModeToSession(session, mode) {
   if (!lift) return false;
   session.maxTestMode = mode || 'normal';
   if (session.maxTestMode === 'normal') {
-    recalculateTodaySession();
-    const refreshed = store.daySessions[session.key];
-    if (refreshed) refreshed.maxTestMode = 'normal';
+    const baseMenu = getDayMenu(session.day, session.rotation, store.settings);
+    const nonTest = buildR4NonTestExercise(lift.key, store.settings);
+    const nextExercises = baseMenu.exercises
+      .filter(ex => !(ex.isBig3 && ex.key === lift.key && (ex.isDeloadMaxTest || ex.isDeloadMaxTestBackoff || ex.isRequiredR4MaxTest)))
+      .concat(nonTest ? [nonTest] : [])
+      .map(ex => {
+        const oldEx = session.exercises.find(item => item.key === ex.key && item.menuType === ex.menuType);
+        if (oldEx) return { ...ex, sets: oldEx.sets, rpe: oldEx.rpe, pains: oldEx.pains, note: oldEx.note, completed: oldEx.completed };
+        return {
+          ...ex,
+          sets: Array.from({ length: ex.plannedSets || 1 }, () => ({
+            weight: ex.plannedWeight,
+            reps: typeof ex.plannedReps === 'number' ? ex.plannedReps : '',
+            done: false,
+          })),
+          rpe: '未入力',
+          pains: [],
+          note: '',
+          completed: false,
+        };
+      });
+    session.exercises = nextExercises;
+    session.maxTestSkipped = true;
     saveStore();
     return true;
   }
+  session.maxTestSkipped = false;
   const baseMenu = getDayMenu(session.day, session.rotation, store.settings);
   const replacement = buildDeloadMaxTestExercises(lift.key, session.maxTestMode, store.settings)
     .map((item, idx) => session.rotation === 4 && idx === 0 ? { ...item, isRequiredR4MaxTest: true, name: `${lift.name}（MAX測定）` } : item);
@@ -1179,29 +1250,32 @@ function renderDeloadMaxTestPanel(session) {
   if (!session?.isAdjustmentRotation && !session?.isDeload) return '';
   const lift = getDeloadMaxTestLiftForDay(session.day);
   if (!lift) return '';
-  const configuredMode = store.settings.deloadMaxTestMode || 'e1rm';
   const selectedMode = session.maxTestMode || 'normal';
   const suggestedMode = getDefaultDeloadMaxTestMode();
   const oneRmWarning = selectedMode === 'trueOneRm'
     ? '<div class="load-warning load-warning-danger"><span>危険</span>真の1RM測定はケガリスクが高いため、補助者や安全環境がある場合のみ推奨です。</div>'
     : '';
   const buttons = [
-    ['normal', '通常デロード'],
     ['e1rm', 'e1RM確認'],
-    ['threeRm', '3RM測定'],
-    ['fiveRm', '5RM測定'],
-    ['trueOneRm', '1RM測定'],
+    ['threeRm', '3RM'],
+    ['fiveRm', '5RM'],
+    ['trueOneRm', '1RM'],
   ].map(([mode, label]) => `<button class="${selectedMode === mode ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="setDeloadMaxMode" data-mode="${mode}">${label}</button>`).join('');
   return `
     <div class="section">
-      <h2>デロード時MAX測定</h2>
-      <div class="muted mb-8">${lift.name}の日です。初期候補: ${deloadMaxTestModeLabel(suggestedMode)} / 現在: ${deloadMaxTestModeLabel(selectedMode)}</div>
-      <div class="muted mb-8">MAX測定を選ぶと、${lift.name}の通常デロード部分を測定用に置き換えます。</div>
+      <h2>R4 MAX測定</h2>
+      <div class="muted mb-8">${lift.name}: ${session.maxTestSkipped ? '今回は測定しない' : `測定予定 (${deloadMaxTestModeLabel(selectedMode === 'normal' ? suggestedMode : selectedMode)})`}</div>
       ${oneRmWarning}
       <div class="btn-row">
-        ${buttons}
-        <button class="btn-primary" id="btnOpenMaxTest">MAX測定を入力</button>
+        <button class="btn-primary" data-action="setDeloadMaxMode" data-mode="${suggestedMode === 'normal' ? 'e1rm' : suggestedMode}">MAX測定する</button>
+        <button class="btn-secondary" data-action="setDeloadMaxMode" data-mode="normal">今回は測定しない</button>
       </div>
+      <details class="ui-details mt-8">
+        <summary>測定方法</summary>
+        <div class="muted mb-8">通常は推定MAX確認で十分です。重量・回数・セットはBIG3編集で調整できます。</div>
+        <div class="btn-row">${buttons}</div>
+        <button class="btn-secondary btn-small" id="btnOpenMaxTest">測定結果を入力</button>
+      </details>
     </div>
   `;
 }
@@ -1213,7 +1287,7 @@ function renderR4AdjustmentPanel(session = null) {
   const selected = getSelectedR4AdjustmentMode(store.settings);
   const buttons = proposal.modes.map(mode => `
     <button class="${selected === mode.key ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="setR4AdjustmentMode" data-r4-mode="${mode.key}">
-      ${mode.short}
+      ${r4IntensityLevelLabel(mode.key)}
     </button>
   `).join('');
   return `
@@ -1222,9 +1296,9 @@ function renderR4AdjustmentPanel(session = null) {
       <div class="status-row">
         <span class="status-pill status-caution">予定外休み ${proposal.cumulativeUnexpectedRestDays}日</span>
         <span class="status-pill status-caution">連続休み ${proposal.consecutiveRestDays}日</span>
-        <span class="status-pill status-ok">おすすめ: ${proposal.recommendedLabel}</span>
+        <span class="status-pill status-ok">おすすめ: ${r4IntensityLevelLabel(proposal.recommendedMode)}</span>
       </div>
-      <div class="muted mb-8">${proposal.reasons.join(' / ')}。最終選択はユーザーが行います。</div>
+      <div class="muted mb-8">${proposal.reasons.join(' / ')}。MAX測定以外の軽さを選びます。</div>
       <div class="btn-row">${buttons}</div>
     </div>
   `;
@@ -4503,6 +4577,7 @@ if (typeof window !== 'undefined') {
     applyAccessoryPresetToSlot,
     accessoryPresetOptionsHtml,
     fillSlotFormFromPreset,
+    normalizeBig3Key,
     estimateMaxFromSet,
     bestEstimatedMaxFromLog,
     classifyEstimatedMaxUse,
@@ -4524,7 +4599,9 @@ if (typeof window !== 'undefined') {
     buildDeloadMaxTestExercises,
     buildRequiredR4MaxTestExercise,
     applyRequiredR4MaxTestSlot,
+    buildR4NonTestExercise,
     recentEstimatedMaxBasis,
+    r4IntensityLevelLabel,
     applyDeloadMaxTestModeToSession,
     isIntensityMainMenu,
     isMaxTestMenu,
