@@ -127,6 +127,15 @@ function testEstimatedMaxFiltering() {
   assert.strictEqual(halfDeadMainFive.maxUseLabel, '採用候補');
   assert.strictEqual(halfDeadMainFive.useForMaxUpdate, true);
 
+  const floorDeadMain = api.createEstimatedMaxEntry(big3Log({ exerciseKey: 'floorDead', exerciseName: '床引きデッド', menuType: 'floorDead-main', rpe: '9.5', sets: [{ weight: 160, reps: 5, done: true }, { weight: 160, reps: 5, done: true }, { weight: 160, reps: 5, done: true }], doneSets: 3, plannedSets: 3 }));
+  assert.strictEqual(floorDeadMain.maxUseLabel, '採用候補');
+  assert.strictEqual(floorDeadMain.maxUseReason, '強度メイン');
+  assert.strictEqual(floorDeadMain.useForMaxUpdate, true);
+
+  const floorDeadAlias = api.createEstimatedMaxEntry(big3Log({ exerciseKey: 'floor_dead', exerciseName: '床引きデッド', menuType: 'floorDead-main', rpe: '9', sets: [{ weight: 155, reps: 5, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(floorDeadAlias.liftKey, 'floorDead');
+  assert.strictEqual(floorDeadAlias.maxUseLabel, '採用候補');
+
   const lowerRpeSeven = api.createEstimatedMaxEntry(big3Log({ menuType: 'bench-hi-main', rpe: '7', sets: [{ weight: 90, reps: 7, done: true }], doneSets: 1, plannedSets: 1 }));
   assert.strictEqual(lowerRpeSeven.maxUseLabel, '参考');
   assert.strictEqual(lowerRpeSeven.maxUseReason, '6〜8回');
@@ -334,16 +343,29 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.ok(benchMaxTest.plannedWeight >= 110, 'R4 max-test should challenge current/recent estimated max');
   assert.strictEqual(benchMaxTest.plannedReps, 3);
   assert.ok(benchMaxTest.pctNote.includes('基準130kg'));
+  const benchBackoff = isolatedApi.getDayMenu(2, 4, isolatedStore.settings).exercises.find(ex => ex.key === 'bench' && ex.isDeloadMaxTestBackoff);
+  assert.ok(benchBackoff, 'R4 max-test should include editable backoff');
+  benchBackoff.sets = Array.from({ length: benchBackoff.plannedSets }, () => ({ weight: benchBackoff.plannedWeight, reps: benchBackoff.plannedReps, done: false }));
+  assert.strictEqual(isolatedApi.applyMainSetEdit(benchBackoff, { plannedWeight: 92.5, plannedReps: 4, plannedSets: 2 }).ok, true);
+  assert.strictEqual(benchBackoff.plannedWeight, 92.5);
+  assert.strictEqual(benchBackoff.plannedReps, 4);
+  assert.strictEqual(benchBackoff.plannedSets, 2);
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   let html = isolatedApi.renderToday();
-  assert.ok(html.includes('スクワットの日'));
-  assert.ok(html.includes('通常デロード'));
+  assert.ok(html.includes('R4 MAX測定'));
+  assert.ok(html.includes('MAX測定する'));
+  assert.ok(html.includes('今回は測定しない'));
+  assert.ok(html.includes('測定方法'));
 
   const session = Object.values(isolatedStore.daySessions).at(-1);
   assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'e1rm'));
   assert.ok(session.exercises.some(ex => ex.menuType === 'max-test-e1rm' && ex.key === 'squat'));
+  assert.ok(session.exercises.some(ex => ex.menuType === 'max-test-e1rm-backoff' && ex.key === 'squat'));
   assert.ok(!session.exercises.some(ex => ex.key === 'squat' && ex.menuType === 'squat-heavy-backoff'));
+  assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'normal'));
+  assert.ok(!session.exercises.some(ex => ex.key === 'squat' && ex.isDeloadMaxTest));
+  assert.ok(session.exercises.some(ex => ex.key === 'squat' && ex.isR4NonTest));
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 5 };
   html = isolatedApi.renderToday();
