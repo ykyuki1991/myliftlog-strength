@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS = {
   // 'standard' = 安全寄りメイン強度 / 'highIntensity' = 過去実績に近い高強度メイン
   strengthMode: 'highIntensity',
   // R4デロード時のMAX測定方針
-  deloadMaxTestMode: 'e1rm',
+  deloadMaxTestMode: 'trueOneRm',
   // 補助種目の初期重量・回数・セット数。重量は固定値。MAX計算なし。
   accessoryDefaults: {
     incline_db:  { weight: 38,  reps: '8〜10',  sets: 4 },
@@ -129,10 +129,7 @@ const BIG3_KEY_ALIASES = {
 
 const DELOAD_MAX_TEST_MODES = {
   off: 'OFF',
-  e1rm: 'e1RM確認',
-  threeRm: '3RM測定',
-  fiveRm: '5RM測定',
-  trueOneRm: '真の1RM測定',
+  trueOneRm: '1RM',
 };
 
 const DELOAD_MAX_TEST_DAY_LIFTS = {
@@ -638,10 +635,18 @@ function estimateMaxFromSet(weight, reps, rpe, increment = 0.5) {
   if (!w || !r || rpeValue == null) {
     return { value: null, rir: null, confidence: '低', reason: 'RPE未入力のため参考外' };
   }
+  if (r === 1) {
+    return {
+      value: roundToIncrement(w, increment),
+      rir: Math.max(0, 10 - rpeValue),
+      confidence: rpeValue >= 9.5 ? '高' : '中',
+      reason: `${w}kg×1回@RPE${rpeValue}`,
+    };
+  }
   const rir = Math.max(0, 10 - rpeValue);
   const value = roundToIncrement(w * (1 + (r + rir) / 30), increment);
   let confidence = '低';
-  if (r >= 1 && r <= 5 && rpeValue >= 8 && rpeValue <= 9.5) confidence = '高';
+  if (r >= 2 && r <= 5 && rpeValue >= 8 && rpeValue <= 9.5) confidence = '高';
   else if (r >= 6 && r <= 8 && rpeValue >= 7 && rpeValue <= 9) confidence = '中';
   return { value, rir, confidence, reason: `${w}kg×${r}回@RPE${rpeValue}` };
 }
@@ -682,7 +687,8 @@ function classifyEstimatedMaxUse(log, reps, estimate) {
   if (reps >= 10) return { kind: 'excluded', label: '除外', reason: '高レップ' };
   if (isVolumeBig3Menu(log.menuType)) return { kind: 'reference', label: '参考', reason: 'ボリューム日' };
   if (!isIntensityMainMenu(log.menuType)) return { kind: 'excluded', label: '除外', reason: '強度メインではない' };
-  if (reps >= 1 && reps <= 5 && rpe >= 8 && rpe <= 9.5) return { kind: 'candidate', label: '採用候補', reason: '強度メイン' };
+  if (reps === 1 && rpe >= 9.5 && rpe <= 10) return { kind: 'candidate', label: '採用候補', reason: '1RM測定' };
+  if (reps >= 2 && reps <= 5 && rpe >= 8 && rpe <= 9.5) return { kind: 'candidate', label: '採用候補', reason: '強度メイン' };
   if (reps >= 6 && reps <= 8) return { kind: 'reference', label: '参考', reason: '6〜8回' };
   if (rpe >= 7 && rpe < 8) return { kind: 'reference', label: '参考', reason: 'RPE低め' };
   return { kind: 'reference', label: '参考', reason: '測定意図低め' };
@@ -953,16 +959,29 @@ function adoptEstimatedMax(entryId) {
 function recordMaxTestResult(result) {
   const lift = BIG3_LIFTS[result.liftKey];
   if (!lift) return null;
+  const mode = 'trueOneRm';
+  const date = result.date || todayStr();
+  const day = result.day ?? store.currentState.day;
+  const block = result.block ?? store.currentState.block;
+  const rotation = result.rotation ?? store.currentState.rotation;
+  const menuType = `max-test-${mode}`;
+  const existingLogIdx = (store.logs || []).findIndex(log =>
+    log.date === date && Number(log.day) === Number(day) && Number(log.block) === Number(block) &&
+    Number(log.rotation) === Number(rotation) && log.exerciseKey === lift.key && log.menuType === menuType
+  );
+  const existingLog = existingLogIdx >= 0 ? store.logs[existingLogIdx] : null;
+  const ts = Date.now();
   const pseudoLog = {
-    id: `maxtest_log_${uid()}`,
-    date: todayStr(),
-    day: store.currentState.day,
-    block: store.currentState.block,
-    rotation: store.currentState.rotation,
+    id: existingLog?.id || `maxtest_log_${uid()}`,
+    date,
+    day,
+    block,
+    rotation,
     isDeload: false,
+    isAdjustmentRotation: Number(rotation) === 4,
     exerciseKey: lift.key,
     exerciseName: lift.name,
-    menuType: `max-test-${result.mode}`,
+    menuType,
     plannedWeight: result.weight,
     plannedReps: result.reps,
     plannedSets: 1,
@@ -971,13 +990,20 @@ function recordMaxTestResult(result) {
     rpe: result.rpe,
     pains: result.pains || [],
     note: result.note || '',
-    ts: Date.now(),
+    isDeloadMaxTest: true,
+    maxTestMode: mode,
+    ts: existingLog?.ts || ts,
   };
   const entry = createEstimatedMaxEntry(pseudoLog, 'max-test');
   if (!entry) return null;
+  store.logs = store.logs || [];
+  if (existingLogIdx >= 0) store.logs[existingLogIdx] = { ...existingLog, ...pseudoLog };
+  else store.logs.push(pseudoLog);
+
   const test = {
-    id: `maxtest_${uid()}`,
-    mode: result.mode,
+    id: existingLog?.maxTestId || `maxtest_${uid()}`,
+    logId: pseudoLog.id,
+    mode,
     liftKey: lift.key,
     liftName: lift.name,
     weight: parseFloat(result.weight),
@@ -988,15 +1014,34 @@ function recordMaxTestResult(result) {
     estimatedMax: entry.estimatedMax,
     confidence: entry.confidence,
     adopted: false,
-    date: todayStr(),
-    ts: Date.now(),
+    date,
+    day,
+    block,
+    rotation,
+    ts,
   };
+  pseudoLog.maxTestId = test.id;
+  if (existingLogIdx >= 0) store.logs[existingLogIdx] = { ...store.logs[existingLogIdx], maxTestId: test.id };
+  else store.logs[store.logs.length - 1] = { ...store.logs[store.logs.length - 1], maxTestId: test.id };
+
   store.maxTestResults = store.maxTestResults || [];
-  store.maxTestResults.push(test);
+  const existingTestIdx = store.maxTestResults.findIndex(item =>
+    item.logId === pseudoLog.id || (item.date === date && item.liftKey === lift.key && item.mode === mode && Number(item.day || day) === Number(day))
+  );
+  if (existingTestIdx >= 0) store.maxTestResults[existingTestIdx] = { ...store.maxTestResults[existingTestIdx], ...test };
+  else store.maxTestResults.push(test);
+
   store.estimatedMaxHistory = store.estimatedMaxHistory || [];
-  store.estimatedMaxHistory.push({ ...entry, maxTestId: test.id });
+  const entryWithTest = { ...entry, maxTestId: test.id };
+  const existingEntryIdx = store.estimatedMaxHistory.findIndex(item =>
+    (item.logId && item.logId === pseudoLog.id) || (item.maxTestId && item.maxTestId === test.id)
+  );
+  if (existingEntryIdx >= 0) store.estimatedMaxHistory[existingEntryIdx] = { ...store.estimatedMaxHistory[existingEntryIdx], ...entryWithTest, id: store.estimatedMaxHistory[existingEntryIdx].id };
+  else store.estimatedMaxHistory.push(entryWithTest);
+
   saveStore();
-  return { test, entry };
+  const savedEntry = existingEntryIdx >= 0 ? store.estimatedMaxHistory[existingEntryIdx] : entryWithTest;
+  return { test: existingTestIdx >= 0 ? store.maxTestResults[existingTestIdx] : test, entry: savedEntry, log: pseudoLog };
 }
 
 function renderEstimatedMaxHistory(limit = 6) {
@@ -1082,13 +1127,13 @@ function getDeloadMaxTestLiftForDay(day) {
 }
 
 function getDefaultDeloadMaxTestMode() {
-  const mode = store.settings.deloadMaxTestMode || 'e1rm';
-  return mode === 'off' ? 'normal' : mode;
+  const mode = store.settings.deloadMaxTestMode || 'trueOneRm';
+  return mode === 'off' ? 'normal' : 'trueOneRm';
 }
 
 function deloadMaxTestModeLabel(mode) {
   if (mode === 'normal') return '通常デロード';
-  return DELOAD_MAX_TEST_MODES[mode] || 'e1RM確認';
+  return DELOAD_MAX_TEST_MODES[mode] || '1RM';
 }
 
 function recentEstimatedMaxBasis(liftKey, settings = store.settings) {
@@ -1105,19 +1150,15 @@ function recentEstimatedMaxBasis(liftKey, settings = store.settings) {
 function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
   const lift = BIG3_LIFTS[liftKey];
   if (!lift || mode === 'normal') return [];
+  const normalizedMode = 'trueOneRm';
   const max = recentEstimatedMaxBasis(liftKey, settings);
   const inc = settings.increment || 2.5;
-  const modePlan = {
-    e1rm: { pct: 88, reps: 3, rpe: '8〜9', note: '3回前後で推定MAX確認' },
-    threeRm: { pct: 90, reps: 3, rpe: '9', note: '3RM測定' },
-    fiveRm: { pct: 84, reps: 5, rpe: '9', note: '5RM測定' },
-    trueOneRm: { pct: 100, reps: 1, rpe: '10', note: '安全環境のみ' },
-  }[mode] || { pct: 88, reps: 3, rpe: '8〜9', note: '3回前後で推定MAX確認' };
+  const modePlan = { pct: 100, reps: 1, rpe: '10', note: '1RM測定' };
   return [
     {
       key: lift.key,
-      name: `${lift.name}（${deloadMaxTestModeLabel(mode)}）`,
-      menuType: `max-test-${mode}`,
+      name: `${lift.name}（MAX測定）`,
+      menuType: `max-test-${normalizedMode}`,
       plannedWeight: roundToIncrement(max * modePlan.pct / 100, inc),
       plannedReps: modePlan.reps,
       plannedSets: 1,
@@ -1125,13 +1166,13 @@ function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
       restSec: REST_TIME_SEC.big3_top,
       isBig3: true,
       isDeloadMaxTest: true,
-      maxTestMode: mode,
+      maxTestMode: normalizedMode,
       maxTestNote: modePlan.note,
     },
     {
       key: lift.key,
       name: `${lift.name}（バックオフ）`,
-      menuType: `max-test-${mode}-backoff`,
+      menuType: `max-test-${normalizedMode}-backoff`,
       plannedWeight: roundToIncrement(max * 65 / 100, inc),
       plannedReps: 3,
       plannedSets: 1,
@@ -1139,14 +1180,13 @@ function buildDeloadMaxTestExercises(liftKey, mode, settings = store.settings) {
       restSec: REST_TIME_SEC.big3_backoff,
       isBig3: true,
       isDeloadMaxTestBackoff: true,
-      maxTestMode: mode,
+      maxTestMode: normalizedMode,
     },
   ];
 }
 
 function buildRequiredR4MaxTestExercises(liftKey, settings = store.settings) {
-  const defaultMode = getDefaultDeloadMaxTestMode();
-  const mode = defaultMode === 'normal' ? 'e1rm' : defaultMode;
+  const mode = 'trueOneRm';
   const [main, backoff] = buildDeloadMaxTestExercises(liftKey, mode, settings);
   if (!main) return null;
   const requiredMain = {
@@ -1200,7 +1240,7 @@ function applyDeloadMaxTestModeToSession(session, mode) {
   if (!session?.isDeload && !session?.isAdjustmentRotation) return false;
   const lift = getDeloadMaxTestLiftForDay(session.day);
   if (!lift) return false;
-  session.maxTestMode = mode || 'normal';
+  session.maxTestMode = mode === 'normal' ? 'normal' : 'trueOneRm';
   if (session.maxTestMode === 'normal') {
     const baseMenu = getDayMenu(session.day, session.rotation, store.settings);
     const nonTest = buildR4NonTestExercise(lift.key, store.settings);
@@ -1260,18 +1300,11 @@ function renderDeloadMaxTestPanel(session) {
   if (!session?.isAdjustmentRotation && !session?.isDeload) return '';
   const lift = getDeloadMaxTestLiftForDay(session.day);
   if (!lift) return '';
-  const selectedMode = session.maxTestMode || 'normal';
-  const suggestedMode = getDefaultDeloadMaxTestMode();
+  const selectedMode = session.maxTestSkipped ? 'normal' : 'trueOneRm';
   const oneRmWarning = selectedMode === 'trueOneRm'
     ? '<div class="load-warning load-warning-danger"><span>危険</span>1RMは安全環境のみ</div>'
     : '';
-  const buttons = [
-    ['e1rm', 'e1RM確認'],
-    ['threeRm', '3RM'],
-    ['fiveRm', '5RM'],
-    ['trueOneRm', '1RM'],
-  ].map(([mode, label]) => `<button class="${selectedMode === mode ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="setDeloadMaxMode" data-mode="${mode}">${label}</button>`).join('');
-  const statusText = session.maxTestSkipped ? '測定なし' : `測定 ${deloadMaxTestModeLabel(selectedMode === 'normal' ? suggestedMode : selectedMode)}`;
+  const statusText = session.maxTestSkipped ? '測定なし' : '測定 1RM';
   return `
     <div class="section">
       <h2>R4 MAX測定</h2>
@@ -1281,13 +1314,9 @@ function renderDeloadMaxTestPanel(session) {
       </div>
       ${oneRmWarning}
       <div class="btn-row">
-        <button class="btn-primary" data-action="setDeloadMaxMode" data-mode="${suggestedMode === 'normal' ? 'e1rm' : suggestedMode}">MAX測定する</button>
+        <button class="btn-primary" data-action="setDeloadMaxMode" data-mode="trueOneRm">MAX測定する</button>
         <button class="btn-secondary" data-action="setDeloadMaxMode" data-mode="normal">今回は測定しない</button>
       </div>
-      <details class="ui-details mt-8">
-        <summary>方法</summary>
-        <div class="btn-row">${buttons}</div>
-      </details>
     </div>
   `;
 }
@@ -1324,19 +1353,19 @@ function renderR4AdjustmentPanel(session = null) {
 function openMaxTestModal(modeOverride = null, liftKeyOverride = null) {
   const session = store.daySessions[todaySessionKey()];
   const liftForDay = getDeloadMaxTestLiftForDay(session?.day);
-  const mode = modeOverride || session?.maxTestMode || store.settings.deloadMaxTestMode || 'e1rm';
+  const mode = 'trueOneRm';
   const selectedLift = liftKeyOverride || liftForDay?.key || 'bench';
   openModal('MAX測定を入力', `
     <div class="muted mb-8">推定MAXを計算します。採用するまでMAX設定は変わりません。</div>
-    ${mode === 'trueOneRm' ? '<div class="load-warning load-warning-danger"><span>危険</span>真の1RM測定は補助者や安全環境がある場合のみ推奨です。</div>' : ''}
+    <div class="load-warning load-warning-danger"><span>注意</span>1RMは安全環境のみ</div>
     <label class="field"><span>種目</span>
       <select id="maxTestLift">
         ${Object.values(BIG3_LIFTS).map(l => `<option value="${l.key}" ${l.key === selectedLift ? 'selected' : ''}>${l.name}</option>`).join('')}
       </select>
     </label>
     <label class="field"><span>重量(kg)</span><input type="number" step="0.5" id="maxTestWeight" /></label>
-    <label class="field"><span>回数</span><input type="number" inputmode="numeric" id="maxTestReps" value="${mode === 'threeRm' ? 3 : mode === 'fiveRm' ? 5 : mode === 'trueOneRm' ? 1 : 3}" /></label>
-    <label class="field"><span>RPE</span><input type="text" id="maxTestRpe" value="${mode === 'trueOneRm' ? '10' : '8.5'}" /></label>
+    <label class="field"><span>回数</span><input type="number" inputmode="numeric" id="maxTestReps" value="1" /></label>
+    <label class="field"><span>RPE</span><input type="text" id="maxTestRpe" value="10" /></label>
     <label class="field"><span>痛み（、区切り）</span><input type="text" id="maxTestPain" value="なし" /></label>
     <label class="field"><span>フォームメモ</span><textarea id="maxTestNote" placeholder="フォーム不安があれば記録"></textarea></label>
     <div class="btn-row">
@@ -2140,6 +2169,23 @@ function recalculateTodaySession() {
   //   - 実施済みセットは絶対に保持
   //   - 未実施セットは新メニューの予定セット数に合わせて再構築
   //   - 実施済み件数 > 新予定セット数 となる場合でも、実施済みセットは削除しない（実施件数優先）
+  if (menu.isAdjustmentRotation && getDeloadMaxTestLiftForDay(menu.day)) {
+    const lift = getDeloadMaxTestLiftForDay(menu.day);
+    if (oldSession.maxTestSkipped) {
+      const nonTest = buildR4NonTestExercise(lift.key, store.settings);
+      menu.exercises = [
+        ...menu.exercises.filter(ex => !(ex.isBig3 && ex.key === lift.key && (ex.isDeloadMaxTest || ex.isDeloadMaxTestBackoff || ex.isRequiredR4MaxTest))),
+        ...(nonTest ? [nonTest] : []),
+      ];
+    } else {
+      const maxTestExercises = buildRequiredR4MaxTestExercises(lift.key, store.settings) || [];
+      menu.exercises = [
+        ...maxTestExercises,
+        ...menu.exercises.filter(ex => !(ex.isBig3 && ex.key === lift.key)),
+      ];
+    }
+  }
+
   const newExercises = menu.exercises.map(newEx => {
     const oldEx = oldSession.exercises.find(e => e.key === newEx.key && e.menuType === newEx.menuType);
     const targetSets = typeof newEx.plannedSets === 'number' ? newEx.plannedSets : 3;
@@ -2195,6 +2241,7 @@ function recalculateTodaySession() {
   oldSession.isDeload = menu.isDeload;
   oldSession.isAdjustmentRotation = menu.isAdjustmentRotation;
   oldSession.r4AdjustmentMode = menu.r4AdjustmentMode;
+  oldSession.maxTestMode = oldSession.maxTestSkipped ? 'normal' : (oldSession.maxTestMode === 'normal' ? 'normal' : 'trueOneRm');
   oldSession.isRest = menu.isRest;
   saveStore();
   return hasDoneSet;
@@ -4248,7 +4295,6 @@ function renderSettings() {
   const volumeMode = store.settings.trainingVolumeMode || 'high';
   const strengthMode = store.settings.strengthMode || 'highIntensity';
   const accessoryMode = store.settings.accessoryManagementMode || 'aggressive';
-  const deloadMaxTestMode = store.settings.deloadMaxTestMode || 'e1rm';
   const accDefaults = store.settings.accessoryDefaults || {};
 
   // 補助種目重量編集UI
@@ -4357,14 +4403,10 @@ function renderSettings() {
 
     <div class="section">
       <h2>デロード時MAX測定</h2>
-      <label class="field"><span>測定モード</span>
-        <select id="set-deloadMaxTestMode">
-          ${Object.entries(DELOAD_MAX_TEST_MODES).map(([value, label]) => `<option value="${value}" ${deloadMaxTestMode === value ? 'selected' : ''}>${label}</option>`).join('')}
-        </select>
-      </label>
+      <div class="status-row"><span class="status-pill status-ok">1RM</span></div>
       <details class="ui-details compact-details">
         <summary>補足</summary>
-        <div class="muted" style="font-size:12px;">初期値はe1RM確認です。1RM測定は安全環境がある場合のみ。</div>
+        <div class="muted" style="font-size:12px;">R4では測定する/しないだけ選びます。</div>
       </details>
     </div>
 
@@ -4457,7 +4499,7 @@ function afterSettings() {
     const newStrengthMode = strengthRadio ? strengthRadio.value : (store.settings.strengthMode || 'highIntensity');
     const accessoryModeRadio = document.querySelector('input[name="accessoryMode"]:checked');
     const newAccessoryMode = accessoryModeRadio ? accessoryModeRadio.value : (store.settings.accessoryManagementMode || 'aggressive');
-    const newDeloadMaxTestMode = document.getElementById('set-deloadMaxTestMode')?.value || 'e1rm';
+    const newDeloadMaxTestMode = 'trueOneRm';
 
     // 補助種目重量の収集
     const newAccDefaults = { ...(store.settings.accessoryDefaults || {}) };

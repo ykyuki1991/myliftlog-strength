@@ -104,6 +104,8 @@ function testRirAndEstimatedMax() {
   assert.strictEqual(api.estimateMaxFromSet(100, 5, '8').rir, 2);
   assert.strictEqual(api.estimateMaxFromSet(100, 5, '9').rir, 1);
   assert.strictEqual(api.estimateMaxFromSet(100, 5, '10').rir, 0);
+  assert.strictEqual(api.estimateMaxFromSet(120, 1, '10').value, 120);
+  assert.strictEqual(api.estimateMaxFromSet(120, 1, '10').confidence, '高');
   assert.strictEqual(api.estimateMaxFromSet(100, 5, '未入力').confidence, '低');
   assert.strictEqual(api.estimateMaxFromSet(100, 5, '未入力').value, null);
   const entry = api.createEstimatedMaxEntry(big3Log({ rpe: '8' }));
@@ -163,6 +165,12 @@ function testEstimatedMaxFiltering() {
   const r4MaxTest = api.createEstimatedMaxEntry(big3Log({ isDeload: true, menuType: 'max-test-e1rm', rpe: '8.5', sets: [{ weight: 100, reps: 3, done: true }], doneSets: 1, plannedSets: 1 }));
   assert.strictEqual(r4MaxTest.maxUseLabel, '採用候補');
   assert.strictEqual(r4MaxTest.useForMaxUpdate, true);
+
+  const trueOneRm = api.createEstimatedMaxEntry(big3Log({ isDeload: true, menuType: 'max-test-trueOneRm', rpe: '10', sets: [{ weight: 120, reps: 1, done: true }], doneSets: 1, plannedSets: 1 }));
+  assert.strictEqual(trueOneRm.estimatedMax, 120);
+  assert.strictEqual(trueOneRm.maxUseLabel, '採用候補');
+  assert.strictEqual(trueOneRm.maxUseReason, '1RM測定');
+  assert.strictEqual(trueOneRm.useForMaxUpdate, true);
 
   const adoptedHtmlStore = api.getStore();
   adoptedHtmlStore.estimatedMaxHistory = [{
@@ -235,19 +243,37 @@ function testMaxCandidateAndAdoption() {
 }
 
 function testDeloadMaxTestResult() {
-  store.settings.deloadMaxTestMode = 'threeRm';
+  store.settings.deloadMaxTestMode = 'trueOneRm';
+  store.settings.maxes.squat = 140;
+  const beforeLogs = store.logs.length;
   const result = api.recordMaxTestResult({
-    mode: 'threeRm',
+    mode: 'trueOneRm',
     liftKey: 'squat',
     weight: 150,
-    reps: 3,
-    rpe: '9',
+    reps: 1,
+    rpe: '10',
     pains: ['なし'],
     note: '',
   });
-  assert.ok(result.entry.estimatedMax > 150);
-  assert.strictEqual(store.maxTestResults.at(-1).mode, 'threeRm');
+  assert.strictEqual(result.entry.estimatedMax, 150);
+  assert.strictEqual(store.maxTestResults.at(-1).mode, 'trueOneRm');
+  assert.strictEqual(store.logs.length, beforeLogs + 1);
+  assert.ok(store.logs.at(-1).menuType === 'max-test-trueOneRm');
+  assert.strictEqual(store.logs.at(-1).sets[0].reps, 1);
   assert.ok(api.getMaxUpdateCandidate(result.entry));
+
+  const again = api.recordMaxTestResult({
+    mode: 'trueOneRm',
+    liftKey: 'squat',
+    weight: 150,
+    reps: 1,
+    rpe: '10',
+    pains: ['なし'],
+    note: '',
+  });
+  assert.strictEqual(store.logs.length, beforeLogs + 1, 'max test log should be upserted');
+  assert.strictEqual(store.maxTestResults.filter(item => item.liftKey === 'squat' && item.mode === 'trueOneRm').length, 1);
+  assert.strictEqual(store.estimatedMaxHistory.filter(item => item.logId === again.entry.logId).length, 1);
 }
 
 function testBlockSuggestionPainSeverity() {
@@ -341,7 +367,9 @@ function testDeloadAccessoryAndMaxTestTiming() {
   isolatedStore.estimatedMaxHistory = [{ liftKey: 'bench', estimatedMax: 130, maxUseKind: 'candidate', useForMaxUpdate: true, ts: 10 }];
   const benchMaxTest = isolatedApi.getDayMenu(2, 4, isolatedStore.settings).exercises.find(ex => ex.key === 'bench' && ex.isRequiredR4MaxTest);
   assert.ok(benchMaxTest.plannedWeight >= 110, 'R4 max-test should challenge current/recent estimated max');
-  assert.strictEqual(benchMaxTest.plannedReps, 3);
+  assert.strictEqual(benchMaxTest.plannedReps, 1);
+  assert.strictEqual(benchMaxTest.maxTestMode, 'trueOneRm');
+  assert.strictEqual(benchMaxTest.menuType, 'max-test-trueOneRm');
   assert.ok(benchMaxTest.pctNote.includes('基準130kg'));
   const benchBackoff = isolatedApi.getDayMenu(2, 4, isolatedStore.settings).exercises.find(ex => ex.key === 'bench' && ex.isDeloadMaxTestBackoff);
   assert.ok(benchBackoff, 'R4 max-test should include editable backoff');
@@ -356,7 +384,10 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.ok(html.includes('R4 MAX測定'));
   assert.ok(html.includes('MAX測定する'));
   assert.ok(html.includes('今回は測定しない'));
-  assert.ok(html.includes('方法'));
+  assert.ok(!html.includes('e1RM確認'));
+  assert.ok(!html.includes('3RM'));
+  assert.ok(!html.includes('5RM'));
+  assert.ok(!html.includes('方法'));
   assert.ok(html.includes('Lv1'));
   assert.ok(!html.includes('MAX測定以外の軽さを選びます'));
   assert.ok(!html.includes('測定結果を入力'));
@@ -366,13 +397,22 @@ function testDeloadAccessoryAndMaxTestTiming() {
   assert.strictEqual(isolatedApi.r4IntensityLevelLabel('normalish'), 'Lv4');
 
   const session = Object.values(isolatedStore.daySessions).at(-1);
-  assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'e1rm'));
-  assert.ok(session.exercises.some(ex => ex.menuType === 'max-test-e1rm' && ex.key === 'squat'));
-  assert.ok(session.exercises.some(ex => ex.menuType === 'max-test-e1rm-backoff' && ex.key === 'squat'));
+  assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'trueOneRm'));
+  assert.ok(session.exercises.some(ex => ex.menuType === 'max-test-trueOneRm' && ex.key === 'squat' && ex.plannedReps === 1));
+  assert.ok(session.exercises.some(ex => ex.menuType === 'max-test-trueOneRm-backoff' && ex.key === 'squat'));
   assert.ok(!session.exercises.some(ex => ex.key === 'squat' && ex.menuType === 'squat-heavy-backoff'));
   assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'normal'));
   assert.ok(!session.exercises.some(ex => ex.key === 'squat' && ex.isDeloadMaxTest));
   assert.ok(session.exercises.some(ex => ex.key === 'squat' && ex.isR4NonTest));
+  assert.ok(isolatedApi.selectR4AdjustmentMode('normalish'));
+  assert.strictEqual(session.maxTestSkipped, true);
+  assert.ok(!session.exercises.some(ex => ex.key === 'squat' && ex.isDeloadMaxTest), 'Lv change should keep max-test skipped');
+  assert.ok(session.exercises.some(ex => ex.key === 'squat' && ex.isR4NonTest));
+
+  assert.ok(isolatedApi.applyDeloadMaxTestModeToSession(session, 'trueOneRm'));
+  assert.ok(isolatedApi.selectR4AdjustmentMode('lightDeload'));
+  assert.strictEqual(session.maxTestSkipped, false);
+  assert.ok(session.exercises.some(ex => ex.key === 'squat' && ex.isDeloadMaxTest && ex.maxTestMode === 'trueOneRm'), 'Lv change should keep 1RM max-test');
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 5 };
   html = isolatedApi.renderToday();
