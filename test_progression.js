@@ -499,6 +499,56 @@ function testFloorDeadDayUsesBulgarianInsteadOfSquat() {
   assert.strictEqual(bulgarian.targetRpe, '7〜8');
 }
 
+function testExerciseRestSettings() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.currentState = { block: 1, rotation: 1, day: 2 };
+  isolatedStore.settings.exerciseRestSettings = [{
+    id: 'rest-chest-shoulder',
+    name: '肩痛のため胸トレ休止',
+    parts: ['胸', '肩'],
+    exercises: ['ベンチプレス', 'インクラインDBプレス', 'チェストプレス', 'ショルダープレス'],
+    startDate: '2000-01-01',
+    endDate: '2099-12-31',
+    note: '肩痛のため、胸・プレス系を一時的に休む',
+  }];
+
+  const menu = isolatedApi.getDayMenu(2, 1, isolatedStore.settings);
+  assert.ok(!menu.exercises.some(ex => ex.key === 'bench'), 'rested bench should be removed from normal menu');
+  assert.ok(menu.skippedRestExercises.some(ex => ex.key === 'bench'), 'rested bench should be tracked as skipped rest');
+  assert.strictEqual(menu.isRest, false, 'rested exercises should not turn the day into a scheduled rest day');
+  assert.ok(menu.exercises.some(ex => ex.key === 'chinning'), 'unrelated exercises should remain');
+
+  const html = isolatedApi.renderToday();
+  assert.ok(html.includes('休止中'));
+  assert.ok(html.includes('休止対象'));
+  const session = Object.values(isolatedStore.daySessions).find(s => s.day === 2 && s.rotation === 1);
+  assert.ok(session);
+  assert.ok(!session.exercises.some(ex => ex.key === 'bench'));
+  assert.ok(session.skippedRestExercises.some(ex => ex.key === 'bench'));
+  assert.strictEqual(session.exercises.some(ex => !isolatedApi.isExerciseComplete(ex)), true, 'remaining exercises keep normal completion behavior');
+
+  isolatedApi.finishTodaySession();
+  const restLog = isolatedStore.logs.find(log => log.isExerciseRest && log.exerciseKey === 'bench');
+  assert.ok(restLog, 'rested exercise should be saved as rest log');
+  assert.strictEqual(restLog.doneSets, 0);
+  assert.strictEqual(restLog.plannedSets, 0);
+  assert.strictEqual(restLog.restSettingName, '肩痛のため胸トレ休止');
+  assert.strictEqual(isolatedApi.createEstimatedMaxEntry({ ...restLog, sets: [{ weight: 100, reps: 1, done: true }], rpe: '10' }).maxUseLabel, '除外');
+  assert.strictEqual(isolatedApi.evaluateRotationProgression({ ...restLog, sets: [{ weight: 100, reps: 1, done: true }], rpe: '8' }), null);
+  assert.strictEqual(isolatedStore.rotationProgressions.some(p => p.liftKey === 'bench'), false);
+  assert.strictEqual(isolatedStore.estimatedMaxHistory.some(e => e.liftKey === 'bench'), false);
+
+  isolatedStore.logs = [restLog];
+  assert.strictEqual(isolatedApi.getUnexpectedRestStats('2026-06-05').cumulativeUnexpectedRestDays, 0, 'rest logs should not be counted as normal training for unexpected rest stats');
+
+  isolatedStore.settings.exerciseRestSettings[0].endDate = '2000-01-01';
+  const afterRest = isolatedApi.getDayMenu(2, 1, isolatedStore.settings);
+  assert.ok(afterRest.exercises.some(ex => ex.key === 'bench'), 'exercise should return after rest period');
+  assert.ok(!afterRest.exercises.find(ex => ex.key === 'bench').progressionCapped || afterRest.exercises.find(ex => ex.key === 'bench').plannedWeight > 0, 'return should not add special auto-adjustment');
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();
@@ -513,6 +563,7 @@ testFutureMainSetOverride();
 testAdaptiveR4ProposalAndSelection();
 testLogDailyAndMonthlyViews();
 testFloorDeadDayUsesBulgarianInsteadOfSquat();
+testExerciseRestSettings();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
 console.log('test_progression.js: all tests passed');

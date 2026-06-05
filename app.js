@@ -53,6 +53,8 @@ const DEFAULT_SETTINGS = {
   r4AdjustmentModes: {},
   // BIG3メイン編集の「今後も変更」。Day×種目×メニュー種別単位で保存し、過去ログは変更しない。
   mainSetOverrides: {},
+  // 一定期間だけ部位・種目を休止する設定。予定から外し、失敗/未完了扱いにしない。
+  exerciseRestSettings: [],
   accessorySlots: null,
   accessoryShoulderDefaultsAdded: true,
   day7BulgarianDefaultAdded: true,
@@ -108,6 +110,7 @@ const REST_TIME_SEC = {
 
 // 状態選択肢。部位チェックだけで重量提案を止めないため、強度を中心に記録する。
 const PAIN_OPTIONS = ['なし', '違和感', '痛み', '強い痛み'];
+const EXERCISE_REST_PARTS = ['胸', '肩', '肘', '腰', '膝', '脚', '背中', '腕'];
 
 // RPE選択肢
 const RPE_OPTIONS = ['未入力', '6', '7', '8', '8.5', '9', '9.5', '10'];
@@ -335,6 +338,7 @@ function loadStore() {
         rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
         r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
         mainSetOverrides: { ...def.settings.mainSetOverrides, ...(parsed.settings?.mainSetOverrides || {}) },
+        exerciseRestSettings: Array.isArray(parsed.settings?.exerciseRestSettings) ? parsed.settings.exerciseRestSettings : [],
         accessoryDefaults: mergedAccDefaults,
         accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
         accessorySlots: mergedAccessorySlots,
@@ -400,6 +404,10 @@ function normalizeList(value, allowed = null) {
     : String(value || '').split(/[,\n、]/);
   const cleaned = list.map(v => String(v).trim()).filter(Boolean);
   return allowed ? cleaned.filter(v => allowed.includes(v)) : cleaned;
+}
+
+function normalizeSearchText(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
 }
 
 function parseRangeMax(value, fallback = 1) {
@@ -550,7 +558,7 @@ function countScheduledRestDaysBetween(fromState, toState) {
 
 function getUnexpectedRestStats(referenceDate = todayStr()) {
   const dates = [...(store.logs || [])]
-    .filter(log => log.date && !log.todayOnlyDeleted)
+    .filter(log => log.date && !log.todayOnlyDeleted && !log.isExerciseRest)
     .sort((a, b) => (a.ts || 0) - (b.ts || 0));
   const daily = [];
   dates.forEach(log => {
@@ -678,6 +686,7 @@ function bestEstimatedMaxFromLog(log) {
 function classifyEstimatedMaxUse(log, reps, estimate) {
   const rpe = parseRpeValue(log?.rpe);
   if (!estimate || estimate.value == null || rpe == null) return { kind: 'excluded', label: '除外', reason: 'RPE未入力' };
+  if (log?.isExerciseRest) return { kind: 'excluded', label: '除外', reason: '休止' };
   if (!isBig3Key(log?.exerciseKey)) return { kind: 'excluded', label: '除外', reason: '補助種目' };
   if (log.isDeload && !isMaxTestMenu(log.menuType)) return { kind: 'excluded', label: '除外', reason: 'デロード日' };
   if (hasLogPain(log)) return { kind: 'excluded', label: '除外', reason: '痛みあり' };
@@ -755,6 +764,100 @@ function recentEstimatedMaxes(liftKey, limit = 2) {
     .slice(0, limit);
 }
 
+function normalizeExerciseRestSetting(setting) {
+  if (!setting || typeof setting !== 'object') return null;
+  return {
+    id: setting.id || `rest_${uid()}`,
+    name: setting.name || '休止設定',
+    parts: normalizeList(setting.parts).filter(part => EXERCISE_REST_PARTS.includes(part)),
+    exercises: normalizeList(setting.exercises),
+    startDate: setting.startDate || todayStr(),
+    endDate: setting.endDate || setting.startDate || todayStr(),
+    note: setting.note || '',
+    ended: !!setting.ended,
+  };
+}
+
+function getActiveExerciseRestSettings(date = todayStr(), settings = store.settings) {
+  const targetDate = String(date || todayStr());
+  return (settings.exerciseRestSettings || [])
+    .map(normalizeExerciseRestSetting)
+    .filter(Boolean)
+    .filter(rest => !rest.ended && rest.startDate <= targetDate && targetDate <= rest.endDate);
+}
+
+function exerciseRestPartsForExercise(ex) {
+  const parts = new Set();
+  const add = part => { if (EXERCISE_REST_PARTS.includes(part)) parts.add(part); };
+  const cats = normalizeList(ex?.categories);
+  const tags = normalizeList(ex?.fatigueTags);
+  cats.forEach(cat => {
+    if (cat.includes('胸') || cat.includes('ベンチ')) add('胸');
+    if (cat.includes('肩')) add('肩');
+    if (cat.includes('背中') || cat.includes('ロウ') || cat.includes('チンニング') || cat.includes('デッド')) add('背中');
+    if (cat.includes('腕')) add('腕');
+    if (cat.includes('脚') || cat.includes('カーフ')) add('脚');
+  });
+  tags.forEach(tag => {
+    if (tag.includes('肩')) add('肩');
+    if (tag.includes('肘')) add('肘');
+    if (tag.includes('腰')) add('腰');
+    if (tag.includes('膝')) add('膝');
+  });
+  if (ex?.key === 'bench') { add('胸'); add('肩'); }
+  if (ex?.key === 'squat') { add('脚'); add('膝'); }
+  if (ex?.key === 'halfDead' || ex?.key === 'floorDead') { add('背中'); add('腰'); }
+  return [...parts];
+}
+
+function exerciseRestTokensForExercise(ex) {
+  return [
+    ex?.key,
+    ex?.name,
+    ex?.exerciseName,
+    ex?.slotName,
+    ...(ex?.key === 'bench' ? ['ベンチプレス', 'benchpress'] : []),
+    ...(ex?.key === 'squat' ? ['スクワット', 'squat'] : []),
+    ...(ex?.key === 'halfDead' ? ['ハーフデッド', 'halfdead'] : []),
+    ...(ex?.key === 'floorDead' ? ['床引きデッド', 'floordead', 'floor_dead'] : []),
+    ...(ex?.key === 'machine_chest_press' ? ['チェストプレス', 'chestpress'] : []),
+  ].map(normalizeSearchText).filter(Boolean);
+}
+
+function exerciseMatchesRestSetting(ex, rest) {
+  const parts = exerciseRestPartsForExercise(ex);
+  const partMatch = (rest.parts || []).some(part => parts.includes(part));
+  const tokens = exerciseRestTokensForExercise(ex);
+  const exerciseMatch = (rest.exercises || []).map(normalizeSearchText).filter(Boolean)
+    .some(target => tokens.some(token => token === target || token.includes(target) || target.includes(token)));
+  return partMatch || exerciseMatch;
+}
+
+function applyExerciseRestSettingsToExercises(exercises, date = todayStr(), settings = store.settings) {
+  const active = getActiveExerciseRestSettings(date, settings);
+  if (active.length === 0) return { exercises, skipped: [], active };
+  const kept = [];
+  const skipped = [];
+  exercises.forEach(ex => {
+    const rest = active.find(setting => exerciseMatchesRestSetting(ex, setting));
+    if (!rest) {
+      kept.push(ex);
+      return;
+    }
+    skipped.push({
+      ...ex,
+      isExerciseRestSkipped: true,
+      restSettingId: rest.id,
+      restSettingName: rest.name,
+      restSettingNote: rest.note,
+      restParts: rest.parts,
+      restStartDate: rest.startDate,
+      restEndDate: rest.endDate,
+    });
+  });
+  return { exercises: kept, skipped, active };
+}
+
 function getMaxUpdateCandidate(entry) {
   if (!entry || entry.estimatedMax == null) return null;
   if (entry.useForMaxUpdate === false || (entry.maxUseKind && entry.maxUseKind !== 'candidate')) return null;
@@ -814,6 +917,7 @@ function capBig3ProgressionsToPrevious(exercises, isDeload, settings = store.set
 }
 
 function evaluateRotationProgression(log) {
+  if (log?.isExerciseRest) return null;
   if (!log || !isBig3Key(log.exerciseKey) || log.isDeload || isLightBig3Menu(log.menuType) || isMaxTestMenu(log.menuType)) return null;
   const lift = BIG3_LIFTS[normalizeBig3Key(log.exerciseKey)];
   const rpe = parseRpeValue(log.rpe);
@@ -1971,6 +2075,8 @@ function getDayMenu(day, rotation, settings) {
 
   exercises = applyAcceptedRotationProgressionsToMenu(exercises, day, isDeload, settings);
   exercises = capBig3ProgressionsToPrevious(exercises, isDeload, settings);
+  const restApplied = applyExerciseRestSettingsToExercises(exercises, todayStr(), settings);
+  exercises = restApplied.exercises;
 
   return {
     day,
@@ -1978,9 +2084,11 @@ function getDayMenu(day, rotation, settings) {
     isDeload,
     isAdjustmentRotation,
     r4AdjustmentMode: r4Mode,
-    isRest: exercises.length === 0,
+    isRest: exercises.length === 0 && restApplied.skipped.length === 0,
     name: dayName,
     exercises,
+    skippedRestExercises: restApplied.skipped,
+    activeExerciseRests: restApplied.active,
   };
 }
 
@@ -2020,6 +2128,8 @@ function getOrCreateTodaySession() {
       r4AdjustmentMode: menu.r4AdjustmentMode,
       isRest: menu.isRest,
       dayName: menu.name,
+      activeExerciseRests: menu.activeExerciseRests || [],
+      skippedRestExercises: menu.skippedRestExercises || [],
       exercises: menu.exercises.map(ex => ({
         ...ex,
         sets: Array.from({ length: typeof ex.plannedSets === 'number' ? ex.plannedSets : 3 }, () => ({
@@ -2243,6 +2353,8 @@ function recalculateTodaySession() {
   oldSession.r4AdjustmentMode = menu.r4AdjustmentMode;
   oldSession.maxTestMode = oldSession.maxTestSkipped ? 'normal' : (oldSession.maxTestMode === 'normal' ? 'normal' : 'trueOneRm');
   oldSession.isRest = menu.isRest;
+  oldSession.activeExerciseRests = menu.activeExerciseRests || [];
+  oldSession.skippedRestExercises = menu.skippedRestExercises || [];
   saveStore();
   return hasDoneSet;
 }
@@ -2411,6 +2523,19 @@ function renderToday() {
   const accessoryWarnings = todayWarnings.length
     ? `<div class="today-warning-summary"><span class="suggestion-label">負荷注意あり</span>${warningChips}${todayWarnings.length > 3 ? `<span class="muted">+${todayWarnings.length - 3}</span>` : ''}</div>`
     : '';
+  const restSummary = (session.activeExerciseRests || []).length
+    ? `<div class="section compact-section exercise-rest-summary">
+        <div class="today-warning-summary">
+          <span class="suggestion-label">休止中</span>
+          ${(session.activeExerciseRests || []).slice(0, 2).map(rest => `<span class="status-pill status-caution">${(rest.parts || []).join('・') || rest.name}</span>`).join('')}
+          ${(session.skippedRestExercises || []).length ? `<span class="muted">${session.skippedRestExercises.length}種目</span>` : ''}
+        </div>
+        <details class="ui-details compact-details mt-8">
+          <summary>休止対象</summary>
+          ${(session.skippedRestExercises || []).map(ex => `<div class="muted" style="font-size:12px;">${ex.name} / ${ex.restSettingName}</div>`).join('') || '<div class="muted">対象なし</div>'}
+        </details>
+      </div>`
+    : '';
 
   return `
     <h2 class="screen-title">${session.dayName}</h2>
@@ -2418,6 +2543,7 @@ function renderToday() {
     ${deloadBanner}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
+    ${restSummary}
     ${accessoryWarnings ? `<div class="section compact-section">${accessoryWarnings}</div>` : ''}
     <div class="section today-progress-summary">
       <span class="status-pill status-caution">未完了 ${incomplete.length}</span>
@@ -3196,6 +3322,67 @@ function bindAccessorySlotEditorActions() {
   });
 }
 
+function bindExerciseRestSettingsActions() {
+  document.querySelectorAll('[data-chip-target="exercise-rest-parts"]').forEach(chip => {
+    chip.onclick = () => {
+      const input = document.getElementById('exercise-rest-parts');
+      if (!input) return;
+      const values = normalizeList(input.value);
+      const value = chip.dataset.chipValue;
+      input.value = values.includes(value)
+        ? values.filter(v => v !== value).join('、')
+        : [...values, value].join('、');
+    };
+  });
+  const addBtn = document.getElementById('btnAddExerciseRest');
+  if (addBtn) {
+    addBtn.onclick = () => {
+      const setting = normalizeExerciseRestSetting({
+        id: `rest_${uid()}`,
+        name: document.getElementById('exercise-rest-name')?.value || '休止設定',
+        parts: normalizeList(document.getElementById('exercise-rest-parts')?.value, EXERCISE_REST_PARTS),
+        exercises: normalizeList(document.getElementById('exercise-rest-exercises')?.value),
+        startDate: document.getElementById('exercise-rest-start')?.value || todayStr(),
+        endDate: document.getElementById('exercise-rest-end')?.value || todayStr(),
+        note: document.getElementById('exercise-rest-note')?.value || '',
+      });
+      if (!setting) return;
+      if (setting.parts.length === 0 && setting.exercises.length === 0) {
+        showToast('対象部位か対象種目を入力してください');
+        return;
+      }
+      store.settings.exerciseRestSettings = [...(store.settings.exerciseRestSettings || []), setting];
+      saveStore();
+      recalculateTodaySession();
+      render();
+      showToast('休止設定を追加しました');
+    };
+  }
+  document.querySelectorAll('button[data-end-exercise-rest]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.endExerciseRest;
+      store.settings.exerciseRestSettings = (store.settings.exerciseRestSettings || []).map(rest =>
+        rest.id === id ? { ...rest, ended: true, endDate: todayStr() } : rest
+      );
+      saveStore();
+      recalculateTodaySession();
+      render();
+      showToast('休止設定を終了しました');
+    };
+  });
+  document.querySelectorAll('button[data-delete-exercise-rest]').forEach(btn => {
+    btn.onclick = () => {
+      if (!confirm('この休止設定を削除しますか？過去ログは変更しません。')) return;
+      const id = btn.dataset.deleteExerciseRest;
+      store.settings.exerciseRestSettings = (store.settings.exerciseRestSettings || []).filter(rest => rest.id !== id);
+      saveStore();
+      recalculateTodaySession();
+      render();
+      showToast('休止設定を削除しました');
+    };
+  });
+}
+
 function finishTodaySession() {
   const key = todaySessionKey();
   const session = store.daySessions[key];
@@ -3252,6 +3439,50 @@ function finishTodaySession() {
       upsertEstimatedMaxFromLog(log);
       upsertRotationProgressionFromLog(log);
     }
+  });
+
+  (session.skippedRestExercises || []).forEach(ex => {
+    const log = {
+      id: uid(),
+      date: session.date,
+      day: session.day,
+      block: session.block,
+      rotation: session.rotation,
+      isDeload: session.isDeload,
+      isAdjustmentRotation: !!session.isAdjustmentRotation,
+      r4AdjustmentMode: session.r4AdjustmentMode || null,
+      exerciseKey: ex.key,
+      exerciseName: ex.name,
+      menuType: `rest-${ex.menuType || ex.key}`,
+      plannedWeight: ex.plannedWeight ?? null,
+      plannedReps: ex.plannedReps ?? null,
+      plannedSets: 0,
+      targetRpe: ex.targetRpe || null,
+      categories: ex.categories || [],
+      fatigueTags: ex.fatigueTags || [],
+      weightType: ex.weightType || null,
+      slotId: ex.slotId || null,
+      slotName: ex.slotName || null,
+      sets: [],
+      doneSets: 0,
+      rpe: '未入力',
+      pains: [],
+      note: ex.restSettingNote || '休止',
+      manualAdjusted: false,
+      isExerciseRest: true,
+      restSettingId: ex.restSettingId,
+      restSettingName: ex.restSettingName,
+      restParts: ex.restParts || [],
+      restStartDate: ex.restStartDate,
+      restEndDate: ex.restEndDate,
+      ts: Date.now(),
+    };
+    const existIdx = store.logs.findIndex(l =>
+      l.date === log.date && l.day === log.day && l.block === log.block &&
+      l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
+    );
+    if (existIdx >= 0) store.logs[existIdx] = log;
+    else store.logs.push(log);
   });
 
   (session.deletedAccessories || []).forEach(deleted => {
@@ -3936,12 +4167,14 @@ function summarizeLogGroup(logs) {
 function renderLogDetail(logs) {
   return logs.map(log => {
     const setsTxt = (log.sets || []).map(s => s.done ? `${s.weight ?? '-'}kg×${s.reps ?? '-'}` : `(${s.weight ?? '-'}kg×${s.reps ?? '-'})`).join(' / ') || '-';
-    const emax = createEstimatedMaxEntry(log, 'log-preview');
+    const emax = log.isExerciseRest ? null : createEstimatedMaxEntry(log, 'log-preview');
+    const statusLabel = log.isExerciseRest ? '休止' : `${log.doneSets || 0}/${log.plannedSets || 0}`;
+    const statusClass = log.isExerciseRest || log.todayOnlyDeleted ? 'status-low' : 'status-ok';
     return `
       <div class="log-detail-row">
         <div class="row between">
           <strong>${log.exerciseName}</strong>
-          <span class="status-pill ${log.todayOnlyDeleted ? 'status-low' : 'status-ok'}">${log.doneSets || 0}/${log.plannedSets || 0}</span>
+          <span class="status-pill ${statusClass}">${statusLabel}</span>
         </div>
         <div class="muted">${log.plannedWeight ?? '-'}kg × ${log.plannedReps ?? '-'} × ${log.plannedSets ?? '-'}</div>
         <div>${setsTxt}</div>
@@ -4288,6 +4521,53 @@ function renderAccessorySlotEditor(context = 'settings') {
   `;
 }
 
+function addDaysStr(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function renderExerciseRestSettings() {
+  const rests = (store.settings.exerciseRestSettings || []).map(normalizeExerciseRestSetting).filter(Boolean);
+  const today = todayStr();
+  const defaultEnd = addDaysStr(today, 13);
+  const listHtml = rests.length
+    ? rests.map(rest => {
+        const active = !rest.ended && rest.startDate <= today && today <= rest.endDate;
+        return `
+          <div class="suggestion-row" style="align-items:flex-start;">
+            <div>
+              <div class="name">${rest.name} ${active ? '<span class="status-pill status-caution">休止中</span>' : rest.ended ? '<span class="status-pill status-low">終了</span>' : '<span class="status-pill">予定</span>'}</div>
+              <div class="muted" style="font-size:12px;">${rest.startDate}〜${rest.endDate} / ${(rest.parts || []).join('・') || '部位なし'}</div>
+              ${(rest.exercises || []).length ? `<div class="muted" style="font-size:12px;">種目: ${rest.exercises.join('、')}</div>` : ''}
+              ${rest.note ? `<div class="muted" style="font-size:12px;">${rest.note}</div>` : ''}
+            </div>
+            <button class="btn-secondary btn-small" data-end-exercise-rest="${rest.id}" ${rest.ended ? 'disabled style="opacity:0.45;"' : ''}>終了</button>
+            <button class="btn-danger btn-small" data-delete-exercise-rest="${rest.id}">削除</button>
+          </div>
+        `;
+      }).join('')
+    : '<div class="muted">休止設定なし</div>';
+  return `
+    <details class="section ui-details" open>
+      <summary><h2>休止設定</h2></summary>
+      ${listHtml}
+      <div class="subsection">
+        <label class="field"><span>休止名</span><input type="text" id="exercise-rest-name" value="肩痛のため胸トレ休止" /></label>
+        <label class="field"><span>対象部位</span><input type="text" id="exercise-rest-parts" value="胸、肩" /></label>
+        <div class="accessory-meta accessory-form-chips">${EXERCISE_REST_PARTS.map(part => `<span class="accessory-chip" data-chip-target="exercise-rest-parts" data-chip-value="${part}">${part}</span>`).join('')}</div>
+        <label class="field"><span>対象種目</span><textarea id="exercise-rest-exercises">ベンチプレス、インクラインDBプレス、ダンベルプレス、チェストプレス、ペックフライ、ケーブルフライ、ディップス、ショルダープレス</textarea></label>
+        <div class="row" style="gap:8px;">
+          <label class="field" style="flex:1;"><span>開始日</span><input type="date" id="exercise-rest-start" value="${today}" /></label>
+          <label class="field" style="flex:1;"><span>終了日</span><input type="date" id="exercise-rest-end" value="${defaultEnd}" /></label>
+        </div>
+        <label class="field"><span>メモ</span><textarea id="exercise-rest-note">肩痛のため、胸・プレス系を一時的に休む</textarea></label>
+        <button class="btn-primary btn-small" id="btnAddExerciseRest">休止を追加</button>
+      </div>
+    </details>
+  `;
+}
+
 function renderSettings() {
   const m = store.settings.maxes;
   const s = store.currentState;
@@ -4411,6 +4691,7 @@ function renderSettings() {
     </div>
 
     ${renderAccessorySlotEditor()}
+    ${renderExerciseRestSettings()}
     ${renderAccessoryLoadCheck('settings')}
 
     <div class="section">
@@ -4558,6 +4839,7 @@ function afterSettings() {
   });
 
   bindAccessorySlotEditorActions();
+  bindExerciseRestSettingsActions();
 
   document.getElementById('btnRecalcToday').onclick = () => {
     const hadDone = recalculateTodaySession();
@@ -4666,6 +4948,10 @@ if (typeof window !== 'undefined') {
     getMaxUpdateCandidate,
     adoptEstimatedMax,
     recordMaxTestResult,
+    normalizeExerciseRestSetting,
+    getActiveExerciseRestSettings,
+    exerciseMatchesRestSetting,
+    applyExerciseRestSettingsToExercises,
     renderEstimatedMaxHistory,
     renderEstimatedMaxSummary,
     isExerciseComplete,
@@ -4694,6 +4980,7 @@ if (typeof window !== 'undefined') {
     renderDailyLogView,
     renderMonthlyLogView,
     renderBlock,
+    finishTodaySession,
     computeNextBlockSuggestion,
     getRestState: () => ({ ...restState }),
     getStore: () => store,
