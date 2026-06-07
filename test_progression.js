@@ -261,6 +261,9 @@ function testDeloadMaxTestResult() {
   assert.ok(store.logs.at(-1).menuType === 'max-test-trueOneRm');
   assert.strictEqual(store.logs.at(-1).sets[0].reps, 1);
   assert.ok(api.getMaxUpdateCandidate(result.entry));
+  assert.strictEqual(result.test.measuredMaxWeight, 150);
+  assert.strictEqual(result.test.isMeasuredMax, true);
+  assert.strictEqual(result.test.estimatedMax, 150);
 
   const again = api.recordMaxTestResult({
     mode: 'trueOneRm',
@@ -274,6 +277,21 @@ function testDeloadMaxTestResult() {
   assert.strictEqual(store.logs.length, beforeLogs + 1, 'max test log should be upserted');
   assert.strictEqual(store.maxTestResults.filter(item => item.liftKey === 'squat' && item.mode === 'trueOneRm').length, 1);
   assert.strictEqual(store.estimatedMaxHistory.filter(item => item.logId === again.entry.logId).length, 1);
+
+  const failed = api.recordMaxTestResult({
+    liftKey: 'bench',
+    weight: 125,
+    reps: 1,
+    rpe: '10',
+    success: false,
+    pains: ['なし'],
+    note: '惜しい',
+  });
+  assert.strictEqual(failed.entry, null);
+  assert.strictEqual(failed.test.challengeFailed, true);
+  assert.strictEqual(failed.test.measuredMaxWeight, null);
+  assert.strictEqual(store.logs.find(log => log.id === failed.log.id).doneSets, 0);
+  assert.strictEqual(store.estimatedMaxHistory.some(entry => entry.logId === failed.log.id), false);
 }
 
 function testBlockSuggestionPainSeverity() {
@@ -549,6 +567,88 @@ function testExerciseRestSettings() {
   assert.ok(!afterRest.exercises.find(ex => ex.key === 'bench').progressionCapped || afterRest.exercises.find(ex => ex.key === 'bench').plannedWeight > 0, 'return should not add special auto-adjustment');
 }
 
+function testRotationFlowAndMaxRecordsFromSession() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  let state = { block: 1, rotation: 1, day: 1 };
+  for (let i = 0; i < 31; i++) state = isolatedApi.nextDay(state);
+  assert.strictEqual(state.block, 1);
+  assert.strictEqual(state.rotation, 4);
+  assert.strictEqual(state.day, 8);
+  const nextBlockState = isolatedApi.nextDay(state);
+  assert.strictEqual(nextBlockState.block, 2);
+  assert.strictEqual(nextBlockState.rotation, 1);
+  assert.strictEqual(nextBlockState.day, 1);
+
+  isolatedStore.currentState = { block: 1, rotation: 4, day: 2 };
+  isolatedStore.settings.maxes.bench = 120;
+  isolatedApi.renderToday();
+  const todaySession = Object.values(isolatedStore.daySessions).find(item => item.block === 1 && item.rotation === 4 && item.day === 2);
+  assert.ok(todaySession);
+  const benchMax = todaySession.exercises.find(ex => ex.key === 'bench' && ex.menuType === 'max-test-trueOneRm');
+  assert.ok(benchMax);
+  benchMax.sets = [{ weight: 122.5, reps: 1, done: true }];
+  benchMax.rpe = '10';
+  benchMax.pains = ['なし'];
+  const benchBackoff = todaySession.exercises.find(ex => ex.key === 'bench' && ex.menuType === 'max-test-trueOneRm-backoff');
+  assert.ok(benchBackoff);
+  benchBackoff.sets = [{ weight: benchBackoff.plannedWeight, reps: benchBackoff.plannedReps, done: true }];
+  benchBackoff.rpe = '7';
+  isolatedApi.finishTodaySession();
+  const maxLog = isolatedStore.logs.find(log => log.exerciseKey === 'bench' && log.menuType === 'max-test-trueOneRm');
+  assert.ok(maxLog);
+  assert.strictEqual(maxLog.measuredMaxWeight, 122.5);
+  assert.strictEqual(maxLog.isMeasuredMax, true);
+  const maxResult = isolatedStore.maxTestResults.find(item => item.logId === maxLog.id);
+  assert.ok(maxResult);
+  assert.strictEqual(maxResult.measuredMaxWeight, 122.5);
+  assert.strictEqual(maxResult.estimatedMax, 122.5);
+  const emax = isolatedStore.estimatedMaxHistory.find(entry => entry.logId === maxLog.id);
+  assert.ok(emax);
+  assert.strictEqual(emax.estimatedMax, 122.5);
+  assert.notStrictEqual(maxResult, emax);
+  const backoffLog = isolatedStore.logs.find(log => log.exerciseKey === 'bench' && log.menuType === 'max-test-trueOneRm-backoff');
+  assert.ok(backoffLog);
+  assert.strictEqual(isolatedApi.createEstimatedMaxEntry(backoffLog), null, 'backoff should not be mixed into e1RM history');
+  assert.strictEqual(isolatedStore.estimatedMaxHistory.some(entry => entry.logId === backoffLog.id), false);
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, 'MAX setting should remain user-approved');
+
+  const failedLog = big3Log({
+    id: 'failed-max-log',
+    exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス',
+    menuType: 'max-test-trueOneRm',
+    isDeload: false,
+    rotation: 4,
+    day: 2,
+    plannedSets: 1,
+    doneSets: 0,
+    sets: [{ weight: 130, reps: 1, done: false }],
+    rpe: '10',
+  });
+  const failedResult = isolatedApi.upsertMaxTestResultFromLog(failedLog, isolatedApi.createEstimatedMaxEntry(failedLog));
+  assert.strictEqual(failedResult.challengeFailed, true);
+  assert.strictEqual(failedResult.measuredMaxWeight, null);
+  assert.strictEqual(isolatedApi.createEstimatedMaxEntry(failedLog), null);
+
+  isolatedStore.settings.exerciseRestSettings = [{
+    id: 'rest-bench',
+    name: '胸休止',
+    parts: ['胸'],
+    exercises: ['ベンチプレス'],
+    startDate: '2000-01-01',
+    endDate: '2099-12-31',
+  }];
+  const restMenu = isolatedApi.getDayMenu(2, 1, isolatedStore.settings);
+  assert.ok(!restMenu.exercises.some(ex => ex.key === 'bench'));
+  const nextWithRest = isolatedApi.nextDay({ block: 1, rotation: 4, day: 8 });
+  assert.strictEqual(nextWithRest.block, 2);
+  assert.strictEqual(nextWithRest.rotation, 1);
+  assert.strictEqual(nextWithRest.day, 1);
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();
@@ -564,6 +664,7 @@ testAdaptiveR4ProposalAndSelection();
 testLogDailyAndMonthlyViews();
 testFloorDeadDayUsesBulgarianInsteadOfSquat();
 testExerciseRestSettings();
+testRotationFlowAndMaxRecordsFromSession();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
 console.log('test_progression.js: all tests passed');

@@ -478,6 +478,10 @@ function isMaxTestMenu(menuType = '') {
   return type.startsWith('max-test-') && !type.includes('backoff');
 }
 
+function isMaxTestBackoffMenu(menuType = '') {
+  return String(menuType || '').startsWith('max-test-') && String(menuType || '').includes('backoff');
+}
+
 function isIntensityMainMenu(menuType = '') {
   const type = String(menuType || '');
   return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.includes('floorDead-main') || isMaxTestMenu(type);
@@ -707,6 +711,7 @@ function createEstimatedMaxEntry(log, source = 'training') {
   const normalizedLiftKey = normalizeBig3Key(log?.exerciseKey);
   const lift = BIG3_LIFTS[normalizedLiftKey];
   if (!lift) return null;
+  if (isMaxTestBackoffMenu(log?.menuType)) return null;
   const estimate = bestEstimatedMaxFromLog(log);
   if (!estimate || estimate.value == null) return null;
   const currentMax = store.settings.maxes[lift.maxKey] || 0;
@@ -1060,6 +1065,86 @@ function adoptEstimatedMax(entryId) {
   return true;
 }
 
+function getTrueOneRmAttemptFromLog(log) {
+  if (!log || !isMaxTestMenu(log.menuType)) return null;
+  const lift = BIG3_LIFTS[normalizeBig3Key(log.exerciseKey)];
+  if (!lift) return null;
+  const oneRepSets = (log.sets || [])
+    .map(set => ({
+      weight: parseFloat(set.weight),
+      reps: parseInt(set.reps, 10),
+      done: !!set.done,
+    }))
+    .filter(set => Number.isFinite(set.weight) && set.weight > 0 && set.reps === 1);
+  const plannedWeight = parseFloat(log.plannedWeight);
+  if (oneRepSets.length === 0 && !Number.isFinite(plannedWeight)) return null;
+  const attemptedWeight = Math.max(
+    Number.isFinite(plannedWeight) ? plannedWeight : 0,
+    ...oneRepSets.map(set => set.weight)
+  );
+  const measuredMaxWeight = Math.max(0, ...oneRepSets.filter(set => set.done).map(set => set.weight));
+  const success = measuredMaxWeight > 0 && !hasExplicitFailedSet(log);
+  return {
+    mode: 'trueOneRm',
+    attemptedWeight,
+    measuredMaxWeight: success ? measuredMaxWeight : null,
+    challengeSucceeded: success,
+    challengeFailed: !success,
+  };
+}
+
+function upsertMaxTestResultFromLog(log, entry = null) {
+  const attempt = getTrueOneRmAttemptFromLog(log);
+  if (!attempt) return null;
+  const lift = BIG3_LIFTS[normalizeBig3Key(log.exerciseKey)];
+  store.maxTestResults = store.maxTestResults || [];
+  const existingIdx = store.maxTestResults.findIndex(item =>
+    item.logId === log.id || (
+      item.date === log.date &&
+      item.liftKey === lift.key &&
+      item.mode === attempt.mode &&
+      Number(item.day) === Number(log.day) &&
+      Number(item.block) === Number(log.block) &&
+      Number(item.rotation) === Number(log.rotation)
+    )
+  );
+  const existing = existingIdx >= 0 ? store.maxTestResults[existingIdx] : null;
+  const test = {
+    id: existing?.id || log.maxTestId || `maxtest_${uid()}`,
+    logId: log.id,
+    mode: attempt.mode,
+    liftKey: lift.key,
+    liftName: lift.name,
+    weight: attempt.attemptedWeight,
+    attemptedWeight: attempt.attemptedWeight,
+    reps: 1,
+    rpe: log.rpe,
+    pains: log.pains || [],
+    note: log.note || '',
+    measuredMaxWeight: attempt.measuredMaxWeight,
+    isMeasuredMax: attempt.challengeSucceeded,
+    challengeSucceeded: attempt.challengeSucceeded,
+    challengeFailed: attempt.challengeFailed,
+    estimatedMax: entry?.estimatedMax ?? null,
+    confidence: entry?.confidence ?? null,
+    adopted: existing?.adopted || false,
+    date: log.date,
+    day: log.day,
+    block: log.block,
+    rotation: log.rotation,
+    ts: existing?.ts || log.ts || Date.now(),
+  };
+  if (existingIdx >= 0) store.maxTestResults[existingIdx] = { ...existing, ...test };
+  else store.maxTestResults.push(test);
+  log.maxTestId = test.id;
+  log.maxAttemptWeight = attempt.attemptedWeight;
+  log.measuredMaxWeight = attempt.measuredMaxWeight;
+  log.isMeasuredMax = attempt.challengeSucceeded;
+  log.maxChallengeSucceeded = attempt.challengeSucceeded;
+  log.maxChallengeFailed = attempt.challengeFailed;
+  return existingIdx >= 0 ? store.maxTestResults[existingIdx] : test;
+}
+
 function recordMaxTestResult(result) {
   const lift = BIG3_LIFTS[result.liftKey];
   if (!lift) return null;
@@ -1087,10 +1172,10 @@ function recordMaxTestResult(result) {
     exerciseName: lift.name,
     menuType,
     plannedWeight: result.weight,
-    plannedReps: result.reps,
+    plannedReps: 1,
     plannedSets: 1,
-    sets: [{ weight: result.weight, reps: result.reps, done: true }],
-    doneSets: 1,
+    sets: [{ weight: result.weight, reps: 1, done: result.success === false ? false : true }],
+    doneSets: result.success === false ? 0 : 1,
     rpe: result.rpe,
     pains: result.pains || [],
     note: result.note || '',
@@ -1099,53 +1184,27 @@ function recordMaxTestResult(result) {
     ts: existingLog?.ts || ts,
   };
   const entry = createEstimatedMaxEntry(pseudoLog, 'max-test');
-  if (!entry) return null;
   store.logs = store.logs || [];
   if (existingLogIdx >= 0) store.logs[existingLogIdx] = { ...existingLog, ...pseudoLog };
   else store.logs.push(pseudoLog);
 
-  const test = {
-    id: existingLog?.maxTestId || `maxtest_${uid()}`,
-    logId: pseudoLog.id,
-    mode,
-    liftKey: lift.key,
-    liftName: lift.name,
-    weight: parseFloat(result.weight),
-    reps: parseInt(result.reps, 10),
-    rpe: result.rpe,
-    pains: result.pains || [],
-    note: result.note || '',
-    estimatedMax: entry.estimatedMax,
-    confidence: entry.confidence,
-    adopted: false,
-    date,
-    day,
-    block,
-    rotation,
-    ts,
-  };
-  pseudoLog.maxTestId = test.id;
+  const test = upsertMaxTestResultFromLog(pseudoLog, entry);
   if (existingLogIdx >= 0) store.logs[existingLogIdx] = { ...store.logs[existingLogIdx], maxTestId: test.id };
   else store.logs[store.logs.length - 1] = { ...store.logs[store.logs.length - 1], maxTestId: test.id };
 
-  store.maxTestResults = store.maxTestResults || [];
-  const existingTestIdx = store.maxTestResults.findIndex(item =>
-    item.logId === pseudoLog.id || (item.date === date && item.liftKey === lift.key && item.mode === mode && Number(item.day || day) === Number(day))
-  );
-  if (existingTestIdx >= 0) store.maxTestResults[existingTestIdx] = { ...store.maxTestResults[existingTestIdx], ...test };
-  else store.maxTestResults.push(test);
-
-  store.estimatedMaxHistory = store.estimatedMaxHistory || [];
-  const entryWithTest = { ...entry, maxTestId: test.id };
-  const existingEntryIdx = store.estimatedMaxHistory.findIndex(item =>
-    (item.logId && item.logId === pseudoLog.id) || (item.maxTestId && item.maxTestId === test.id)
-  );
-  if (existingEntryIdx >= 0) store.estimatedMaxHistory[existingEntryIdx] = { ...store.estimatedMaxHistory[existingEntryIdx], ...entryWithTest, id: store.estimatedMaxHistory[existingEntryIdx].id };
-  else store.estimatedMaxHistory.push(entryWithTest);
-
+  let savedEntry = null;
+  if (entry) {
+    store.estimatedMaxHistory = store.estimatedMaxHistory || [];
+    const entryWithTest = { ...entry, maxTestId: test.id };
+    const existingEntryIdx = store.estimatedMaxHistory.findIndex(item =>
+      (item.logId && item.logId === pseudoLog.id) || (item.maxTestId && item.maxTestId === test.id)
+    );
+    if (existingEntryIdx >= 0) store.estimatedMaxHistory[existingEntryIdx] = { ...store.estimatedMaxHistory[existingEntryIdx], ...entryWithTest, id: store.estimatedMaxHistory[existingEntryIdx].id };
+    else store.estimatedMaxHistory.push(entryWithTest);
+    savedEntry = existingEntryIdx >= 0 ? store.estimatedMaxHistory[existingEntryIdx] : entryWithTest;
+  }
   saveStore();
-  const savedEntry = existingEntryIdx >= 0 ? store.estimatedMaxHistory[existingEntryIdx] : entryWithTest;
-  return { test: existingTestIdx >= 0 ? store.maxTestResults[existingTestIdx] : test, entry: savedEntry, log: pseudoLog };
+  return { test, entry: savedEntry, log: pseudoLog };
 }
 
 function renderEstimatedMaxHistory(limit = 6) {
@@ -3433,11 +3492,18 @@ function finishTodaySession() {
       l.date === log.date && l.day === log.day && l.block === log.block &&
       l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
     );
-    if (existIdx >= 0) store.logs[existIdx] = log;
-    else store.logs.push(log);
-    if (isBig3Key(log.exerciseKey)) {
-      upsertEstimatedMaxFromLog(log);
-      upsertRotationProgressionFromLog(log);
+    let savedLog;
+    if (existIdx >= 0) {
+      store.logs[existIdx] = log;
+      savedLog = store.logs[existIdx];
+    } else {
+      store.logs.push(log);
+      savedLog = store.logs[store.logs.length - 1];
+    }
+    if (isBig3Key(savedLog.exerciseKey)) {
+      const entry = upsertEstimatedMaxFromLog(savedLog);
+      if (isMaxTestMenu(savedLog.menuType)) upsertMaxTestResultFromLog(savedLog, entry);
+      upsertRotationProgressionFromLog(savedLog);
     }
   });
 
@@ -4168,6 +4234,7 @@ function renderLogDetail(logs) {
   return logs.map(log => {
     const setsTxt = (log.sets || []).map(s => s.done ? `${s.weight ?? '-'}kg×${s.reps ?? '-'}` : `(${s.weight ?? '-'}kg×${s.reps ?? '-'})`).join(' / ') || '-';
     const emax = log.isExerciseRest ? null : createEstimatedMaxEntry(log, 'log-preview');
+    const maxAttempt = getTrueOneRmAttemptFromLog(log);
     const statusLabel = log.isExerciseRest ? '休止' : `${log.doneSets || 0}/${log.plannedSets || 0}`;
     const statusClass = log.isExerciseRest || log.todayOnlyDeleted ? 'status-low' : 'status-ok';
     return `
@@ -4179,6 +4246,7 @@ function renderLogDetail(logs) {
         <div class="muted">${log.plannedWeight ?? '-'}kg × ${log.plannedReps ?? '-'} × ${log.plannedSets ?? '-'}</div>
         <div>${setsTxt}</div>
         <div class="muted">RPE ${log.rpe || '-'} / 状態 ${(log.pains || []).join(',') || '-'}</div>
+        ${maxAttempt ? `<div class="accessory-suggestion"><span class="suggestion-label">${maxAttempt.challengeSucceeded ? '実測MAX' : 'MAX挑戦'}</span><span>${maxAttempt.challengeSucceeded ? `${maxAttempt.measuredMaxWeight}kg` : `${maxAttempt.attemptedWeight}kg 失敗`}</span></div>` : ''}
         ${emax ? `<div class="accessory-suggestion"><span class="suggestion-label">${emax.maxUseLabel}</span><span>${emax.estimatedMax}kg / ${emax.maxUseReason}</span></div>` : ''}
         ${log.note ? `<div class="muted">メモ: ${log.note}</div>` : ''}
       </div>
@@ -4945,9 +5013,12 @@ if (typeof window !== 'undefined') {
     applyDeloadMaxTestModeToSession,
     isIntensityMainMenu,
     isMaxTestMenu,
+    isMaxTestBackoffMenu,
     getMaxUpdateCandidate,
     adoptEstimatedMax,
     recordMaxTestResult,
+    getTrueOneRmAttemptFromLog,
+    upsertMaxTestResultFromLog,
     normalizeExerciseRestSetting,
     getActiveExerciseRestSettings,
     exerciseMatchesRestSetting,
@@ -4981,6 +5052,7 @@ if (typeof window !== 'undefined') {
     renderMonthlyLogView,
     renderBlock,
     finishTodaySession,
+    nextDay,
     computeNextBlockSuggestion,
     getRestState: () => ({ ...restState }),
     getStore: () => store,
