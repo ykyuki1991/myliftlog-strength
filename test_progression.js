@@ -649,6 +649,87 @@ function testRotationFlowAndMaxRecordsFromSession() {
   assert.strictEqual(nextWithRest.day, 1);
 }
 
+function testBlockSuggestionHighRpeHalfSteps() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  // RPE 9.5（旧実装の文字列比較 '9'/'10' に一致しない）でも高RPEとして据え置きになること
+  isolatedStore.logs = [big3Log({ rpe: '9.5' })];
+  const highHalf = isolatedApi.computeNextBlockSuggestion().find(s => s.key === 'bench');
+  assert.strictEqual(highHalf.delta, 0, 'RPE 9.5 should be treated as high RPE (no increase)');
+  assert.ok(highHalf.reason.includes('RPE9以上'));
+
+  isolatedStore.logs = [big3Log({ rpe: '8.5' })];
+  const mid = isolatedApi.computeNextBlockSuggestion().find(s => s.key === 'bench');
+  assert.ok(mid.delta > 0, 'RPE 8.5 should still allow increase suggestion');
+}
+
+function testLogGroupSummaryExcludesRestLogs() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+
+  const summary = isolatedApi.summarizeLogGroup([
+    big3Log({ doneSets: 3, plannedSets: 3 }),
+    {
+      ...big3Log({ exerciseKey: 'incline_db', exerciseName: 'インクラインDBプレス', menuType: 'rest-accessory' }),
+      isExerciseRest: true,
+      plannedSets: 0,
+      doneSets: 0,
+      sets: [],
+    },
+  ]);
+  assert.strictEqual(summary.totalCount, 1, 'rest logs should not count as training logs');
+  assert.strictEqual(summary.completedCount, 1);
+  assert.strictEqual(summary.restCount, 1);
+  assert.ok(summary.mainNames.includes('ベンチプレス'));
+  assert.ok(!summary.mainNames.includes('インクラインDBプレス'), 'rest log should not lead main names');
+}
+
+function testMaxTestHistoryRendering() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  let html = isolatedApi.renderMaxTestHistory();
+  assert.ok(html.includes('実測MAXの記録はまだありません'));
+
+  isolatedApi.recordMaxTestResult({
+    liftKey: 'bench',
+    weight: 122.5,
+    reps: 1,
+    rpe: '10',
+    pains: ['なし'],
+    note: '',
+  });
+  isolatedApi.recordMaxTestResult({
+    liftKey: 'squat',
+    weight: 160,
+    reps: 1,
+    rpe: '10',
+    success: false,
+    pains: ['なし'],
+    note: '',
+  });
+  assert.strictEqual(isolatedStore.maxTestResults.length, 2);
+
+  html = isolatedApi.renderMaxTestHistory();
+  assert.ok(html.includes('実測MAX'), 'successful 1RM should be labeled 実測MAX');
+  assert.ok(html.includes('122.5kg 成功'));
+  assert.ok(html.includes('MAX挑戦'), 'failed 1RM should be labeled MAX挑戦');
+  assert.ok(html.includes('160kg 失敗'));
+}
+
+function testEscapeHtml() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  assert.strictEqual(
+    isolatedApi.escapeHtml('<b>"x"&\'</b>'),
+    '&lt;b&gt;&quot;x&quot;&amp;&#39;&lt;/b&gt;'
+  );
+  assert.strictEqual(isolatedApi.escapeHtml(null), '');
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();
@@ -657,6 +738,10 @@ testAdoptedProgressionAppliesOnceToNextMenu();
 testMaxCandidateAndAdoption();
 testDeloadMaxTestResult();
 testBlockSuggestionPainSeverity();
+testBlockSuggestionHighRpeHalfSteps();
+testLogGroupSummaryExcludesRestLogs();
+testMaxTestHistoryRendering();
+testEscapeHtml();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();

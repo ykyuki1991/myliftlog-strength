@@ -1228,6 +1228,29 @@ function renderEstimatedMaxHistory(limit = 6) {
   }).join('');
 }
 
+// 実測MAX（1RM成功）/ MAX挑戦（1RM失敗）の履歴。推定MAXとは別系統で表示する。
+function renderMaxTestHistory(limit = 10) {
+  const entries = [...(store.maxTestResults || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, limit);
+  if (entries.length === 0) return '<div class="muted">実測MAXの記録はまだありません（R4のMAX測定で記録されます）</div>';
+  return entries.map(test => {
+    const success = !!test.challengeSucceeded;
+    const label = success ? '実測MAX' : 'MAX挑戦';
+    const detail = success
+      ? `${test.measuredMaxWeight}kg 成功`
+      : `${test.attemptedWeight ?? test.weight}kg 失敗`;
+    return `
+      <div class="suggestion-row">
+        <div>
+          <div class="name">${test.liftName} <span class="status-pill ${success ? 'status-ok' : 'status-low'}">${label}</span></div>
+          <div class="muted" style="font-size:12px;">${detail} / RPE${test.rpe || '-'} / ${test.date || '-'} (B${test.block ?? '-'} R${test.rotation ?? '-'} D${test.day ?? '-'})</div>
+          ${test.note ? `<div class="muted" style="font-size:12px;">メモ: ${escapeHtml(test.note)}</div>` : ''}
+        </div>
+        <span class="status-pill ${success ? 'status-ok' : 'status-caution'}">${success ? `${test.measuredMaxWeight}kg` : '記録なし'}</span>
+      </div>
+    `;
+  }).join('');
+}
+
 function renderEstimatedMaxSummary() {
   const entries = [...(store.estimatedMaxHistory || [])].sort((a, b) => b.ts - a.ts);
   const lifts = [
@@ -1473,12 +1496,12 @@ function renderDeloadMaxTestPanel(session) {
       <h2>R4 MAX測定</h2>
       <div class="status-row">
         <span class="status-pill status-ok">${lift.name}</span>
-        <span class="status-pill status-caution">${statusText}</span>
+        <span class="status-pill ${session.maxTestSkipped ? 'status-low' : 'status-caution'}">${statusText}</span>
       </div>
       ${oneRmWarning}
       <div class="btn-row">
-        <button class="btn-primary" data-action="setDeloadMaxMode" data-mode="trueOneRm">MAX測定する</button>
-        <button class="btn-secondary" data-action="setDeloadMaxMode" data-mode="normal">今回は測定しない</button>
+        <button class="${selectedMode === 'trueOneRm' ? 'btn-primary' : 'btn-secondary'}" data-action="setDeloadMaxMode" data-mode="trueOneRm">MAX測定する${selectedMode === 'trueOneRm' ? ' ✓' : ''}</button>
+        <button class="${selectedMode === 'normal' ? 'btn-primary' : 'btn-secondary'}" data-action="setDeloadMaxMode" data-mode="normal">今回は測定しない${selectedMode === 'normal' ? ' ✓' : ''}</button>
       </div>
     </div>
   `;
@@ -1821,6 +1844,17 @@ function fmtDate(s) {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// ユーザー入力をHTMLへ差し込む際のエスケープ（メモ・名前等の表示崩れ防止）
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
 }
 
 let nowProvider = () => Date.now();
@@ -2586,12 +2620,12 @@ function renderToday() {
     ? `<div class="section compact-section exercise-rest-summary">
         <div class="today-warning-summary">
           <span class="suggestion-label">休止中</span>
-          ${(session.activeExerciseRests || []).slice(0, 2).map(rest => `<span class="status-pill status-caution">${(rest.parts || []).join('・') || rest.name}</span>`).join('')}
+          ${(session.activeExerciseRests || []).slice(0, 2).map(rest => `<span class="status-pill status-caution">${escapeHtml((rest.parts || []).join('・') || rest.name)}</span>`).join('')}
           ${(session.skippedRestExercises || []).length ? `<span class="muted">${session.skippedRestExercises.length}種目</span>` : ''}
         </div>
         <details class="ui-details compact-details mt-8">
           <summary>休止対象</summary>
-          ${(session.skippedRestExercises || []).map(ex => `<div class="muted" style="font-size:12px;">${ex.name} / ${ex.restSettingName}</div>`).join('') || '<div class="muted">対象なし</div>'}
+          ${(session.skippedRestExercises || []).map(ex => `<div class="muted" style="font-size:12px;">${escapeHtml(ex.name)} / ${escapeHtml(ex.restSettingName)}</div>`).join('') || '<div class="muted">対象なし</div>'}
         </details>
       </div>`
     : '';
@@ -2609,7 +2643,7 @@ function renderToday() {
       <span class="status-pill status-ok">完了済み ${completed.length}</span>
     </div>
     <div class="today-exercise-section">
-      <h3>未完了</h3>
+      ${incomplete.length ? '<h3>未完了</h3>' : ''}
       ${incompleteHtml}
     </div>
     ${completedHtml}
@@ -2708,7 +2742,7 @@ function renderExerciseCard(ex, exIdx) {
 
       <label class="field mt-8">
         <span>メモ</span>
-        <textarea data-ex="${exIdx}" data-field="note" placeholder="調子・フォーム・気付き等">${ex.note}</textarea>
+        <textarea data-ex="${exIdx}" data-field="note" placeholder="調子・フォーム・気付き等">${escapeHtml(ex.note)}</textarea>
       </label>
 
       <div class="actions">
@@ -2747,11 +2781,13 @@ function afterToday() {
     });
   });
 
-  // RPE
+  // RPE（選択中チップを再タップで解除）
   document.querySelectorAll('.chip[data-rpe]').forEach(c => {
     c.addEventListener('click', () => {
       const exIdx = parseInt(c.dataset.ex);
-      session.exercises[exIdx].rpe = c.dataset.rpe;
+      const ex = session.exercises[exIdx];
+      if (!ex) return;
+      ex.rpe = (ex.rpe === c.dataset.rpe && c.dataset.rpe !== '未入力') ? '未入力' : c.dataset.rpe;
       saveStore();
       render();
     });
@@ -4151,7 +4187,8 @@ function computeNextBlockSuggestion() {
       totalSets += planned;
       doneSets += l.doneSets;
       if (l.doneSets < planned) failures += (planned - l.doneSets);
-      if (l.rpe === '9' || l.rpe === '10') highRPE = true;
+      const rpeValue = parseRpeValue(l.rpe);
+      if (rpeValue != null && rpeValue >= 9) highRPE = true;
       if (hasLogPain(l)) painFlag = true;
     });
 
@@ -4189,14 +4226,15 @@ function renderLog() {
     <div class="tabs">
       <button class="tab ${logFilter.type === 'daily' ? 'active' : ''}" data-type="daily">日別</button>
       <button class="tab ${logFilter.type === 'monthly' ? 'active' : ''}" data-type="monthly">月別</button>
-      <button class="tab ${logFilter.type === 'emax' ? 'active' : ''}" data-type="emax">推定MAX</button>
+      <button class="tab ${logFilter.type === 'emax' ? 'active' : ''}" data-type="emax">MAX記録</button>
     </div>
   `;
 
   const body = logFilter.type === 'monthly'
     ? renderMonthlyLogView()
     : logFilter.type === 'emax'
-      ? `<div class="section"><h2>推定MAX履歴</h2>${renderEstimatedMaxHistory(20)}</div>`
+      ? `<div class="section"><h2>実測MAX・MAX挑戦</h2><div class="muted mb-8" style="font-size:12px;">R4のMAX測定（1RM）の結果です。成功=実測MAX / 失敗=MAX挑戦。</div>${renderMaxTestHistory(10)}</div>
+         <div class="section"><h2>推定MAX履歴</h2><div class="muted mb-8" style="font-size:12px;">トレーニング記録からの推定値（e1RM）です。実測MAXとは別管理です。</div>${renderEstimatedMaxHistory(20)}</div>`
       : renderDailyLogView();
 
   return `
@@ -4224,10 +4262,13 @@ function logsByDate() {
 }
 
 function summarizeLogGroup(logs) {
-  const completed = logs.filter(log => (parseInt(log.doneSets, 10) || 0) >= (parseInt(log.plannedSets, 10) || 0));
-  const mainNames = logs.slice(0, 3).map(log => log.exerciseName).filter(Boolean).join(' / ') || '記録';
-  const hasCandidate = logs.some(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate);
-  return { completedCount: completed.length, totalCount: logs.length, mainNames, hasCandidate };
+  // 休止ログ・今日だけ削除ログは実施数に含めない（0/0で「完了」に見えるのを防ぐ）
+  const trainingLogs = logs.filter(log => !log.isExerciseRest && !log.todayOnlyDeleted);
+  const completed = trainingLogs.filter(log => (parseInt(log.doneSets, 10) || 0) >= (parseInt(log.plannedSets, 10) || 0));
+  const restCount = logs.length - trainingLogs.length;
+  const mainNames = (trainingLogs.length ? trainingLogs : logs).slice(0, 3).map(log => log.exerciseName).filter(Boolean).join(' / ') || '記録';
+  const hasCandidate = trainingLogs.some(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate);
+  return { completedCount: completed.length, totalCount: trainingLogs.length, restCount, mainNames, hasCandidate };
 }
 
 function renderLogDetail(logs) {
@@ -4248,7 +4289,7 @@ function renderLogDetail(logs) {
         <div class="muted">RPE ${log.rpe || '-'} / 状態 ${(log.pains || []).join(',') || '-'}</div>
         ${maxAttempt ? `<div class="accessory-suggestion"><span class="suggestion-label">${maxAttempt.challengeSucceeded ? '実測MAX' : 'MAX挑戦'}</span><span>${maxAttempt.challengeSucceeded ? `${maxAttempt.measuredMaxWeight}kg` : `${maxAttempt.attemptedWeight}kg 失敗`}</span></div>` : ''}
         ${emax ? `<div class="accessory-suggestion"><span class="suggestion-label">${emax.maxUseLabel}</span><span>${emax.estimatedMax}kg / ${emax.maxUseReason}</span></div>` : ''}
-        ${log.note ? `<div class="muted">メモ: ${log.note}</div>` : ''}
+        ${log.note ? `<div class="muted">メモ: ${escapeHtml(log.note)}</div>` : ''}
       </div>
     `;
   }).join('');
@@ -4266,7 +4307,7 @@ function renderDailyLogView(logMap = logsByDate()) {
             <span class="log-card-title">${fmtDate(date)} Day${first.day || '-'}</span>
             <span class="muted">B${first.block || '-'} / R${first.rotation || '-'} / ${summary.mainNames}</span>
           </span>
-          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補あり' : `${summary.completedCount}/${summary.totalCount}`}</span>
+          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補あり' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="status-pill status-low">休止${summary.restCount}</span>` : ''}
         </summary>
         ${renderLogDetail(logs)}
       </details>
@@ -4605,10 +4646,10 @@ function renderExerciseRestSettings() {
         return `
           <div class="suggestion-row" style="align-items:flex-start;">
             <div>
-              <div class="name">${rest.name} ${active ? '<span class="status-pill status-caution">休止中</span>' : rest.ended ? '<span class="status-pill status-low">終了</span>' : '<span class="status-pill">予定</span>'}</div>
+              <div class="name">${escapeHtml(rest.name)} ${active ? '<span class="status-pill status-caution">休止中</span>' : rest.ended ? '<span class="status-pill status-low">終了</span>' : '<span class="status-pill">予定</span>'}</div>
               <div class="muted" style="font-size:12px;">${rest.startDate}〜${rest.endDate} / ${(rest.parts || []).join('・') || '部位なし'}</div>
-              ${(rest.exercises || []).length ? `<div class="muted" style="font-size:12px;">種目: ${rest.exercises.join('、')}</div>` : ''}
-              ${rest.note ? `<div class="muted" style="font-size:12px;">${rest.note}</div>` : ''}
+              ${(rest.exercises || []).length ? `<div class="muted" style="font-size:12px;">種目: ${escapeHtml(rest.exercises.join('、'))}</div>` : ''}
+              ${rest.note ? `<div class="muted" style="font-size:12px;">${escapeHtml(rest.note)}</div>` : ''}
             </div>
             <button class="btn-secondary btn-small" data-end-exercise-rest="${rest.id}" ${rest.ended ? 'disabled style="opacity:0.45;"' : ''}>終了</button>
             <button class="btn-danger btn-small" data-delete-exercise-rest="${rest.id}">削除</button>
@@ -4621,15 +4662,15 @@ function renderExerciseRestSettings() {
       <summary><h2>休止設定</h2></summary>
       ${listHtml}
       <div class="subsection">
-        <label class="field"><span>休止名</span><input type="text" id="exercise-rest-name" value="肩痛のため胸トレ休止" /></label>
-        <label class="field"><span>対象部位</span><input type="text" id="exercise-rest-parts" value="胸、肩" /></label>
+        <label class="field"><span>休止名</span><input type="text" id="exercise-rest-name" placeholder="例: 肩痛のため胸トレ休止" /></label>
+        <label class="field"><span>対象部位（タップで追加）</span><input type="text" id="exercise-rest-parts" placeholder="例: 胸、肩" /></label>
         <div class="accessory-meta accessory-form-chips">${EXERCISE_REST_PARTS.map(part => `<span class="accessory-chip" data-chip-target="exercise-rest-parts" data-chip-value="${part}">${part}</span>`).join('')}</div>
-        <label class="field"><span>対象種目</span><textarea id="exercise-rest-exercises">ベンチプレス、インクラインDBプレス、ダンベルプレス、チェストプレス、ペックフライ、ケーブルフライ、ディップス、ショルダープレス</textarea></label>
+        <label class="field"><span>対象種目（任意・「、」区切り）</span><textarea id="exercise-rest-exercises" placeholder="例: ベンチプレス、インクラインDBプレス、ディップス"></textarea></label>
         <div class="row" style="gap:8px;">
           <label class="field" style="flex:1;"><span>開始日</span><input type="date" id="exercise-rest-start" value="${today}" /></label>
           <label class="field" style="flex:1;"><span>終了日</span><input type="date" id="exercise-rest-end" value="${defaultEnd}" /></label>
         </div>
-        <label class="field"><span>メモ</span><textarea id="exercise-rest-note">肩痛のため、胸・プレス系を一時的に休む</textarea></label>
+        <label class="field"><span>メモ（任意）</span><textarea id="exercise-rest-note" placeholder="例: 肩痛のため、胸・プレス系を一時的に休む"></textarea></label>
         <button class="btn-primary btn-small" id="btnAddExerciseRest">休止を追加</button>
       </div>
     </details>
@@ -5050,6 +5091,9 @@ if (typeof window !== 'undefined') {
     renderLog,
     renderDailyLogView,
     renderMonthlyLogView,
+    renderMaxTestHistory,
+    summarizeLogGroup,
+    escapeHtml,
     renderBlock,
     finishTodaySession,
     nextDay,
