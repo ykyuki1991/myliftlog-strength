@@ -3957,11 +3957,11 @@ function renderBlock() {
 
   // 未完了時は「参考提案」バナーを表示し、採用系ボタンを無効化
   const referenceBanner = !blockComplete
-    ? `<div class="deload-banner" style="background:rgba(96,165,250,0.15);border-left-color:var(--accent);">
+    ? `<div class="deload-banner" style="background:var(--accent-soft);border-color:var(--accent-soft);border-left-color:var(--accent);">
          <div class="label" style="color:var(--accent);">参考提案</div>
          <div class="muted">参考表示</div>
        </div>`
-    : `<div class="deload-banner" style="background:rgba(74,222,128,0.15);border-left-color:var(--success);">
+    : `<div class="deload-banner" style="background:var(--success-soft);border-color:var(--success-soft);border-left-color:var(--success);">
          <div class="label" style="color:var(--success);">ブロック完了</div>
          <div class="muted">採用で次ブロックへ</div>
        </div>`;
@@ -3988,7 +3988,7 @@ function renderBlock() {
       summary = `<ul class="exercise-list" style="margin:4px 0 0;">${exItems}</ul>`;
     }
     return `
-      <details class="rotation-day-card ui-details" ${isCurrent ? 'open' : ''} style="${isCurrent ? 'border-color:var(--accent);background:rgba(96,165,250,0.05);' : ''}">
+      <details class="rotation-day-card ui-details" ${isCurrent ? 'open' : ''} style="${isCurrent ? 'border-color:var(--accent);background:rgba(79,110,247,0.06);' : ''}">
         <summary>
           <span>
             <span style="font-size:13px;font-weight:600;">Day${d}${isCurrent ? ' <span class="text-warn" style="font-size:10px;">(現在)</span>' : ''}</span>
@@ -4369,14 +4369,14 @@ function renderSimpleGraph(logs, key) {
     <div class="section">
       <h3>推定MAX(e1RM)推移</h3>
       <svg viewBox="0 0 ${w} ${h}" class="log-graph" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#60a5fa" stroke-width="2" points="${polyPts}" />
+        <polyline fill="none" stroke="#4f6ef7" stroke-width="2" points="${polyPts}" />
         ${points.map((p, i) => {
           const x = pad + i * xStep;
           const y = h - pad - ((p.e1 - minV) / range) * (h - pad * 2);
-          return `<circle cx="${x}" cy="${y}" r="3" fill="#3b82f6" />`;
+          return `<circle cx="${x}" cy="${y}" r="3" fill="#3d5ceb" />`;
         }).join('')}
-        <text x="${pad}" y="14" fill="#94a3b8" font-size="10">${Math.round(maxV)}kg</text>
-        <text x="${pad}" y="${h - 4}" fill="#94a3b8" font-size="10">${Math.round(minV)}kg</text>
+        <text x="${pad}" y="14" fill="#6b7280" font-size="10">${Math.round(maxV)}kg</text>
+        <text x="${pad}" y="${h - 4}" fill="#6b7280" font-size="10">${Math.round(minV)}kg</text>
       </svg>
     </div>
   `;
