@@ -502,7 +502,7 @@ function isLogFailed(log) {
 
 function hasExplicitFailedSet(log) {
   return (log?.sets || []).some(set => {
-    if (set.done) return false;
+    if (set.done || set.skipped) return false;
     const reps = parseInt(set.reps, 10);
     return Number.isFinite(reps) && reps > 0;
   });
@@ -1229,23 +1229,23 @@ function renderEstimatedMaxHistory(limit = 6) {
 }
 
 // 実測MAX（1RM成功）/ MAX挑戦（1RM失敗）の履歴。推定MAXとは別系統で表示する。
-function renderMaxTestHistory(limit = 10) {
-  const entries = [...(store.maxTestResults || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, limit);
+function renderMaxTestHistory(limit = 10, liftKey = null) {
+  const entries = [...(store.maxTestResults || [])]
+    .filter(test => !liftKey || test.liftKey === liftKey)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+    .slice(0, limit);
   if (entries.length === 0) return '<div class="muted">実測MAXの記録はまだありません（R4のMAX測定で記録されます）</div>';
   return entries.map(test => {
     const success = !!test.challengeSucceeded;
-    const label = success ? '実測MAX' : 'MAX挑戦';
-    const detail = success
-      ? `${test.measuredMaxWeight}kg 成功`
-      : `${test.attemptedWeight ?? test.weight}kg 失敗`;
+    const weight = success ? test.measuredMaxWeight : (test.attemptedWeight ?? test.weight);
     return `
-      <div class="suggestion-row">
-        <div>
-          <div class="name">${test.liftName} <span class="status-pill ${success ? 'status-ok' : 'status-low'}">${label}</span></div>
-          <div class="muted" style="font-size:12px;">${detail} / RPE${test.rpe || '-'} / ${test.date || '-'} (B${test.block ?? '-'} R${test.rotation ?? '-'} D${test.day ?? '-'})</div>
-          ${test.note ? `<div class="muted" style="font-size:12px;">メモ: ${escapeHtml(test.note)}</div>` : ''}
-        </div>
-        <span class="status-pill ${success ? 'status-ok' : 'status-caution'}">${success ? `${test.measuredMaxWeight}kg` : '記録なし'}</span>
+      <div class="hist-row">
+        <span class="h-date">${fmtDateShort(test.date)}</span>
+        <span class="h-val">${fmtW(weight)}<span class="u">kg</span> ×1
+          ${!liftKey ? `<span class="h-src">${test.liftName}</span>` : ''}
+        </span>
+        ${test.adopted ? '<span class="chip chip-max-fill">採用中</span>' : ''}
+        <span class="chip ${success ? 'chip-ok' : 'chip-pause'}" title="${success ? '実測MAX' : 'MAX挑戦'}">${success ? `✓ ${fmtW(test.measuredMaxWeight)}kg 成功` : `✗ ${fmtW(weight)}kg 失敗`}</span>
       </div>
     `;
   }).join('');
@@ -1487,21 +1487,16 @@ function renderDeloadMaxTestPanel(session) {
   const lift = getDeloadMaxTestLiftForDay(session.day);
   if (!lift) return '';
   const selectedMode = session.maxTestSkipped ? 'normal' : 'trueOneRm';
-  const oneRmWarning = selectedMode === 'trueOneRm'
-    ? '<div class="load-warning load-warning-danger"><span>危険</span>1RMは安全環境のみ</div>'
-    : '';
-  const statusText = session.maxTestSkipped ? '測定なし' : '測定 1RM';
   return `
-    <div class="section">
-      <h2>R4 MAX測定</h2>
-      <div class="status-row">
-        <span class="status-pill status-ok">${lift.name}</span>
-        <span class="status-pill ${session.maxTestSkipped ? 'status-low' : 'status-caution'}">${statusText}</span>
+    <div class="card r4-max-card">
+      <div class="sec-label">MAX測定</div>
+      <div class="row" style="margin-bottom:10px;">
+        <span class="chip chip-max">MAX</span>
+        <span class="muted">${lift.name}</span>
       </div>
-      ${oneRmWarning}
-      <div class="btn-row">
-        <button class="${selectedMode === 'trueOneRm' ? 'btn-primary' : 'btn-secondary'}" data-action="setDeloadMaxMode" data-mode="trueOneRm">MAX測定する${selectedMode === 'trueOneRm' ? ' ✓' : ''}</button>
-        <button class="${selectedMode === 'normal' ? 'btn-primary' : 'btn-secondary'}" data-action="setDeloadMaxMode" data-mode="normal">今回は測定しない${selectedMode === 'normal' ? ' ✓' : ''}</button>
+      <div class="btn-pair">
+        <button class="${selectedMode === 'trueOneRm' ? 'btn-max' : 'btn-sec'}" data-action="setDeloadMaxMode" data-mode="trueOneRm">する</button>
+        <button class="${selectedMode === 'normal' ? 'btn-max' : 'btn-sec'}" data-action="setDeloadMaxMode" data-mode="normal">しない</button>
       </div>
     </div>
   `;
@@ -1512,25 +1507,19 @@ function renderR4AdjustmentPanel(session = null) {
   if (!isR4) return '';
   const proposal = getR4AdjustmentProposal();
   const selected = getSelectedR4AdjustmentMode(store.settings);
-  const buttons = proposal.modes.map(mode => `
-    <button class="${selected === mode.key ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="setR4AdjustmentMode" data-r4-mode="${mode.key}">
-      ${r4IntensityLevelLabel(mode.key)}
-    </button>
+  const segOptions = proposal.modes.map(mode => `
+    <button class="seg-opt ${selected === mode.key ? 'on' : ''}" data-action="setR4AdjustmentMode" data-r4-mode="${mode.key}">${r4IntensityLevelLabel(mode.key)}</button>
   `).join('');
-  const levelHelp = proposal.modes.map(mode => `<span class="status-pill">${r4IntensityLevelDescription(mode.key)}</span>`).join('');
+  const levelHelp = proposal.modes.map(mode => `<span class="chip chip-outline">${r4IntensityLevelDescription(mode.key)}</span>`).join('');
   return `
-    <div class="section r4-adjustment-panel">
-      <h2>R4調整</h2>
-      <div class="status-row">
-        <span class="status-pill status-caution">休み ${proposal.cumulativeUnexpectedRestDays}日</span>
-        <span class="status-pill status-caution">連続 ${proposal.consecutiveRestDays}日</span>
-        <span class="status-pill status-ok">おすすめ ${r4IntensityLevelLabel(proposal.recommendedMode)}</span>
-      </div>
-      <div class="btn-row">${buttons}</div>
-      <details class="ui-details mt-8">
+    <div class="card r4-adjustment-panel">
+      <div class="sec-label">今回の強さ</div>
+      <div class="seg">${segOptions}</div>
+      <div class="seg-ends"><span>軽い</span><span>通常</span></div>
+      <details class="ui-details compact-details mt-8">
         <summary>Lvの目安</summary>
         <div class="status-row">${levelHelp}</div>
-        <div class="muted mt-8">${proposal.reasons.join(' / ')}</div>
+        <div class="muted mt-8">おすすめ ${r4IntensityLevelLabel(proposal.recommendedMode)} / ${proposal.reasons.join(' / ')} / 予定外休み ${proposal.cumulativeUnexpectedRestDays}日 (連続${proposal.consecutiveRestDays}日)</div>
       </details>
     </div>
   `;
@@ -1846,6 +1835,20 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// 重量表示: 小数1桁固定（120.0）
+function fmtW(value) {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return '-';
+  return (Math.round(n * 10) / 10).toFixed(1);
+}
+
+// 日付表示: 「6/10」形式
+function fmtDateShort(value) {
+  const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return String(value || '-');
+  return `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}`;
+}
+
 // ユーザー入力をHTMLへ差し込む際のエスケープ（メモ・名前等の表示崩れ防止）
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -1875,11 +1878,13 @@ function openModal(title, bodyHtml, onMount) {
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = bodyHtml;
   document.getElementById('modal').classList.remove('hidden');
+  if (document.body?.classList) document.body.classList.add('sheet-open');
   if (onMount) onMount();
 }
 
 function closeModal() {
   document.getElementById('modal').classList.add('hidden');
+  if (document.body?.classList) document.body.classList.remove('sheet-open');
 }
 
 // ===== メニュー定義 =====
@@ -2245,11 +2250,12 @@ function getOrCreateTodaySession() {
 }
 
 function isExerciseComplete(ex) {
-  return (ex?.sets || []).length > 0 && ex.sets.every(set => !!set.done);
+  // スキップ済みセットは「実施済み扱い」で完了判定に含める（記録上はdoneと区別）
+  return (ex?.sets || []).length > 0 && ex.sets.every(set => !!set.done || !!set.skipped);
 }
 
 function firstPendingSetIndex(ex) {
-  return (ex?.sets || []).findIndex(set => !set.done);
+  return (ex?.sets || []).findIndex(set => !set.done && !set.skipped);
 }
 
 function hasSetRecord(set) {
@@ -2345,12 +2351,43 @@ function toggleNextSetCompletion(session, exIdx) {
     ex.sets[nextIdx].done = true;
     return { ok: true, completedSet: nextIdx, allDone: isExerciseComplete(ex), reverted: false };
   }
-  const lastIdx = (ex.sets || []).length - 1;
-  if (lastIdx >= 0) {
-    ex.sets[lastIdx].done = false;
-    return { ok: true, completedSet: lastIdx, allDone: false, reverted: true };
+  // 戻す対象は「最後に完了したセット」（スキップ行は対象外）
+  const sets = ex.sets || [];
+  for (let i = sets.length - 1; i >= 0; i--) {
+    if (sets[i].done) {
+      sets[i].done = false;
+      return { ok: true, completedSet: i, allDone: false, reverted: true };
+    }
+    if (sets[i].skipped) {
+      sets[i].skipped = false;
+      return { ok: true, completedSet: i, allDone: false, reverted: true };
+    }
   }
   return { ok: false, reason: 'no-sets' };
+}
+
+function skipNextSet(session, exIdx) {
+  const ex = session?.exercises?.[exIdx];
+  if (!ex) return { ok: false, reason: 'missing-exercise' };
+  const nextIdx = firstPendingSetIndex(ex);
+  if (nextIdx < 0) return { ok: false, reason: 'no-pending' };
+  ex.sets[nextIdx].skipped = true;
+  return { ok: true, skippedSet: nextIdx, allDone: isExerciseComplete(ex) };
+}
+
+// 最後に記録（完了/スキップ）したセットを未実施に戻す
+function undoLastSetRecord(session, exIdx) {
+  const ex = session?.exercises?.[exIdx];
+  if (!ex) return { ok: false, reason: 'missing-exercise' };
+  const sets = ex.sets || [];
+  for (let i = sets.length - 1; i >= 0; i--) {
+    if (sets[i].done || sets[i].skipped) {
+      sets[i].done = false;
+      sets[i].skipped = false;
+      return { ok: true, revertedSet: i, reverted: true };
+    }
+  }
+  return { ok: false, reason: 'no-recorded' };
 }
 
 // 今日のセッションを再計算（メニューを最新に更新、未実施部分のみ）
@@ -2453,7 +2490,7 @@ function recalculateTodaySession() {
 }
 
 // ===== 画面ルーター =====
-let currentScreen = 'home';
+let currentScreen = 'today';
 
 function navigate(screen) {
   currentScreen = screen;
@@ -2466,7 +2503,6 @@ function navigate(screen) {
 function render() {
   const main = document.getElementById('main');
   switch (currentScreen) {
-    case 'home': main.innerHTML = renderHome(); afterHome(); break;
     case 'today': main.innerHTML = renderToday(); afterToday(); break;
     case 'block': main.innerHTML = renderBlock(); afterBlock(); break;
     case 'log': main.innerHTML = renderLog(); afterLog(); break;
@@ -2477,120 +2513,194 @@ function render() {
 
 function updateHeader() {
   const s = store.currentState;
-  document.getElementById('headerStatus').textContent =
-    `B${s.block} / R${s.rotation} / D${s.day}`;
+  const el = document.getElementById('headerStatus');
+  if (!el) return;
+  el.innerHTML =
+    `B${s.block} / <span class="${Number(s.rotation) === 4 ? 'pos-r4' : ''}">R${s.rotation}</span> / Day${s.day}`;
 }
 
-// ===== ホーム画面 =====
-function renderHome() {
-  const s = store.currentState;
-  const menu = getDayMenu(s.day, s.rotation, store.settings);
-  const next = nextDay(s);
-  const nextMenu = getDayMenu(next.day, next.rotation, store.settings);
+// ===== 今日のトレーニング画面 =====
+// 今日画面の編集状態（アクティブセットの値ボックス選択）
+let todayEdit = null; // { exIdx, field: 'kg' | 'reps' | 'rpe' }
 
-  const exList = menu.isRest
-    ? '<div class="rest-day-banner"><div class="big">今日は休み</div><div class="muted">回復に集中しましょう</div></div>'
-    : `<ul class="exercise-list">${menu.exercises.map(e => {
-        const detail = e.plannedWeight != null
-          ? `${e.plannedWeight}kg × ${e.plannedReps}回 × ${e.plannedSets}セット`
-          : `${e.plannedReps}回 × ${e.plannedSets}セット`;
-        return `<li><span class="ex-name">${e.name}</span> <span class="muted ex-detail">${detail}</span></li>`;
-      }).join('')}</ul>`;
+// 強度/役割チップ（状態は色・強度は文字）
+function exerciseRoleChipHtml(ex) {
+  const type = String(ex.menuType || '');
+  if (ex.isDeloadMaxTest || isMaxTestMenu(type)) return '<span class="chip chip-max">MAX測定</span>';
+  if (ex.isDeloadMaxTestBackoff || isMaxTestBackoffMenu(type)) return '<span class="chip chip-outline">バックオフ</span>';
+  if (ex.isR4NonTest || type.includes('r4-adjust')) return '<span class="chip chip-outline">R4調整</span>';
+  if (ex.isAccessory || type === 'accessory' || type.startsWith('accessory')) return '<span class="chip chip-outline">補助</span>';
+  if (type.includes('heavy') || type.includes('hi-main')) return '<span class="chip chip-int-heavy">重</span>';
+  if (type.includes('light') || ex.isDeload) return '<span class="chip chip-int-light">軽</span>';
+  return '<span class="chip chip-int-mid">中</span>';
+}
 
-  const volumeMode = store.settings.trainingVolumeMode || 'high';
-  const modeBadge = `<div class="muted" style="font-size:12px;">ボリュームモード: <span class="${volumeMode === 'high' ? 'text-warn' : ''}">${volumeMode === 'high' ? '高ボリューム' : '標準'}</span></div>`;
+// 種目の予定表記「80.0kg × 8 × 3セット」
+function exercisePlanText(ex) {
+  const sets = `${ex.plannedSets}セット`;
+  if (ex.plannedWeight != null) return `${fmtW(ex.plannedWeight)}kg × ${ex.plannedReps} × ${sets}`;
+  return `${ex.plannedReps} × ${sets}`;
+}
 
-  const deloadBanner = menu.isAdjustmentRotation && !menu.isRest
-    ? `<div class="deload-banner"><div class="label">R4調整ローテ</div><div class="muted">${R4_ADJUSTMENT_MODES[menu.r4AdjustmentMode]?.label || '通常デロード'}を選択中</div></div>`
-    : '';
-
+// 記録済みセット行（done / skip / todo）
+function renderStaticSetRow(set, setIdx) {
+  const stateClass = set.done ? 'set-row-done' : (set.skipped ? 'set-row-skip' : '');
+  const value = set.skipped && !set.done
+    ? '<span class="chip chip-pause">スキップ</span>'
+    : `${fmtW(set.weight)}<span class="u">kg</span> × ${set.reps ?? '-'}`;
+  const check = set.done ? '<span class="ck">✓</span>' : '<span class="ck"></span>';
   return `
-    <h2 class="screen-title">ホーム</h2>
-    <div class="today-summary">
-      <div class="meta">ブロック ${s.block} / ローテ ${s.rotation}/4 / Day ${s.day}/8</div>
-      <div class="day-name">${menu.name}</div>
-      <div class="meta">${todayStr()}</div>
-    </div>
-
-    ${deloadBanner}
-
-    <div class="section">
-      <h2>今日のメニュー</h2>
-      ${modeBadge}
-      ${exList}
-    </div>
-
-    <div class="section">
-      <button class="btn-primary" id="btnStartToday">今日のトレーニングを開始</button>
-      <div class="mt-8 btn-row">
-        <button class="btn-secondary" id="btnChangeDay">Dayを手動変更</button>
-        <button class="btn-secondary" id="btnAdvanceDay">次のDayへ進む</button>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>次のトレーニング予定</h2>
-      <div class="muted">B${next.block} / R${next.rotation} / D${next.day}</div>
-      <div class="value-mid mt-8">${nextMenu.name}</div>
+    <div class="set-row ${stateClass}">
+      <div class="sn">${setIdx + 1}</div>
+      <div class="sv">${value}</div>
+      <div class="st">${check}</div>
     </div>
   `;
 }
 
-function afterHome() {
-  document.getElementById('btnStartToday').onclick = () => navigate('today');
-  document.getElementById('btnChangeDay').onclick = openDayChangeModal;
-  document.getElementById('btnAdvanceDay').onclick = () => {
-    if (!confirm('次のDayへ進めますか？')) return;
-    const n = nextDay(store.currentState);
-    store.currentState = { ...store.currentState, ...n };
-    saveStore();
-    showToast(`B${n.block} / R${n.rotation} / D${n.day} に進みました`);
-    render();
-  };
+// 進行中の種目カード（アクティブセットブロック入り）
+function renderActiveExerciseCard(ex, exIdx) {
+  const session = store.daySessions[todaySessionKey()];
+  const setIdx = firstPendingSetIndex(ex);
+  const set = ex.sets[setIdx] || {};
+  const totalSets = ex.sets.length;
+  const isBodyweight = ex.weightType === 'bodyweight';
+  const doneRows = ex.sets.slice(0, setIdx).map((s2, i) => renderStaticSetRow(s2, i)).join('');
+  const todoRows = ex.sets.slice(setIdx + 1).map((s2, i) => renderStaticSetRow(s2, setIdx + 1 + i)).join('');
+  const editing = todayEdit && todayEdit.exIdx === exIdx ? todayEdit.field : null;
+  const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
+
+  const kgVal = isBodyweight ? '自重' : `${fmtW(set.weight ?? ex.plannedWeight)}<span class="u">kg</span>`;
+  const repsVal = `${set.reps ?? ex.plannedReps ?? '-'}`;
+  const rpeVal = ex.rpe && ex.rpe !== '未入力' ? `@${ex.rpe}` : '—';
+
+  let editorHtml = '';
+  if (editing === 'kg' && !isBodyweight) {
+    editorHtml = `
+      <div class="vb-editor">
+        <button class="stepper" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}">−</button>
+        <div class="stp-val">${fmtW(set.weight ?? ex.plannedWeight)}<span class="u">kg</span></div>
+        <button class="stepper" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}">＋</button>
+      </div>`;
+  } else if (editing === 'reps') {
+    editorHtml = `
+      <div class="vb-editor">
+        <button class="stepper" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}">−</button>
+        <div class="stp-val">${set.reps ?? '-'}<span class="u">回</span></div>
+        <button class="stepper" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}">＋</button>
+      </div>`;
+  } else if (editing === 'rpe') {
+    editorHtml = `
+      <div class="vb-editor rpe-editor">
+        ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<span class="chip chip-tap ${ex.rpe === r ? 'on' : ''}" data-rpe-edit="${r}" data-ex="${exIdx}">${r}</span>`).join('')}
+      </div>`;
+  }
+
+  const activeBlock = setIdx >= 0 ? `
+    <div class="active-set">
+      <div class="as-head">
+        <span class="as-title">セット ${setIdx + 1} / ${totalSets}</span>
+        <span class="as-prev">予定 ${exercisePlanText(ex)}${ex.pctNote ? ` ・ ${ex.pctNote}` : ''}</span>
+      </div>
+      <div class="vbox-row">
+        <div class="vbox ${editing === 'kg' ? 'selected' : ''} ${isBodyweight ? 'disabled' : ''}" data-vbox="kg" data-ex="${exIdx}">
+          <span class="vb-label">重量</span>
+          <span class="vb-val">${kgVal}</span>
+        </div>
+        <div class="vbox ${editing === 'reps' ? 'selected' : ''}" data-vbox="reps" data-ex="${exIdx}">
+          <span class="vb-label">回数</span>
+          <span class="vb-val">${repsVal}</span>
+        </div>
+        <div class="vbox ${editing === 'rpe' ? 'selected' : ''}" data-vbox="rpe" data-ex="${exIdx}">
+          <span class="vb-label">RPE</span>
+          <span class="vb-val">${rpeVal}</span>
+        </div>
+      </div>
+      ${editorHtml}
+      <div class="as-actions">
+        <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">完了</button>
+        <button class="btn-ghost" data-action="skipSet" data-ex="${exIdx}">スキップ</button>
+      </div>
+    </div>
+  ` : '';
+
+  const rotationProgression = ex.isBig3 ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
+  const progressionNote = ex.isBig3 && rotationProgression?.status === 'suggested' && rotationProgression.delta
+    ? `<div class="accessory-suggestion"><span class="suggestion-label">次回候補</span><span>${rotationProgression.message}</span><button class="btn-secondary btn-small" data-action="adoptRotation" data-progression-id="${rotationProgression.id}">採用</button></div>`
+    : '';
+
+  const painChips = PAIN_OPTIONS.map(p => `
+    <span class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" data-ex="${exIdx}" data-pain="${p}">${p}</span>
+  `).join('');
+
+  return `
+    <div class="card card-ex active" data-ex="${exIdx}">
+      <div class="ex-head">
+        <div class="ex-title">${ex.name}</div>
+        <div class="ex-chips">${exerciseRoleChipHtml(ex)}</div>
+      </div>
+      ${ex.adjusted ? `<div class="ex-sub">調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}kg</div>` : ''}
+      ${doneRows}
+      ${activeBlock}
+      ${todoRows}
+      ${progressionNote}
+      <details class="ui-details compact-details mt-8">
+        <summary>メモ・状態・調整</summary>
+        <div class="row-rpe-pain">${painChips}</div>
+        <label class="field mt-8">
+          <span>メモ</span>
+          <textarea data-ex="${exIdx}" data-field="note" placeholder="調子・フォーム・気付き等">${escapeHtml(ex.note)}</textarea>
+        </label>
+        <div class="btn-row">
+          <button class="btn-secondary btn-small" data-action="rest" data-ex="${exIdx}">レスト開始</button>
+          <button class="btn-secondary btn-small" data-action="adjust" data-ex="${exIdx}">重量調整</button>
+          ${ex.isBig3 ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">BIG3編集</button>` : ''}
+          ${ex.isAccessory ? `<button class="btn-secondary btn-small" data-action="editAccessory" data-ex="${exIdx}">補助編集</button>` : ''}
+          ${hasRecordedSet ? `<button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
+        </div>
+      </details>
+    </div>
+  `;
 }
 
-function openDayChangeModal() {
-  const s = store.currentState;
-  openModal('Day手動変更', `
-    <label class="field"><span>ブロック</span><input type="number" id="cs-block" value="${s.block}" min="1" /></label>
-    <label class="field"><span>ローテ (1-4)</span><input type="number" id="cs-rotation" value="${s.rotation}" min="1" max="4" /></label>
-    <label class="field"><span>Day (1-8)</span><input type="number" id="cs-day" value="${s.day}" min="1" max="8" /></label>
-    <button class="btn-primary" id="cs-save">保存</button>
-  `, () => {
-    document.getElementById('cs-save').onclick = () => {
-      const b = parseInt(document.getElementById('cs-block').value) || 1;
-      const r = Math.min(4, Math.max(1, parseInt(document.getElementById('cs-rotation').value) || 1));
-      const d = Math.min(8, Math.max(1, parseInt(document.getElementById('cs-day').value) || 1));
-      store.currentState = { ...store.currentState, block: b, rotation: r, day: d };
-      saveStore();
-      closeModal();
-      showToast('変更しました');
-      render();
-    };
-  });
+// 完了済みカード（たたみ・ベスト表示）
+function renderCompletedExerciseCard(ex, exIdx) {
+  const doneSets = ex.sets.filter(s2 => s2.done);
+  const best = doneSets.reduce((acc, s2) => {
+    const w = parseFloat(s2.weight);
+    return Number.isFinite(w) && w > (acc?.w ?? -1) ? { w, reps: s2.reps } : acc;
+  }, null);
+  const bestText = best
+    ? `ベスト ${fmtW(best.w)}kg ×${best.reps ?? '-'}${ex.rpe && ex.rpe !== '未入力' ? ` @${ex.rpe}` : ''}`
+    : 'スキップのみ';
+  return `
+    <div class="card done-card exercise-card-complete" data-ex="${exIdx}">
+      <div class="dn-row">
+        <span class="ex-title" style="font-size:15px;">${ex.name}</span>
+        <span class="chip chip-ok">✓ 完了</span>
+      </div>
+      <div class="dn-row mt-8">
+        <span class="dn-best">${bestText}</span>
+        <button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">戻す</button>
+      </div>
+    </div>
+  `;
 }
 
-// ===== 今日のトレーニング画面 =====
 function renderToday() {
   const session = getOrCreateTodaySession();
   const s = store.currentState;
 
   if (session.isRest) {
     return `
-      <h2 class="screen-title">今日のトレーニング</h2>
+      <h2 class="screen-title">今日</h2>
       <div class="rest-day-banner">
         <div class="big">今日は休み</div>
-        <div class="muted">Day${s.day} - 休息日</div>
+        <div class="muted">Day${s.day} ・ 休息日</div>
       </div>
-      <div class="section">
-        <button class="btn-primary" id="btnFinishRest">休息日を完了して次のDayへ</button>
-      </div>
+      <button class="btn-primary" id="btnFinishRest">完了して次のDayへ</button>
     `;
   }
-
-  const deloadBanner = session.isAdjustmentRotation
-    ? `<div class="deload-banner"><div class="label">R4調整</div><div class="muted">${r4IntensityLevelLabel(session.r4AdjustmentMode)}</div></div>`
-    : '';
 
   const incomplete = session.exercises
     .map((ex, exIdx) => ({ ex, exIdx }))
@@ -2598,196 +2708,134 @@ function renderToday() {
   const completed = session.exercises
     .map((ex, exIdx) => ({ ex, exIdx }))
     .filter(item => isExerciseComplete(item.ex));
-  const incompleteHtml = incomplete.length
-    ? incomplete.map(({ ex, exIdx }) => renderExerciseCard(ex, exIdx)).join('')
-    : '<div class="section complete-menu-banner"><div class="big">今日のメニュー完了</div><div class="muted">完了済みを開くと修正できます</div></div>';
-  const completedHtml = completed.length
-    ? `<details class="section ui-details completed-exercises">
+
+  const active = incomplete[0] || null;
+  const upNext = incomplete.slice(1);
+
+  const totalDoneSets = session.exercises.reduce((acc, ex) => acc + ex.sets.filter(s2 => s2.done).length, 0);
+  const allDoneBanner = !incomplete.length
+    ? `<div class="card flat complete-menu-banner">
+        <div class="big">✓ 今日のメニュー完了</div>
+        <div class="muted">${completed.length}種目 ・ ${totalDoneSets}セット</div>
+      </div>`
+    : '';
+
+  const nextCard = upNext.length
+    ? `<div class="card">
+        <div class="sec-label">次の種目</div>
+        ${upNext.map(({ ex }) => `
+          <div class="next-row">
+            <span class="nx-name">${ex.name}</span>
+            <span class="nx-detail">${exercisePlanText(ex)}</span>
+            ${exerciseRoleChipHtml(ex)}
+          </div>
+        `).join('')}
+      </div>`
+    : '';
+
+  const completedCards = completed.length
+    ? `<details class="ui-details completed-exercises" ${incomplete.length ? '' : 'open'}>
         <summary><span>完了済み ${completed.length}件</span></summary>
-        ${completed.map(({ ex, exIdx }) => renderExerciseCard(ex, exIdx)).join('')}
+        ${completed.map(({ ex, exIdx }) => renderCompletedExerciseCard(ex, exIdx)).join('')}
       </details>`
     : '';
-  const todayWarnings = getAccessoryLoadWarnings(store.settings)
-    .filter(w => /横肩|後ろ肩|肩|肘|腰|背中/.test(w.message));
-  const warningChips = todayWarnings
-    .slice(0, 3)
-    .map(w => `<span class="status-pill ${w.level === 'danger' ? 'status-danger' : 'status-caution'}">${w.message}</span>`)
-    .join('');
-  const accessoryWarnings = todayWarnings.length
-    ? `<div class="today-warning-summary"><span class="suggestion-label">負荷注意あり</span>${warningChips}${todayWarnings.length > 3 ? `<span class="muted">+${todayWarnings.length - 3}</span>` : ''}</div>`
-    : '';
-  const restSummary = (session.activeExerciseRests || []).length
-    ? `<div class="section compact-section exercise-rest-summary">
-        <div class="today-warning-summary">
-          <span class="suggestion-label">休止中</span>
-          ${(session.activeExerciseRests || []).slice(0, 2).map(rest => `<span class="status-pill status-caution">${escapeHtml((rest.parts || []).join('・') || rest.name)}</span>`).join('')}
-          ${(session.skippedRestExercises || []).length ? `<span class="muted">${session.skippedRestExercises.length}種目</span>` : ''}
-        </div>
-        <details class="ui-details compact-details mt-8">
-          <summary>休止対象</summary>
-          ${(session.skippedRestExercises || []).map(ex => `<div class="muted" style="font-size:12px;">${escapeHtml(ex.name)} / ${escapeHtml(ex.restSettingName)}</div>`).join('') || '<div class="muted">対象なし</div>'}
-        </details>
+
+  // 休止種目: 灰・リストの最下部
+  const pausedRows = (session.skippedRestExercises || []).length
+    ? `<div class="card flat">
+        ${(session.skippedRestExercises || []).map(ex => `
+          <div class="next-row pause-row">
+            <span class="nx-name">${escapeHtml(ex.name)}</span>
+            <span class="chip chip-pause">休止中</span>
+          </div>
+        `).join('')}
       </div>`
     : '';
 
   return `
-    <h2 class="screen-title">${session.dayName}</h2>
-    <div class="muted mb-12">${todayStr()} / B${s.block} R${s.rotation} D${s.day}</div>
-    ${deloadBanner}
+    <div class="row between" style="margin:2px 0 12px;">
+      <h2 class="screen-title" style="margin:0;">今日</h2>
+      <span class="muted">${session.dayName}</span>
+    </div>
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
-    ${restSummary}
-    ${accessoryWarnings ? `<div class="section compact-section">${accessoryWarnings}</div>` : ''}
-    <div class="section today-progress-summary">
-      <span class="status-pill status-caution">未完了 ${incomplete.length}</span>
-      <span class="status-pill status-ok">完了済み ${completed.length}</span>
-    </div>
-    <div class="today-exercise-section">
-      ${incomplete.length ? '<h3>未完了</h3>' : ''}
-      ${incompleteHtml}
-    </div>
-    ${completedHtml}
-    <div class="section">
-      <button class="btn-primary btn-block" id="btnAddTodayAccessory">＋補助種目を追加</button>
-    </div>
-    <div class="section">
-      <button class="btn-success btn-block" id="btnFinishSession">トレーニング完了</button>
+    ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
+    ${nextCard}
+    ${completedCards}
+    ${pausedRows}
+    <div class="btn-pair mt-12">
+      <button class="btn-sec" id="btnAddTodayAccessory">＋補助種目を追加</button>
+      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession" style="${incomplete.length ? '' : 'min-height:56px;'}">トレーニング完了</button>
     </div>
   `;
 }
 
-function renderExerciseCard(ex, exIdx) {
-  const session = store.daySessions[todaySessionKey()];
-  const pendingSetIndex = firstPendingSetIndex(ex);
-  const complete = isExerciseComplete(ex);
-  const cardTypeClass = ex.isAccessory
-    ? 'exercise-card-accessory'
-    : (ex.isBig3 ? 'exercise-card-big3' : 'exercise-card-main');
-  const setsHtml = ex.sets.map((set, setIdx) => {
-    const rowStateClass = set.done
-      ? 'set-row-done'
-      : (setIdx === pendingSetIndex ? 'set-row-current' : '');
-    return `
-    <div class="set-grid set-row ${rowStateClass}">
-      <div class="set-no">${setIdx + 1}</div>
-      <input type="number" inputmode="decimal" step="0.5" placeholder="重量" value="${set.weight ?? ''}"
-        data-ex="${exIdx}" data-set="${setIdx}" data-field="weight" />
-      <input type="number" inputmode="numeric" placeholder="回数" value="${set.reps ?? ''}"
-        data-ex="${exIdx}" data-set="${setIdx}" data-field="reps" />
-      <div class="check"><input type="checkbox" ${set.done ? 'checked' : ''} data-ex="${exIdx}" data-set="${setIdx}" data-field="done" /></div>
-    </div>
-  `;
-  }).join('');
-
-  const rpeChips = RPE_OPTIONS.map(r => `
-    <div class="chip ${ex.rpe === r ? 'active' : ''}" data-ex="${exIdx}" data-rpe="${r}">${r}</div>
-  `).join('');
-
-  const painChips = PAIN_OPTIONS.map(p => `
-    <div class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" data-ex="${exIdx}" data-pain="${p}">${p}</div>
-  `).join('');
-
-  const planLine = ex.plannedWeight != null
-    ? `<div class="plan-line">予定: <span class="strong">${ex.plannedWeight}kg × ${ex.plannedReps}回 × ${ex.plannedSets}セット</span> ${ex.pctNote ? `(${ex.pctNote})` : ''} ${ex.adjusted ? `<span class="text-warn">[調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}]</span>` : ''}</div>`
-    : `<div class="plan-line">予定: <span class="strong">${ex.plannedReps}回 × ${ex.plannedSets}セット</span></div>`;
-  const big3RoleLabel = ex.isDeloadMaxTest
-    ? '測定セット'
-    : (ex.isDeloadMaxTestBackoff ? 'バックオフ' : (ex.isR4NonTest ? 'R4調整' : (ex.isBig3 ? 'BIG3' : 'メイン')));
-  const accessoryStatus = suggestAccessoryProgression(ex);
-  const accessoryMeta = ex.isAccessory ? `
-    <div class="accessory-meta" aria-label="補助種目情報">
-      <span class="accessory-chip accessory-chip-slot">${ex.slotName || '補助'}</span>
-      <span class="accessory-chip accessory-chip-rpe">目標RPE ${ex.targetRpe || '-'}</span>
-      ${ex.isDeloadAccessory ? `<span class="accessory-chip accessory-chip-slot">デロード補助</span>` : ''}
-    </div>
-    ${ex.isDeloadAccessory ? `<div class="muted">通常${ex.normalPlannedSets}セット → ${ex.plannedSets}セット / 重量UP提案なし</div>` : ''}
-    <div class="accessory-suggestion"><span class="suggestion-label">提案</span><span>${accessoryStatus}</span></div>
-  ` : '';
-  const rotationProgression = ex.isBig3 ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
-  const big3Meta = ex.isBig3 ? `
-    <div class="accessory-suggestion big3-progression">
-      <span class="suggestion-label">${rotationProgression?.delta ? '次回候補' : 'BIG3'}</span>
-      <span>${rotationProgression ? rotationProgression.message : '記録後に判定'}</span>
-      ${rotationProgression?.status === 'suggested' && rotationProgression.delta ? `<button class="btn-secondary btn-small" data-action="adoptRotation" data-progression-id="${rotationProgression.id}">採用</button>` : ''}
-      ${ex.rotationProgressionApplied ? `<span class="status-pill status-ok">採用済み +${ex.rotationProgressionApplied}kg</span>` : ''}
-    </div>
-    ${ex.progressionCapped ? `<div class="accessory-suggestion big3-progression">
-      <span class="suggestion-label">段階反映中</span>
-      <span>目標重量:${ex.progressionCapped.targetWeight}kg / 次回予定:${ex.progressionCapped.nextWeight}kg</span>
-    </div>` : ''}
-  ` : '';
-
-  return `
-    <div class="exercise-card ${cardTypeClass} ${complete ? 'exercise-card-complete' : ''}" data-ex="${exIdx}">
-      <div class="head">
-        <div class="name">${ex.name}</div>
-        <div class="menu-type">${ex.isAccessory ? '補助' : big3RoleLabel}</div>
-      </div>
-      ${planLine}
-      ${big3Meta}
-      ${accessoryMeta}
-      <div class="muted">レスト目安: ${Math.round(ex.restSec / 60 * 10) / 10}分</div>
-
-      <div class="set-grid set-grid-head"><div class="set-no">#</div><div class="muted text-center">重量(kg)</div><div class="muted text-center">回数</div><div class="muted text-center">完了</div></div>
-      ${setsHtml}
-
-      <div class="row-rpe-pain">
-        <div class="muted" style="width:100%;font-size:12px;">RPE:</div>
-        ${rpeChips}
-      </div>
-      <div class="row-rpe-pain">
-        <div class="muted" style="width:100%;font-size:12px;">状態:</div>
-        ${painChips}
-      </div>
-
-      <label class="field mt-8">
-        <span>メモ</span>
-        <textarea data-ex="${exIdx}" data-field="note" placeholder="調子・フォーム・気付き等">${escapeHtml(ex.note)}</textarea>
-      </label>
-
-      <div class="actions">
-        <button class="btn-secondary btn-small" data-action="rest" data-ex="${exIdx}">レスト開始</button>
-        <button class="btn-warn btn-small" data-action="adjust" data-ex="${exIdx}">重量調整</button>
-        ${ex.isBig3 ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">BIG3編集</button>` : ''}
-        ${ex.isAccessory ? `<button class="btn-secondary btn-small" data-action="editAccessory" data-ex="${exIdx}">補助編集</button>` : ''}
-        <button class="btn-success btn-small" data-action="completeSet" data-ex="${exIdx}">${complete ? '最後の完了を戻す' : 'セット完了+レスト'}</button>
-      </div>
-    </div>
-  `;
-}
 
 function afterToday() {
   const session = store.daySessions[todaySessionKey()];
 
-  // 入力 → 保存
-  document.querySelectorAll('input[data-field], textarea[data-field]').forEach(el => {
-    el.addEventListener('change', (e) => {
+  // メモ入力 → 保存
+  document.querySelectorAll('textarea[data-field]').forEach(el => {
+    el.addEventListener('change', () => {
       const exIdx = parseInt(el.dataset.ex);
-      const field = el.dataset.field;
       const ex = session.exercises[exIdx];
       if (!ex) return;
-      if (field === 'note') {
-        ex.note = el.value;
-      } else {
-        const setIdx = parseInt(el.dataset.set);
-        const set = ex.sets[setIdx];
-        if (!set) return;
-        if (field === 'done') set.done = el.checked;
-        else if (field === 'weight') set.weight = parseFloat(el.value) || 0;
-        else if (field === 'reps') set.reps = parseInt(el.value) || 0;
-      }
+      if (el.dataset.field === 'note') ex.note = el.value;
       saveStore();
-      if (field === 'done') render();
     });
   });
 
-  // RPE（選択中チップを再タップで解除）
-  document.querySelectorAll('.chip[data-rpe]').forEach(c => {
-    c.addEventListener('click', () => {
+  // 値ボックス（タップで選択→エディタ開閉）
+  document.querySelectorAll('[data-vbox]').forEach(box => {
+    box.addEventListener('click', () => {
+      const exIdx = parseInt(box.dataset.ex);
+      const field = box.dataset.vbox;
+      const ex = session.exercises[exIdx];
+      if (!ex) return;
+      if (field === 'kg' && ex.weightType === 'bodyweight') return;
+      if (todayEdit && todayEdit.exIdx === exIdx && todayEdit.field === field) {
+        todayEdit = null; // 再タップで閉じる
+      } else {
+        todayEdit = { exIdx, field };
+      }
+      render();
+    });
+  });
+
+  // ステッパー（kg=設定の刻み / 回=1）
+  document.querySelectorAll('button[data-step-field]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const exIdx = parseInt(btn.dataset.ex);
+      const dir = parseInt(btn.dataset.stepDir) || 0;
+      const field = btn.dataset.stepField;
+      const ex = session.exercises[exIdx];
+      if (!ex) return;
+      const setIdx = firstPendingSetIndex(ex);
+      const set = ex.sets[setIdx];
+      if (!set) return;
+      if (field === 'kg') {
+        const inc = parseFloat(store.settings.increment) || 2.5;
+        const base = parseFloat(set.weight ?? ex.plannedWeight) || 0;
+        set.weight = Math.max(0, Math.round((base + dir * inc) * 100) / 100);
+      } else if (field === 'reps') {
+        const base = parseInt(set.reps, 10) || 0;
+        set.reps = Math.max(0, base + dir);
+      }
+      saveStore();
+      render();
+    });
+  });
+
+  // RPE（アクティブセットのエディタ内チップ・再タップで解除）
+  document.querySelectorAll('[data-rpe-edit]').forEach(c => {
+    c.addEventListener('click', (e) => {
+      e.stopPropagation();
       const exIdx = parseInt(c.dataset.ex);
       const ex = session.exercises[exIdx];
       if (!ex) return;
-      ex.rpe = (ex.rpe === c.dataset.rpe && c.dataset.rpe !== '未入力') ? '未入力' : c.dataset.rpe;
+      ex.rpe = ex.rpe === c.dataset.rpeEdit ? '未入力' : c.dataset.rpeEdit;
+      todayEdit = null; // タップで確定して閉じる
       saveStore();
       render();
     });
@@ -2841,14 +2889,32 @@ function afterToday() {
       }
       const exIdx = parseInt(b.dataset.ex);
       const ex = session.exercises[exIdx];
+      if (!ex) return;
       if (action === 'rest') {
         startRestTimer(ex.restSec, ex.name);
       } else if (action === 'completeSet') {
         const result = toggleNextSetCompletion(session, exIdx);
         if (result.ok) {
+          todayEdit = null;
           saveStore();
           if (!result.reverted) startRestTimer(ex.restSec, ex.name);
-          else showToast('最後のセットを未完了に戻しました');
+          else showToast('1セット戻しました');
+          render();
+        }
+      } else if (action === 'skipSet') {
+        // スキップ: 記録には残すがタイマーは起動しない
+        const result = skipNextSet(session, exIdx);
+        if (result.ok) {
+          todayEdit = null;
+          saveStore();
+          render();
+        }
+      } else if (action === 'undoSet') {
+        const result = undoLastSetRecord(session, exIdx);
+        if (result.ok) {
+          todayEdit = null;
+          saveStore();
+          showToast('1セット戻しました');
           render();
         }
       } else if (action === 'adjust') {
@@ -3418,41 +3484,8 @@ function bindAccessorySlotEditorActions() {
 }
 
 function bindExerciseRestSettingsActions() {
-  document.querySelectorAll('[data-chip-target="exercise-rest-parts"]').forEach(chip => {
-    chip.onclick = () => {
-      const input = document.getElementById('exercise-rest-parts');
-      if (!input) return;
-      const values = normalizeList(input.value);
-      const value = chip.dataset.chipValue;
-      input.value = values.includes(value)
-        ? values.filter(v => v !== value).join('、')
-        : [...values, value].join('、');
-    };
-  });
   const addBtn = document.getElementById('btnAddExerciseRest');
-  if (addBtn) {
-    addBtn.onclick = () => {
-      const setting = normalizeExerciseRestSetting({
-        id: `rest_${uid()}`,
-        name: document.getElementById('exercise-rest-name')?.value || '休止設定',
-        parts: normalizeList(document.getElementById('exercise-rest-parts')?.value, EXERCISE_REST_PARTS),
-        exercises: normalizeList(document.getElementById('exercise-rest-exercises')?.value),
-        startDate: document.getElementById('exercise-rest-start')?.value || todayStr(),
-        endDate: document.getElementById('exercise-rest-end')?.value || todayStr(),
-        note: document.getElementById('exercise-rest-note')?.value || '',
-      });
-      if (!setting) return;
-      if (setting.parts.length === 0 && setting.exercises.length === 0) {
-        showToast('対象部位か対象種目を入力してください');
-        return;
-      }
-      store.settings.exerciseRestSettings = [...(store.settings.exerciseRestSettings || []), setting];
-      saveStore();
-      recalculateTodaySession();
-      render();
-      showToast('休止設定を追加しました');
-    };
-  }
+  if (addBtn) addBtn.onclick = openExerciseRestSheet;
   document.querySelectorAll('button[data-end-exercise-rest]').forEach(btn => {
     btn.onclick = () => {
       const id = btn.dataset.endExerciseRest;
@@ -3515,7 +3548,7 @@ function finishTodaySession() {
       weightType: ex.weightType,
       slotId: ex.slotId,
       slotName: ex.slotName,
-      sets: ex.sets.map(s => ({ weight: s.weight, reps: s.reps, done: s.done })),
+      sets: ex.sets.map(s => ({ weight: s.weight, reps: s.reps, done: s.done, skipped: !!s.skipped })),
       doneSets: ex.sets.filter(s => s.done).length,
       rpe: ex.rpe,
       pains: ex.pains,
@@ -3643,7 +3676,7 @@ function finishTodaySession() {
         const n = nextDay(store.currentState);
         store.currentState = { ...store.currentState, ...n };
         saveStore();
-        navigate('home');
+        navigate('today');
       }
     }, 800);
   }
@@ -3804,6 +3837,13 @@ function updateRestDisplay() {
   if (!display) return;
   display.textContent =
     `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  // 進捗バー（要素がある実DOMでのみ更新）
+  const fill = document.getElementById('restBarFill');
+  if (fill && fill.style) {
+    const total = restState.restDurationSec || 0;
+    const pct = total > 0 ? Math.max(0, Math.min(100, (restState.remaining / total) * 100)) : 0;
+    fill.style.width = `${pct}%`;
+  }
 }
 
 function playBeep() {
@@ -3957,11 +3997,11 @@ function renderBlock() {
 
   // 未完了時は「参考提案」バナーを表示し、採用系ボタンを無効化
   const referenceBanner = !blockComplete
-    ? `<div class="deload-banner" style="background:rgba(96,165,250,0.15);border-left-color:var(--accent);">
+    ? `<div class="deload-banner" style="background:var(--accent-soft);border-color:var(--accent-soft);border-left-color:var(--accent);">
          <div class="label" style="color:var(--accent);">参考提案</div>
          <div class="muted">参考表示</div>
        </div>`
-    : `<div class="deload-banner" style="background:rgba(74,222,128,0.15);border-left-color:var(--success);">
+    : `<div class="deload-banner" style="background:var(--success-soft);border-color:var(--success-soft);border-left-color:var(--success);">
          <div class="label" style="color:var(--success);">ブロック完了</div>
          <div class="muted">採用で次ブロックへ</div>
        </div>`;
@@ -3988,7 +4028,7 @@ function renderBlock() {
       summary = `<ul class="exercise-list" style="margin:4px 0 0;">${exItems}</ul>`;
     }
     return `
-      <details class="rotation-day-card ui-details" ${isCurrent ? 'open' : ''} style="${isCurrent ? 'border-color:var(--accent);background:rgba(96,165,250,0.05);' : ''}">
+      <details class="rotation-day-card ui-details" ${isCurrent ? 'open' : ''} style="${isCurrent ? 'border-color:var(--accent);background:rgba(79,110,247,0.06);' : ''}">
         <summary>
           <span>
             <span style="font-size:13px;font-weight:600;">Day${d}${isCurrent ? ' <span class="text-warn" style="font-size:10px;">(現在)</span>' : ''}</span>
@@ -4087,7 +4127,7 @@ function afterBlock() {
     store.currentState.day = 1;
     saveStore();
     showToast('MAX更新 → 次ブロック B' + store.currentState.block + ' に進みました');
-    navigate('home');
+    navigate('today');
   };
   document.getElementById('btnEditSug').onclick = () => {
     if (!blockComplete) { showToast('ブロック完了前は採用できません（参考表示）'); return; }
@@ -4147,7 +4187,7 @@ function openEditSuggestionModal(sug) {
       saveStore();
       closeModal();
       showToast('編集して採用 → 次ブロック B' + store.currentState.block + ' に進みました');
-      navigate('home');
+      navigate('today');
     };
   });
 }
@@ -4219,23 +4259,25 @@ function computeNextBlockSuggestion() {
 }
 
 // ===== ログ画面 =====
-let logFilter = { type: 'daily', exerciseKey: null };
+let logFilter = { type: 'daily', maxLift: 'bench', emaxLift: 'bench', month: null, selDate: null };
 
 function renderLog() {
   const tabs = `
     <div class="tabs">
       <button class="tab ${logFilter.type === 'daily' ? 'active' : ''}" data-type="daily">日別</button>
       <button class="tab ${logFilter.type === 'monthly' ? 'active' : ''}" data-type="monthly">月別</button>
-      <button class="tab ${logFilter.type === 'emax' ? 'active' : ''}" data-type="emax">MAX記録</button>
+      <button class="tab ${logFilter.type === 'max' ? 'active' : ''}" data-type="max">MAX</button>
+      <button class="tab ${logFilter.type === 'emax' ? 'active' : ''}" data-type="emax">推定MAX</button>
     </div>
   `;
 
   const body = logFilter.type === 'monthly'
     ? renderMonthlyLogView()
-    : logFilter.type === 'emax'
-      ? `<div class="section"><h2>実測MAX・MAX挑戦</h2><div class="muted mb-8" style="font-size:12px;">R4のMAX測定（1RM）の結果です。成功=実測MAX / 失敗=MAX挑戦。</div>${renderMaxTestHistory(10)}</div>
-         <div class="section"><h2>推定MAX履歴</h2><div class="muted mb-8" style="font-size:12px;">トレーニング記録からの推定値（e1RM）です。実測MAXとは別管理です。</div>${renderEstimatedMaxHistory(20)}</div>`
-      : renderDailyLogView();
+    : logFilter.type === 'max'
+      ? renderMaxLogTab()
+      : logFilter.type === 'emax'
+        ? renderEmaxLogTab()
+        : renderDailyLogView();
 
   return `
     <h2 class="screen-title">ログ</h2>
@@ -4247,6 +4289,84 @@ function renderLog() {
         <button class="btn-secondary btn-small" id="btnExport">エクスポート(JSON)</button>
         <button class="btn-secondary btn-small" id="btnImport">インポート(JSON)</button>
       </div>
+    </div>
+  `;
+}
+
+// 種目切替セグメント（MAX/推定MAXタブ共通）
+function liftSegHtml(selectedKey, dataAttr) {
+  return `<div class="seg mb-12">${Object.values(BIG3_LIFTS).map(l => `
+    <button class="seg-opt ${selectedKey === l.key ? 'on' : ''}" ${dataAttr}="${l.key}">${l.name.replace('プレス', '').replace('引きデッド', 'デッド')}</button>
+  `).join('')}</div>`;
+}
+
+// MAXタブ: 1RM挑戦の履歴（実測のみ・推定とは別系統）
+function renderMaxLogTab() {
+  const liftKey = BIG3_LIFTS[logFilter.maxLift] ? logFilter.maxLift : 'bench';
+  const lift = BIG3_LIFTS[liftKey];
+  const currentMax = parseFloat(store.settings.maxes?.[lift.maxKey]) || 0;
+  const tests = [...(store.maxTestResults || [])]
+    .filter(t => t.liftKey === liftKey)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const latest = tests[0];
+  const latestSub = latest
+    ? `${fmtDateShort(latest.date)} ${latest.challengeSucceeded ? '成功' : '失敗'}${latest.adopted ? ' ・ 採用中' : ''}`
+    : '記録なし';
+  return `
+    ${liftSegHtml(liftKey, 'data-max-lift')}
+    <div class="card max-current gold">
+      <div class="mc-label">MAX</div>
+      <div class="max-current-val">${fmtW(currentMax)}<span class="u">kg</span></div>
+      <div class="mc-sub">${latestSub}</div>
+    </div>
+    <div class="card">
+      <div class="sec-label">履歴</div>
+      ${renderMaxTestHistory(12, liftKey)}
+    </div>
+  `;
+}
+
+// 推定MAXタブ: 計算値の履歴（MAXとは完全に別タブ）
+function renderEmaxLogTab() {
+  const liftKey = BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench';
+  const entries = [...(store.estimatedMaxHistory || [])]
+    .filter(e => e.liftKey === liftKey)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const latest = entries[0];
+  const currentCard = latest
+    ? `<div class="card max-current">
+        <div class="mc-label">推定MAX</div>
+        <div class="max-current-val">${fmtW(latest.estimatedMax)}<span class="u">kg</span></div>
+        <div class="mc-sub">${fmtDateShort(latest.date)} ・ ${fmtW(latest.sourceWeight)}×${latest.sourceReps} @${latest.rpe || '-'}</div>
+      </div>`
+    : '<div class="card flat"><div class="muted text-center">推定MAXの記録はまだありません</div></div>';
+  const rows = entries.slice(0, 14).map(entry => {
+    const kind = entry.adopted ? 'adopted' : (entry.maxUseKind || 'excluded');
+    const chip = kind === 'adopted'
+      ? '<span class="chip chip-adopted">採用済み</span>'
+      : kind === 'candidate'
+        ? '<span class="chip chip-outline">候補</span>'
+        : kind === 'reference'
+          ? '<span class="chip chip-pause">参考</span>'
+          : '<span class="chip chip-pause">除外</span>';
+    const candidate = !entry.adopted ? getMaxUpdateCandidate(entry) : null;
+    return `
+      <div class="hist-row ${kind === 'excluded' ? 'excluded' : ''}">
+        <span class="h-date">${fmtDateShort(entry.date)}</span>
+        <span class="h-val">${fmtW(entry.estimatedMax)}<span class="u">kg</span>
+          <span class="h-src">${fmtW(entry.sourceWeight)}×${entry.sourceReps} @${entry.rpe || '-'}</span>
+        </span>
+        ${chip}
+        ${candidate ? `<button class="btn-secondary btn-small" data-adopt-emax="${entry.id}">採用</button>` : ''}
+      </div>
+    `;
+  }).join('');
+  return `
+    ${liftSegHtml(liftKey, 'data-emax-lift')}
+    ${currentCard}
+    <div class="card">
+      <div class="sec-label">履歴</div>
+      ${rows || '<div class="muted">履歴なし</div>'}
     </div>
   `;
 }
@@ -4271,24 +4391,39 @@ function summarizeLogGroup(logs) {
   return { completedCount: completed.length, totalCount: trainingLogs.length, restCount, mainNames, hasCandidate };
 }
 
+// ログのベストセット表記「160.0×1」
+function bestSetText(log) {
+  const doneSets = (log.sets || []).filter(s => s.done && s.weight != null);
+  if (!doneSets.length) return '';
+  const best = doneSets.reduce((acc, s) => (parseFloat(s.weight) > parseFloat(acc.weight) ? s : acc), doneSets[0]);
+  return `${fmtW(best.weight)}×${best.reps ?? '-'}`;
+}
+
 function renderLogDetail(logs) {
   return logs.map(log => {
-    const setsTxt = (log.sets || []).map(s => s.done ? `${s.weight ?? '-'}kg×${s.reps ?? '-'}` : `(${s.weight ?? '-'}kg×${s.reps ?? '-'})`).join(' / ') || '-';
-    const emax = log.isExerciseRest ? null : createEstimatedMaxEntry(log, 'log-preview');
+    if (log.isExerciseRest || log.todayOnlyDeleted) {
+      return `
+        <div class="log-detail-row">
+          <div class="row between">
+            <span class="muted">${escapeHtml(log.exerciseName)}</span>
+            <span class="chip chip-pause">${log.isExerciseRest ? '休止中' : '削除'}</span>
+          </div>
+        </div>
+      `;
+    }
+    const emax = createEstimatedMaxEntry(log, 'log-preview');
     const maxAttempt = getTrueOneRmAttemptFromLog(log);
-    const statusLabel = log.isExerciseRest ? '休止' : `${log.doneSets || 0}/${log.plannedSets || 0}`;
-    const statusClass = log.isExerciseRest || log.todayOnlyDeleted ? 'status-low' : 'status-ok';
+    const setRows = (log.sets || []).map((s, i) => renderStaticSetRow(s, i)).join('') || '<div class="muted">-</div>';
     return `
       <div class="log-detail-row">
         <div class="row between">
           <strong>${log.exerciseName}</strong>
-          <span class="status-pill ${statusClass}">${statusLabel}</span>
+          ${exerciseRoleChipHtml(log)}
         </div>
-        <div class="muted">${log.plannedWeight ?? '-'}kg × ${log.plannedReps ?? '-'} × ${log.plannedSets ?? '-'}</div>
-        <div>${setsTxt}</div>
-        <div class="muted">RPE ${log.rpe || '-'} / 状態 ${(log.pains || []).join(',') || '-'}</div>
-        ${maxAttempt ? `<div class="accessory-suggestion"><span class="suggestion-label">${maxAttempt.challengeSucceeded ? '実測MAX' : 'MAX挑戦'}</span><span>${maxAttempt.challengeSucceeded ? `${maxAttempt.measuredMaxWeight}kg` : `${maxAttempt.attemptedWeight}kg 失敗`}</span></div>` : ''}
-        ${emax ? `<div class="accessory-suggestion"><span class="suggestion-label">${emax.maxUseLabel}</span><span>${emax.estimatedMax}kg / ${emax.maxUseReason}</span></div>` : ''}
+        ${setRows}
+        <div class="muted">@${log.rpe && log.rpe !== '未入力' ? log.rpe : '-'}${(log.pains || []).filter(p => p !== 'なし').length ? ` ・ ${(log.pains || []).filter(p => p !== 'なし').join('・')}` : ''}</div>
+        ${maxAttempt ? `<div class="row" style="gap:6px;"><span class="chip ${maxAttempt.challengeSucceeded ? 'chip-max' : 'chip-pause'}">${maxAttempt.challengeSucceeded ? '実測MAX' : 'MAX挑戦'}</span><span class="muted">${maxAttempt.challengeSucceeded ? `${fmtW(maxAttempt.measuredMaxWeight)}kg ✓成功` : `${fmtW(maxAttempt.attemptedWeight)}kg ✗失敗`}</span></div>` : ''}
+        ${emax ? `<div class="row" style="gap:6px;"><span class="chip chip-outline">推定 ${fmtW(emax.estimatedMax)}</span><span class="muted">${emax.maxUseLabel} ・ ${emax.maxUseReason}</span></div>` : ''}
         ${log.note ? `<div class="muted">メモ: ${escapeHtml(log.note)}</div>` : ''}
       </div>
     `;
@@ -4296,18 +4431,23 @@ function renderLogDetail(logs) {
 }
 
 function renderDailyLogView(logMap = logsByDate()) {
-  if (logMap.size === 0) return '<div class="section"><div class="muted">記録がありません</div></div>';
-  return `<div class="log-card-list">${[...logMap.entries()].map(([date, logs]) => {
+  if (logMap.size === 0) return '<div class="card flat"><div class="muted text-center">記録がありません</div></div>';
+  return `<div class="log-card-list">${[...logMap.entries()].map(([date, logs], cardIdx) => {
     const first = logs[0] || {};
     const summary = summarizeLogGroup(logs);
+    const summaryRows = logs.slice(0, 4).map(log => {
+      if (log.isExerciseRest || log.todayOnlyDeleted) return '';
+      const best = bestSetText(log);
+      return `<span class="muted" style="font-size:12px;">${log.exerciseName}${best ? ` ${best}` : ''}</span>`;
+    }).filter(Boolean).join(' ・ ');
     return `
-      <details class="section ui-details log-card">
+      <details class="section ui-details log-card" ${cardIdx === 0 ? 'open' : ''}>
         <summary>
           <span>
-            <span class="log-card-title">${fmtDate(date)} Day${first.day || '-'}</span>
-            <span class="muted">B${first.block || '-'} / R${first.rotation || '-'} / ${summary.mainNames}</span>
+            <span class="log-card-title">${fmtDateShort(date)} <span class="muted">B${first.block || '-'} / R${first.rotation || '-'} / Day${first.day || '-'}</span></span>
+            <span class="muted" style="display:block;font-size:12px;">${summaryRows || summary.mainNames}</span>
           </span>
-          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補あり' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="status-pill status-low">休止${summary.restCount}</span>` : ''}
+          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}
         </summary>
         ${renderLogDetail(logs)}
       </details>
@@ -4315,32 +4455,79 @@ function renderDailyLogView(logMap = logsByDate()) {
   }).join('')}</div>`;
 }
 
+// 月別: カレンダー（トレ日=青 / MAX測定日=金 / 今日=金枠）
 function renderMonthlyLogView() {
   const dateMap = logsByDate();
-  if (dateMap.size === 0) return '<div class="section"><div class="muted">記録がありません</div></div>';
-  const monthMap = new Map();
-  dateMap.forEach((logs, date) => {
-    const month = String(date).slice(0, 7);
-    if (!monthMap.has(month)) monthMap.set(month, new Map());
-    monthMap.get(month).set(date, logs);
-  });
-  return `<div class="log-card-list">${[...monthMap.entries()].map(([month, days]) => {
-    const logs = [...days.values()].flat();
-    const big3Counts = ['bench', 'squat', 'halfDead', 'floorDead'].map(key => logs.filter(log => log.exerciseKey === key).length);
-    const candidateCount = logs.filter(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate).length;
-    return `
-      <details class="section ui-details log-card">
-        <summary>
-          <span>
-            <span class="log-card-title">${month.replace('-', '年')}月</span>
-            <span class="muted">実施 ${days.size}日 / ベンチ${big3Counts[0]} スクワット${big3Counts[1]} デッド${big3Counts[2] + big3Counts[3]}</span>
-          </span>
-          <span class="status-pill ${candidateCount ? 'status-caution' : 'status-ok'}">MAX候補 ${candidateCount}</span>
-        </summary>
-        ${renderDailyLogView(days)}
-      </details>
-    `;
-  }).join('')}</div>`;
+  const dates = [...dateMap.keys()].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const fallbackMonth = dates.length ? dates[dates.length - 1].slice(0, 7) : todayStr().slice(0, 7);
+  const month = /^\d{4}-\d{2}$/.test(logFilter.month || '') ? logFilter.month : fallbackMonth;
+  logFilter.month = month; // 月送り操作の基準を常に保持する
+  const [y, m] = month.split('-').map(Number);
+  const firstDow = new Date(y, m - 1, 1).getDay();
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const today = todayStr();
+
+  const dayInfo = (dateStr) => {
+    const logs = dateMap.get(dateStr) || [];
+    const training = logs.filter(log => !log.isExerciseRest && !log.todayOnlyDeleted);
+    return {
+      trained: training.length > 0,
+      maxTested: training.some(log => isMaxTestMenu(log.menuType)),
+      logs: training,
+    };
+  };
+
+  let cells = '';
+  for (let i = 0; i < firstDow; i++) cells += '<button class="cal-cell empty" tabindex="-1"></button>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const info = dayInfo(dateStr);
+    const cls = [
+      info.maxTested ? 'cal-max' : (info.trained ? 'cal-tr' : ''),
+      dateStr === today ? 'cal-today' : '',
+      logFilter.selDate === dateStr ? 'sel' : '',
+    ].filter(Boolean).join(' ');
+    cells += `<button class="cal-cell ${cls}" data-cal-date="${dateStr}">${d}</button>`;
+  }
+
+  const monthDates = dates.filter(d => d.startsWith(month));
+  const trainedDays = monthDates.filter(d => dayInfo(d).trained);
+  const maxDays = monthDates.filter(d => dayInfo(d).maxTested);
+  const rotations = [...new Set(
+    monthDates.flatMap(d => (dateMap.get(d) || []).filter(log => !log.isExerciseRest && !log.todayOnlyDeleted).map(log => log.rotation)).filter(r => r != null)
+  )].sort((a, b) => a - b);
+
+  const selInfo = logFilter.selDate && logFilter.selDate.startsWith(month) ? dayInfo(logFilter.selDate) : null;
+  const selFirst = selInfo?.logs[0];
+  const selLine = selInfo && selInfo.logs.length
+    ? `<div class="muted mt-8">${fmtDateShort(logFilter.selDate)} ・ B${selFirst.block || '-'} / R${selFirst.rotation || '-'} / Day${selFirst.day || '-'} ・ ${[...new Set(selInfo.logs.map(log => log.exerciseName))].slice(0, 4).join('、')}</div>`
+    : (logFilter.selDate && logFilter.selDate.startsWith(month) ? '<div class="muted mt-8">記録なし</div>' : '');
+
+  return `
+    <div class="card">
+      <div class="cal-head">
+        <button data-month-nav="-1" aria-label="前の月">‹</button>
+        <span class="cal-title">${y}年${m}月</span>
+        <button data-month-nav="1" aria-label="次の月">›</button>
+      </div>
+      <div class="cal-grid">
+        ${['日', '月', '火', '水', '木', '金', '土'].map(d => `<span class="cal-dow">${d}</span>`).join('')}
+        ${cells}
+      </div>
+      <div class="cal-legend">
+        <span><span class="dot" style="background:var(--accent);"></span>トレ</span>
+        <span><span class="dot" style="background:var(--max);"></span>MAX測定</span>
+      </div>
+      ${selLine}
+    </div>
+    <div class="card cal-summary-card">
+      <div class="cal-summary">
+        <div class="cs-item"><div class="cs-val">${trainedDays.length}</div><div class="cs-label">トレ日</div></div>
+        <div class="cs-item"><div class="cs-val">${maxDays.length}</div><div class="cs-label">MAX測定</div></div>
+        <div class="cs-item"><div class="cs-val">${rotations.length ? rotations.map(r => `R${r}`).join('・') : '-'}</div><div class="cs-label">ローテ</div></div>
+      </div>
+    </div>
+  `;
 }
 
 function renderSimpleGraph(logs, key) {
@@ -4369,14 +4556,14 @@ function renderSimpleGraph(logs, key) {
     <div class="section">
       <h3>推定MAX(e1RM)推移</h3>
       <svg viewBox="0 0 ${w} ${h}" class="log-graph" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#60a5fa" stroke-width="2" points="${polyPts}" />
+        <polyline fill="none" stroke="#4f6ef7" stroke-width="2" points="${polyPts}" />
         ${points.map((p, i) => {
           const x = pad + i * xStep;
           const y = h - pad - ((p.e1 - minV) / range) * (h - pad * 2);
-          return `<circle cx="${x}" cy="${y}" r="3" fill="#3b82f6" />`;
+          return `<circle cx="${x}" cy="${y}" r="3" fill="#3d5ceb" />`;
         }).join('')}
-        <text x="${pad}" y="14" fill="#94a3b8" font-size="10">${Math.round(maxV)}kg</text>
-        <text x="${pad}" y="${h - 4}" fill="#94a3b8" font-size="10">${Math.round(minV)}kg</text>
+        <text x="${pad}" y="14" fill="#6b7280" font-size="10">${Math.round(maxV)}kg</text>
+        <text x="${pad}" y="${h - 4}" fill="#6b7280" font-size="10">${Math.round(minV)}kg</text>
       </svg>
     </div>
   `;
@@ -4386,6 +4573,34 @@ function afterLog() {
   document.querySelectorAll('.tab[data-type]').forEach(t => {
     t.onclick = () => {
       logFilter.type = t.dataset.type;
+      render();
+    };
+  });
+  document.querySelectorAll('[data-max-lift]').forEach(b => {
+    b.onclick = () => {
+      logFilter.maxLift = b.dataset.maxLift;
+      render();
+    };
+  });
+  document.querySelectorAll('[data-emax-lift]').forEach(b => {
+    b.onclick = () => {
+      logFilter.emaxLift = b.dataset.emaxLift;
+      render();
+    };
+  });
+  document.querySelectorAll('button[data-month-nav]').forEach(b => {
+    b.onclick = () => {
+      const base = /^\d{4}-\d{2}$/.test(logFilter.month || '') ? logFilter.month : todayStr().slice(0, 7);
+      const [y, m] = base.split('-').map(Number);
+      const next = new Date(y, (m - 1) + (parseInt(b.dataset.monthNav, 10) || 0), 1);
+      logFilter.month = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+      logFilter.selDate = null;
+      render();
+    };
+  });
+  document.querySelectorAll('button[data-cal-date]').forEach(b => {
+    b.onclick = () => {
+      logFilter.selDate = logFilter.selDate === b.dataset.calDate ? null : b.dataset.calDate;
       render();
     };
   });
@@ -4636,45 +4851,143 @@ function addDaysStr(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+// 休止期間の表示「6/2 – 6/16」（未定なら「6/2 – 未定」）
+function restPeriodText(rest) {
+  const openEnded = !rest.endDate || rest.endDate >= '2099-01-01';
+  return `${fmtDateShort(rest.startDate)} – ${openEnded ? '未定' : fmtDateShort(rest.endDate)}`;
+}
+
 function renderExerciseRestSettings() {
   const rests = (store.settings.exerciseRestSettings || []).map(normalizeExerciseRestSetting).filter(Boolean);
   const today = todayStr();
-  const defaultEnd = addDaysStr(today, 13);
   const listHtml = rests.length
     ? rests.map(rest => {
         const active = !rest.ended && rest.startDate <= today && today <= rest.endDate;
+        const target = (rest.parts || []).concat(rest.exercises || []).join('・') || rest.name;
+        const chip = active
+          ? '<span class="chip chip-pause">休止中</span>'
+          : rest.ended
+            ? '<span class="chip chip-outline">終了</span>'
+            : '<span class="chip chip-outline">予定</span>';
         return `
-          <div class="suggestion-row" style="align-items:flex-start;">
-            <div>
-              <div class="name">${escapeHtml(rest.name)} ${active ? '<span class="status-pill status-caution">休止中</span>' : rest.ended ? '<span class="status-pill status-low">終了</span>' : '<span class="status-pill">予定</span>'}</div>
-              <div class="muted" style="font-size:12px;">${rest.startDate}〜${rest.endDate} / ${(rest.parts || []).join('・') || '部位なし'}</div>
-              ${(rest.exercises || []).length ? `<div class="muted" style="font-size:12px;">種目: ${escapeHtml(rest.exercises.join('、'))}</div>` : ''}
-              ${rest.note ? `<div class="muted" style="font-size:12px;">${escapeHtml(rest.note)}</div>` : ''}
+          <div class="card" style="margin-bottom:8px;">
+            <div class="row between">
+              <span style="font-size:17px;font-weight:700;">${escapeHtml(target)}</span>
+              ${chip}
             </div>
-            <button class="btn-secondary btn-small" data-end-exercise-rest="${rest.id}" ${rest.ended ? 'disabled style="opacity:0.45;"' : ''}>終了</button>
-            <button class="btn-danger btn-small" data-delete-exercise-rest="${rest.id}">削除</button>
+            <div class="muted mt-8">${restPeriodText(rest)}</div>
+            ${rest.note ? `<div class="muted" style="font-size:12px;">${escapeHtml(rest.note)}</div>` : ''}
+            <div class="btn-pair mt-8">
+              <button class="btn-sec btn-small" data-end-exercise-rest="${rest.id}" ${rest.ended ? 'disabled style="opacity:0.45;"' : ''}>終了</button>
+              <button class="btn-ghost btn-small" data-delete-exercise-rest="${rest.id}">削除</button>
+            </div>
           </div>
         `;
       }).join('')
-    : '<div class="muted">休止設定なし</div>';
+    : '<div class="card flat"><div class="muted text-center">休止なし</div></div>';
   return `
-    <details class="section ui-details" open>
-      <summary><h2>休止設定</h2></summary>
+    <div class="section exercise-rest-section">
+      <h2>休止設定</h2>
       ${listHtml}
-      <div class="subsection">
-        <label class="field"><span>休止名</span><input type="text" id="exercise-rest-name" placeholder="例: 肩痛のため胸トレ休止" /></label>
-        <label class="field"><span>対象部位（タップで追加）</span><input type="text" id="exercise-rest-parts" placeholder="例: 胸、肩" /></label>
-        <div class="accessory-meta accessory-form-chips">${EXERCISE_REST_PARTS.map(part => `<span class="accessory-chip" data-chip-target="exercise-rest-parts" data-chip-value="${part}">${part}</span>`).join('')}</div>
-        <label class="field"><span>対象種目（任意・「、」区切り）</span><textarea id="exercise-rest-exercises" placeholder="例: ベンチプレス、インクラインDBプレス、ディップス"></textarea></label>
-        <div class="row" style="gap:8px;">
-          <label class="field" style="flex:1;"><span>開始日</span><input type="date" id="exercise-rest-start" value="${today}" /></label>
-          <label class="field" style="flex:1;"><span>終了日</span><input type="date" id="exercise-rest-end" value="${defaultEnd}" /></label>
-        </div>
-        <label class="field"><span>メモ（任意）</span><textarea id="exercise-rest-note" placeholder="例: 肩痛のため、胸・プレス系を一時的に休む"></textarea></label>
-        <button class="btn-primary btn-small" id="btnAddExerciseRest">休止を追加</button>
-      </div>
-    </details>
+      <button class="btn-primary mt-8" id="btnAddExerciseRest">追加</button>
+    </div>
   `;
+}
+
+// 休止追加ボトムシート（対象チップ / 期間セグ / メモ の3項目のみ）
+function openExerciseRestSheet() {
+  const targets = [...EXERCISE_REST_PARTS, 'ベンチプレス', 'スクワット', 'デッド'];
+  const periods = [
+    { key: '1w', label: '1週', days: 6 },
+    { key: '2w', label: '2週', days: 13 },
+    { key: '1m', label: '1ヶ月', days: 29 },
+    { key: 'open', label: '未定', days: null },
+  ];
+  const state = { targets: new Set(), period: '2w' };
+  openModal('休止を追加', `
+    <div class="sec-label">対象</div>
+    <div class="sheet-chips">
+      ${targets.map(t => `<span class="chip chip-tap" data-rest-target="${t}">${t}</span>`).join('')}
+    </div>
+    <div class="sec-label">期間</div>
+    <div class="seg mb-12">
+      ${periods.map(p => `<button class="seg-opt ${p.key === '2w' ? 'on-pause' : ''}" data-rest-period="${p.key}">${p.label}</button>`).join('')}
+    </div>
+    <label class="field"><span>メモ（任意）</span><input type="text" id="exercise-rest-note" placeholder="例: 肩の違和感" /></label>
+    <div class="card flat" id="restSheetPreview" style="display:none;">
+      <div class="sec-label">今日画面では</div>
+      <div class="next-row pause-row">
+        <span class="nx-name" id="restSheetPreviewName"></span>
+        <span class="chip chip-pause">休止中</span>
+      </div>
+    </div>
+    <button class="btn-primary mt-8" id="btnConfirmExerciseRest" style="opacity:0.4;" disabled>追加</button>
+    <button class="btn-text btn-block" id="btnCancelExerciseRest">キャンセル</button>
+  `, () => {
+    const refresh = () => {
+      const confirmBtn = document.getElementById('btnConfirmExerciseRest');
+      const preview = document.getElementById('restSheetPreview');
+      const previewName = document.getElementById('restSheetPreviewName');
+      const has = state.targets.size > 0;
+      if (confirmBtn) {
+        confirmBtn.disabled = !has;
+        if (confirmBtn.style) confirmBtn.style.opacity = has ? '1' : '0.4';
+      }
+      if (preview?.style) preview.style.display = has ? '' : 'none';
+      if (previewName) previewName.textContent = [...state.targets].join('・');
+    };
+    document.querySelectorAll('[data-rest-target]').forEach(chip => {
+      chip.onclick = () => {
+        const value = chip.dataset.restTarget;
+        if (state.targets.has(value)) {
+          state.targets.delete(value);
+          chip.classList.remove('on-pause');
+        } else {
+          state.targets.add(value);
+          chip.classList.add('on-pause');
+        }
+        refresh();
+      };
+    });
+    document.querySelectorAll('button[data-rest-period]').forEach(btn => {
+      btn.onclick = () => {
+        state.period = btn.dataset.restPeriod;
+        document.querySelectorAll('button[data-rest-period]').forEach(other => {
+          other.classList.toggle('on-pause', other === btn);
+        });
+      };
+    });
+    const cancelBtn = document.getElementById('btnCancelExerciseRest');
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+    const confirmBtn = document.getElementById('btnConfirmExerciseRest');
+    if (confirmBtn) confirmBtn.onclick = () => {
+      if (state.targets.size === 0) {
+        showToast('対象を選択してください');
+        return;
+      }
+      const selected = [...state.targets];
+      const parts = selected.filter(t => EXERCISE_REST_PARTS.includes(t));
+      const exercises = selected.filter(t => !EXERCISE_REST_PARTS.includes(t));
+      const period = periods.find(p => p.key === state.period) || periods[1];
+      const today = todayStr();
+      const setting = normalizeExerciseRestSetting({
+        id: `rest_${uid()}`,
+        name: selected.join('・'),
+        parts,
+        exercises,
+        startDate: today,
+        endDate: period.days == null ? '2099-12-31' : addDaysStr(today, period.days),
+        note: document.getElementById('exercise-rest-note')?.value || '',
+      });
+      if (!setting) return;
+      store.settings.exerciseRestSettings = [...(store.settings.exerciseRestSettings || []), setting];
+      saveStore();
+      recalculateTodaySession();
+      closeModal();
+      render();
+      showToast('休止を追加しました');
+    };
+  });
 }
 
 function renderSettings() {
@@ -5005,7 +5318,7 @@ function init() {
     navigator.serviceWorker.register('service-worker.js').catch(e => console.warn('SW reg failed', e));
   }
 
-  navigate('home');
+  navigate('today');
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -5072,6 +5385,8 @@ if (typeof window !== 'undefined') {
     saveMainSetOverride,
     applyMainSetOverridesToMenu,
     toggleNextSetCompletion,
+    skipNextSet,
+    undoLastSetRecord,
     defaultAccessorySlots,
     buildAccessoryExercises,
     accessoryExerciseFromSlot,

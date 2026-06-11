@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
+  <meta name="theme-color" content="#07090d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="MyLiftLog" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=20260611-ui-refresh-cache" />
+  <link rel="stylesheet" href="styles.css?v=20260612-gym-focus" />
   <title>MyLiftLog Strength Planner</title>
 </head>
 <body>
@@ -19,24 +19,33 @@
     <div class="app-status" id="headerStatus"></div>
   </header>
 
+  <!-- レストタイマーバー（ヘッダー直下・動作中のみ表示） -->
+  <div id="restTimer" class="rest-bar hidden">
+    <div class="rest-bar-row">
+      <span class="rest-bar-time" id="restTimerDisplay">00:00</span>
+      <div class="rest-bar-track"><div class="rest-bar-fill" id="restBarFill"></div></div>
+      <button id="restMinus30" aria-label="30秒減らす">-30</button>
+      <button id="restPlus30" aria-label="30秒増やす">+30</button>
+      <button id="restToggle">停止</button>
+      <button id="restReset" aria-label="リセット">↺</button>
+      <button id="restClose">スキップ</button>
+    </div>
+  </div>
+
   <main id="main"></main>
 
   <nav class="bottom-nav">
-    <button class="nav-btn" data-screen="home">
-      <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg></span>
-      <span class="nav-label">ホーム</span>
-    </button>
     <button class="nav-btn" data-screen="today">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M3 9v6"/><path d="M21 9v6"/><path d="M6.5 12h11"/></svg></span>
       <span class="nav-label">今日</span>
     </button>
-    <button class="nav-btn" data-screen="block">
-      <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/><path d="M8 2v4"/><path d="M16 2v4"/></svg></span>
-      <span class="nav-label">ブロック</span>
-    </button>
     <button class="nav-btn" data-screen="log">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3.5-4 3 2.5L19 7"/></svg></span>
       <span class="nav-label">ログ</span>
+    </button>
+    <button class="nav-btn" data-screen="block">
+      <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/><path d="M8 2v4"/><path d="M16 2v4"/></svg></span>
+      <span class="nav-label">計画</span>
     </button>
     <button class="nav-btn" data-screen="settings">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>
@@ -44,22 +53,7 @@
     </button>
   </nav>
 
-  <!-- レストタイマー（フローティング表示） -->
-  <div id="restTimer" class="rest-timer hidden">
-    <div class="rest-timer-inner">
-      <div class="rest-timer-label">レスト</div>
-      <div class="rest-timer-display" id="restTimerDisplay">00:00</div>
-      <div class="rest-timer-controls">
-        <button id="restMinus30">-30s</button>
-        <button id="restToggle">停止</button>
-        <button id="restPlus30">+30s</button>
-        <button id="restReset">リセット</button>
-        <button id="restClose">×</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- モーダル -->
+  <!-- ボトムシート（モーダル） -->
   <div id="modal" class="modal hidden">
     <div class="modal-inner">
       <div class="modal-header">
@@ -73,6 +67,6 @@
   <!-- トースト -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20260611-ui-refresh-cache"></script>
+  <script src="app.js?v=20260612-gym-focus"></script>
 </body>
 </html>
