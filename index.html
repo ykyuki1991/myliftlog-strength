@@ -3,14 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#f4f2ed" />
+  <meta name="theme-color" content="#0B0D11" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="MyLiftLog" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=20260610-light-clean" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans+JP:wght@400;600;700&display=swap" />
+  <link rel="stylesheet" href="styles.css?v=20260611-ui-spec" />
   <title>MyLiftLog Strength Planner</title>
 </head>
 <body>
@@ -18,6 +21,20 @@
     <h1 class="app-title">MyLiftLog</h1>
     <div class="app-status" id="headerStatus"></div>
   </header>
+
+  <!-- レストタイマーバー（ヘッダー直下・動作中のみ表示） -->
+  <div id="restTimer" class="rest-bar hidden">
+    <div class="rest-bar-row">
+      <span class="rest-bar-label">レスト</span>
+      <span class="rest-bar-time" id="restTimerDisplay">00:00</span>
+      <div class="rest-bar-track"><div class="rest-bar-fill" id="restBarFill"></div></div>
+      <button id="restMinus30" aria-label="30秒減らす">-30</button>
+      <button id="restPlus30" aria-label="30秒増やす">+30</button>
+      <button id="restToggle">停止</button>
+      <button id="restReset" aria-label="リセット">↺</button>
+      <button id="restClose">スキップ</button>
+    </div>
+  </div>
 
   <main id="main"></main>
 
@@ -44,22 +61,7 @@
     </button>
   </nav>
 
-  <!-- レストタイマー（フローティング表示） -->
-  <div id="restTimer" class="rest-timer hidden">
-    <div class="rest-timer-inner">
-      <div class="rest-timer-label">レスト</div>
-      <div class="rest-timer-display" id="restTimerDisplay">00:00</div>
-      <div class="rest-timer-controls">
-        <button id="restMinus30">-30s</button>
-        <button id="restToggle">停止</button>
-        <button id="restPlus30">+30s</button>
-        <button id="restReset">リセット</button>
-        <button id="restClose">×</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- モーダル -->
+  <!-- ボトムシート（モーダル） -->
   <div id="modal" class="modal hidden">
     <div class="modal-inner">
       <div class="modal-header">
@@ -73,6 +75,6 @@
   <!-- トースト -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=20260610-light-clean"></script>
+  <script src="app.js?v=20260611-ui-spec"></script>
 </body>
 </html>

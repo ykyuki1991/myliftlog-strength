@@ -242,9 +242,9 @@ function testTodayScreenRenders() {
   assert.ok(html.includes('トレーニング') || html.includes('休み'));
   if (!html.includes('今日は休み')) {
     assert.ok(html.includes('＋補助種目を追加'));
-    assert.ok(html.includes('補助編集'));
-    assert.ok(html.includes('未完了'));
-    assert.ok(html.includes('完了済み'));
+    assert.ok(html.includes('active-set'), 'first incomplete exercise should expand as the active card');
+    assert.ok(html.includes('次の種目'), 'remaining exercises should collapse into the up-next list');
+    assert.ok(html.includes('BIG3編集'), 'active BIG3 card should expose the edit action');
     assert.ok(!html.includes('膝負荷'), 'today accessory cards should not show fatigue tags by default');
     assert.ok(!html.includes('脚補助'), 'today accessory cards should keep category details out of the card');
 
@@ -282,7 +282,7 @@ function testSetCompletionAndMainSetEdit() {
   assert.strictEqual(result.reverted, true);
   assert.strictEqual(api.isExerciseComplete(ex), false);
   html = api.renderToday();
-  assert.ok(html.includes('未完了'));
+  assert.ok(html.includes('active-set'), 'reverted exercise should reopen as the active card');
 
   let edit = api.applyMainSetEdit(ex, { plannedWeight: 100, plannedReps: 4, plannedSets: originalSets + 2 });
   assert.strictEqual(edit.ok, true);

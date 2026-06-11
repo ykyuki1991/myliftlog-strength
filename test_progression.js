@@ -399,17 +399,18 @@ function testDeloadAccessoryAndMaxTestTiming() {
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   let html = isolatedApi.renderToday();
-  assert.ok(html.includes('R4 MAX測定'));
-  assert.ok(html.includes('MAX測定する'));
-  assert.ok(html.includes('今回は測定しない'));
+  assert.ok(html.includes('MAX測定'));
+  assert.ok(html.includes('data-mode="trueOneRm"'), 'MAX測定する/しないの2択（する）');
+  assert.ok(html.includes('data-mode="normal"'), 'MAX測定する/しないの2択（しない）');
   assert.ok(!html.includes('e1RM確認'));
   assert.ok(!html.includes('3RM'));
   assert.ok(!html.includes('5RM'));
   assert.ok(!html.includes('方法'));
   assert.ok(html.includes('Lv1'));
+  assert.ok(html.includes('今回の強さ'), 'R4のLvセグメントカード');
   assert.ok(!html.includes('MAX測定以外の軽さを選びます'));
   assert.ok(!html.includes('測定結果を入力'));
-  assert.ok(html.includes('測定セット'));
+  assert.ok(html.includes('chip-max'), 'MAX測定種目は金チップ');
   assert.ok(html.includes('バックオフ'));
   assert.strictEqual(isolatedApi.r4IntensityLevelLabel('normalDeload'), 'Lv1');
   assert.strictEqual(isolatedApi.r4IntensityLevelLabel('normalish'), 'Lv4');
@@ -498,10 +499,13 @@ function testLogDailyAndMonthlyViews() {
   const logHtml = isolatedApi.renderLog();
   assert.ok(logHtml.includes('日別'));
   assert.ok(logHtml.includes('月別'));
+  assert.ok(logHtml.includes('推定MAX'), 'MAXと推定MAXはタブを分離');
   assert.ok(logHtml.includes('log-card'));
   const monthHtml = isolatedApi.renderMonthlyLogView();
-  assert.ok(monthHtml.includes('2026年05月'));
-  assert.ok(monthHtml.includes('実施 2日'));
+  assert.ok(monthHtml.includes('2026年5月'), 'calendar should open on the latest logged month');
+  assert.ok(monthHtml.includes('トレ日'));
+  assert.ok(monthHtml.includes('cal-tr'), 'training days should be marked on the calendar');
+  assert.ok(monthHtml.includes('MAX測定'));
 }
 
 function testFloorDeadDayUsesBulgarianInsteadOfSquat() {
@@ -539,8 +543,9 @@ function testExerciseRestSettings() {
   assert.ok(menu.exercises.some(ex => ex.key === 'chinning'), 'unrelated exercises should remain');
 
   const html = isolatedApi.renderToday();
-  assert.ok(html.includes('休止中'));
-  assert.ok(html.includes('休止対象'));
+  assert.ok(html.includes('休止中'), 'rested exercises should be shown with the gray 休止中 chip');
+  assert.ok(html.includes('pause-row'), 'rested exercises should be listed as gray rows at the bottom');
+  assert.ok(html.includes('ベンチプレス'), 'rested exercise name should be visible');
   const session = Object.values(isolatedStore.daySessions).find(s => s.day === 2 && s.rotation === 1);
   assert.ok(session);
   assert.ok(!session.exercises.some(ex => ex.key === 'bench'));
@@ -717,7 +722,62 @@ function testMaxTestHistoryRendering() {
   assert.ok(html.includes('実測MAX'), 'successful 1RM should be labeled 実測MAX');
   assert.ok(html.includes('122.5kg 成功'));
   assert.ok(html.includes('MAX挑戦'), 'failed 1RM should be labeled MAX挑戦');
-  assert.ok(html.includes('160kg 失敗'));
+  assert.ok(html.includes('160.0kg 失敗'));
+
+  const benchOnly = isolatedApi.renderMaxTestHistory(10, 'bench');
+  assert.ok(benchOnly.includes('122.5'), 'lift filter should keep bench attempts');
+  assert.ok(!benchOnly.includes('160.0'), 'lift filter should drop other lifts');
+}
+
+function testSkippedSetsBehavior() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+
+  const session = {
+    exercises: [{
+      isBig3: true,
+      key: 'bench',
+      name: 'ベンチプレス',
+      menuType: 'bench-hi-main',
+      plannedWeight: 100,
+      plannedReps: 5,
+      plannedSets: 3,
+      sets: [
+        { weight: 100, reps: 5, done: true },
+        { weight: 100, reps: 5, done: false },
+        { weight: 100, reps: 5, done: false },
+      ],
+      rpe: '8',
+      pains: [],
+      note: '',
+    }],
+  };
+
+  // スキップ: skipped=true として記録され、完了判定には含むがdone集計には含まない
+  const skip = isolatedApi.skipNextSet(session, 0);
+  assert.strictEqual(skip.ok, true);
+  assert.strictEqual(skip.skippedSet, 1);
+  const ex = session.exercises[0];
+  assert.strictEqual(ex.sets[1].skipped, true);
+  assert.strictEqual(ex.sets[1].done, false);
+  assert.strictEqual(isolatedApi.firstPendingSetIndex(ex), 2, 'skipped set should not stay pending');
+  assert.strictEqual(isolatedApi.isExerciseComplete(ex), false);
+
+  isolatedApi.toggleNextSetCompletion(session, 0);
+  assert.strictEqual(isolatedApi.isExerciseComplete(ex), true, 'done + skipped should complete the exercise');
+  assert.strictEqual(ex.sets.filter(s => s.done).length, 2, 'doneSets aggregation must not count skips');
+
+  // スキップは失敗扱いにしない（推定MAX除外判定に影響させない）
+  const log = { exerciseKey: 'bench', menuType: 'bench-hi-main', rpe: '8', pains: [], sets: ex.sets.map(s => ({ ...s })), doneSets: 2, plannedSets: 3 };
+  const entry = isolatedApi.createEstimatedMaxEntry(log);
+  assert.ok(entry, 'skipped set should not be treated as an explicit failure');
+  assert.notStrictEqual(entry.maxUseReason, '失敗あり');
+
+  // 戻す: 最後の記録（スキップ含む）を未実施に戻す
+  const undo = isolatedApi.undoLastSetRecord(session, 0);
+  assert.strictEqual(undo.ok, true);
+  assert.strictEqual(undo.revertedSet, 2);
+  assert.strictEqual(ex.sets[2].done, false);
 }
 
 function testEscapeHtml() {
@@ -741,6 +801,7 @@ testBlockSuggestionPainSeverity();
 testBlockSuggestionHighRpeHalfSteps();
 testLogGroupSummaryExcludesRestLogs();
 testMaxTestHistoryRendering();
+testSkippedSetsBehavior();
 testEscapeHtml();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
