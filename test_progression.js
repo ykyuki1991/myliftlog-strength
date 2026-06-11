@@ -883,6 +883,93 @@ function testMoveExerciseToActive() {
   assert.strictEqual(isolatedApi.moveExerciseToActive(session, 1).moved, false);
 }
 
+function testMaxTabRestoresFromExistingLogs() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  // maxTestResults が空でも、ログに残っているMAX測定から実測MAXを復元する
+  isolatedStore.maxTestResults = [];
+  isolatedStore.logs = [
+    big3Log({
+      id: 'old-max-log',
+      menuType: 'max-test-trueOneRm',
+      rotation: 4,
+      plannedSets: 1,
+      doneSets: 1,
+      sets: [{ weight: 120, reps: 1, done: true }],
+      rpe: '10',
+      ts: 5,
+    }),
+    // 表記ゆれキー（floor_dead）のMAX測定も拾う
+    big3Log({
+      id: 'alias-max-log',
+      exerciseKey: 'floor_dead',
+      exerciseName: '床引きデッド',
+      menuType: 'max-test-trueOneRm',
+      rotation: 4,
+      plannedSets: 1,
+      doneSets: 0,
+      sets: [{ weight: 180, reps: 1, done: false }],
+      rpe: '10',
+      ts: 6,
+    }),
+  ];
+
+  const benchRecords = isolatedApi.collectMaxTestRecords('bench');
+  assert.strictEqual(benchRecords.length, 1, 'max test log should surface in MAX tab data');
+  assert.strictEqual(benchRecords[0].challengeSucceeded, true);
+  assert.strictEqual(benchRecords[0].measuredMaxWeight, 120);
+
+  const best = isolatedApi.bestMeasuredMaxForLift('bench');
+  assert.ok(best, 'MAX tab must not show 記録なし when a successful 1RM exists in logs');
+  assert.strictEqual(best.measuredMaxWeight, 120);
+
+  const aliasRecords = isolatedApi.collectMaxTestRecords('floorDead');
+  assert.strictEqual(aliasRecords.length, 1, 'alias exercise keys should be normalized');
+  assert.strictEqual(aliasRecords[0].challengeFailed, true);
+
+  const html = isolatedApi.renderMaxTestHistory(10, 'bench');
+  assert.ok(html.includes('120.0kg 成功'));
+
+  // maxTestResults に同じlogIdがある場合は重複させない
+  isolatedApi.upsertMaxTestResultFromLog(isolatedStore.logs[0]);
+  assert.strictEqual(isolatedApi.collectMaxTestRecords('bench').length, 1, 'stored result and log must not duplicate');
+}
+
+function testFutureAccessoryEditWinsNextGeneration() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  // accessoryDefaults に既定重量があっても、スロットへの「今後にも反映」が次回生成で勝つ
+  isolatedStore.settings.accessoryDefaults.incline_db = { weight: 38, reps: '8〜10', sets: 4 };
+  const slot = isolatedStore.settings.accessorySlots['2'].find(s => s.key === 'incline_db');
+  assert.ok(slot, 'day2 incline slot should exist');
+
+  const updatedOk = isolatedApi.updateAccessorySlot(2, slot.slotId, { ...slot, plannedWeight: 42, reps: '6〜8' });
+  assert.strictEqual(updatedOk, true);
+
+  const nextGen = isolatedApi.buildAccessoryExercises(2, isolatedStore.settings, false)
+    .find(ex => ex.key === 'incline_db');
+  assert.strictEqual(nextGen.plannedWeight, 42, 'edited slot weight must win over accessoryDefaults');
+  assert.strictEqual(nextGen.plannedReps, '6〜8', 'edited slot reps must win over accessoryDefaults');
+
+  // スロット重量が未設定なら従来どおり accessoryDefaults を使う
+  isolatedApi.updateAccessorySlot(2, slot.slotId, { ...slot, plannedWeight: null, reps: slot.reps });
+  const fallback = isolatedApi.buildAccessoryExercises(2, isolatedStore.settings, false)
+    .find(ex => ex.key === 'incline_db');
+  assert.strictEqual(fallback.plannedWeight, 38, 'defaults stay as fallback when slot has no weight');
+
+  // 未登録slotId（今日だけ追加など）は false を返し、呼び出し側が新規追加できる
+  assert.strictEqual(isolatedApi.updateAccessorySlot(2, 'today_2_xxx', { name: 'X' }), false);
+  const before = isolatedStore.settings.accessorySlots['2'].length;
+  const saved = isolatedApi.addAccessorySlot(2, 'カスタム枠', { slotId: 'today_2_xxx', name: 'ケーブルフライ', plannedSets: 3, reps: '12〜15' });
+  assert.ok(saved.slotId && !saved.slotId.startsWith('today_'), 'persisted slot must get a stable id');
+  assert.strictEqual(isolatedStore.settings.accessorySlots['2'].length, before + 1);
+  assert.ok(!isolatedStore.settings.accessorySlots['2'].some(s => String(s.slotId).startsWith('today_')), 'today-only ids must not leak into settings');
+}
+
 function testUpdateExerciseRestSetting() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
@@ -932,6 +1019,8 @@ testEscapeHtml();
 testMixedOneRmAttemptKeepsSuccessAndFailure();
 testBestMeasuredAndEstimatedSelection();
 testMoveExerciseToActive();
+testMaxTabRestoresFromExistingLogs();
+testFutureAccessoryEditWinsNextGeneration();
 testUpdateExerciseRestSetting();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();

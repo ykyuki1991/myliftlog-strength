@@ -1098,10 +1098,63 @@ function getTrueOneRmAttemptFromLog(log) {
   };
 }
 
+// 実測MAXレコードの収集（表示専用・storeへ書き込まない）。
+// maxTestResults に加えて、既存ログに残っているMAX測定からも復元する
+// （旧バージョンで保存されたログや exerciseKey の表記ゆれも拾う）
+function collectMaxTestRecords(liftKey = null) {
+  const stored = (store.maxTestResults || []).map(t => {
+    const succeeded = t.challengeSucceeded ?? t.isMeasuredMax ?? (parseFloat(t.measuredMaxWeight) > 0);
+    return {
+      ...t,
+      liftKey: normalizeBig3Key(t.liftKey),
+      challengeSucceeded: succeeded,
+      challengeFailed: t.challengeFailed ?? !succeeded,
+    };
+  });
+  const seenLogIds = new Set(stored.map(t => t.logId).filter(Boolean));
+  const seenSlots = new Set(stored.map(t => `${t.date}|${t.liftKey}|${t.block}|${t.rotation}|${t.day}`));
+  const derived = (store.logs || [])
+    .filter(log => isMaxTestMenu(log.menuType) && isBig3Key(log.exerciseKey))
+    .filter(log => !log.id || !seenLogIds.has(log.id))
+    .map(log => {
+      const attempt = getTrueOneRmAttemptFromLog(log);
+      if (!attempt) return null;
+      const lift = BIG3_LIFTS[normalizeBig3Key(log.exerciseKey)];
+      const slot = `${log.date}|${lift.key}|${log.block}|${log.rotation}|${log.day}`;
+      if (seenSlots.has(slot)) return null;
+      seenSlots.add(slot);
+      return {
+        id: `maxlog_${log.id || uid()}`,
+        logId: log.id || null,
+        mode: attempt.mode,
+        liftKey: lift.key,
+        liftName: lift.name,
+        weight: attempt.attemptedWeight,
+        attemptedWeight: attempt.attemptedWeight,
+        measuredMaxWeight: attempt.measuredMaxWeight,
+        failedAttemptWeight: attempt.failedAttemptWeight ?? null,
+        challengeSucceeded: attempt.challengeSucceeded,
+        challengeFailed: attempt.challengeFailed,
+        rpe: log.rpe,
+        date: log.date,
+        day: log.day,
+        block: log.block,
+        rotation: log.rotation,
+        adopted: false,
+        ts: log.ts || 0,
+        derivedFromLog: true,
+      };
+    })
+    .filter(Boolean);
+  return [...stored, ...derived]
+    .filter(t => !liftKey || t.liftKey === liftKey)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+}
+
 // 実測MAX（成功1RMの最高値）。MAX設定値や推定MAXとは独立
 function bestMeasuredMaxForLift(liftKey) {
-  const successes = (store.maxTestResults || [])
-    .filter(t => t.liftKey === liftKey && t.challengeSucceeded && parseFloat(t.measuredMaxWeight) > 0);
+  const successes = collectMaxTestRecords(liftKey)
+    .filter(t => t.challengeSucceeded && parseFloat(t.measuredMaxWeight) > 0);
   if (!successes.length) return null;
   return successes.reduce((best, t) =>
     parseFloat(t.measuredMaxWeight) > parseFloat(best.measuredMaxWeight) ? t : best
@@ -1261,10 +1314,7 @@ function renderEstimatedMaxHistory(limit = 6) {
 
 // 実測MAX（1RM成功）/ MAX挑戦（1RM失敗）の履歴。推定MAXとは別系統で表示する。
 function renderMaxTestHistory(limit = 10, liftKey = null) {
-  const entries = [...(store.maxTestResults || [])]
-    .filter(test => !liftKey || test.liftKey === liftKey)
-    .sort((a, b) => (b.ts || 0) - (a.ts || 0))
-    .slice(0, limit);
+  const entries = collectMaxTestRecords(liftKey).slice(0, limit);
   if (entries.length === 0) return '<div class="muted">実測MAXの記録はまだありません（R4のMAX測定で記録されます）</div>';
   return entries.map(test => {
     const success = !!test.challengeSucceeded;
@@ -1654,8 +1704,10 @@ function accessoryExerciseFromSlot(slot, settings, isDeload, day = null) {
   const accDefaults = settings.accessoryDefaults || {};
   const def = accDefaults[slot.key] || {};
   const plannedSets = isDeload ? Math.max(1, Math.ceil(slot.plannedSets / 2)) : slot.plannedSets;
-  const plannedReps = def.reps != null ? def.reps : slot.reps;
-  const normalWeight = def.weight != null ? def.weight : slot.plannedWeight;
+  // スロットに明示された値を最優先（「今後にも反映」した編集が次回生成でも勝つ）。
+  // accessoryDefaults はスロット未設定時のフォールバック
+  const plannedReps = (slot.reps != null && slot.reps !== '') ? slot.reps : (def.reps != null ? def.reps : slot.reps);
+  const normalWeight = slot.plannedWeight != null ? slot.plannedWeight : (def.weight != null ? def.weight : null);
   const plannedWeight = isDeload && normalWeight != null
     ? roundToIncrement(normalWeight * 0.9, settings.increment || 2.5)
     : normalWeight;
@@ -3140,6 +3192,8 @@ function openAdjustModal(exIdx) {
           reps: ex.plannedReps,
           sets: ex.plannedSets,
         };
+        // スロットに明示重量がある場合はスロット側も更新（次回生成で確実に反映）
+        if (ex.slotId) updateAccessorySlot(session.day, ex.slotId, { plannedWeight: newW });
         ex.plannedWeight = newW;
         ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
         saveStore();
@@ -3373,7 +3427,12 @@ function openAccessoryTodayModal(exIdx) {
     document.getElementById('acc-save-future').onclick = () => {
       const updated = readSlotForm('accToday', ex);
       if (!confirmAccessoryChange('この変更を今後の同じDayにも反映しますか？', updated, session.day)) return;
-      updateAccessorySlot(session.day, ex.slotId, updated);
+      // 既存スロットを更新。未登録（今日だけ追加した種目など）はスロットとして新規保存する
+      const persisted = updateAccessorySlot(session.day, ex.slotId, updated);
+      if (!persisted) {
+        const savedSlot = addAccessorySlot(session.day, updated.slotName, { ...updated, slotId: ex.slotId });
+        if (savedSlot?.slotId) updated.slotId = savedSlot.slotId;
+      }
       applySlotToExercise(ex, updated);
       saveStore();
       closeModal();
@@ -3462,8 +3521,13 @@ function updateAccessorySlot(day, slotId, updatedSlot) {
   const slots = store.settings.accessorySlots || defaultAccessorySlots();
   const key = String(day);
   const idx = (slots[key] || []).findIndex(slot => slot.slotId === slotId);
-  if (idx >= 0) slots[key][idx] = normalizeAccessorySlot({ ...slots[key][idx], ...updatedSlot, slotId });
+  if (idx < 0) {
+    store.settings.accessorySlots = slots;
+    return false; // 呼び出し側でスロット追加にフォールバックする
+  }
+  slots[key][idx] = normalizeAccessorySlot({ ...slots[key][idx], ...updatedSlot, slotId });
   store.settings.accessorySlots = slots;
+  return true;
 }
 
 function deleteAccessorySlot(day, slotId) {
@@ -4466,9 +4530,7 @@ function liftSegHtml(selectedKey, dataAttr) {
 // MAXタブ: 1RM挑戦の履歴（実測のみ・推定とは別系統）
 function renderMaxLogTab() {
   const liftKey = BIG3_LIFTS[logFilter.maxLift] ? logFilter.maxLift : 'bench';
-  const tests = [...(store.maxTestResults || [])]
-    .filter(t => t.liftKey === liftKey)
-    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const tests = collectMaxTestRecords(liftKey);
   // MAX = 実際に成功した1RMの最高値（設定MAXや推定MAXとは別物）
   const best = bestMeasuredMaxForLift(liftKey);
   const latest = tests[0];
@@ -5604,6 +5666,7 @@ if (typeof window !== 'undefined') {
     skipNextSet,
     undoLastSetRecord,
     moveExerciseToActive,
+    collectMaxTestRecords,
     bestMeasuredMaxForLift,
     bestEstimatedMaxEntryForLift,
     updateExerciseRestSetting,
