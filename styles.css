@@ -813,6 +813,18 @@ button:active { transform: scale(0.96); }
 
 .next-row.pause-row .nx-name { color: var(--text-3); }
 
+.next-row[data-make-active] { cursor: pointer; }
+
+.next-row .nx-go {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 17px;
+  font-weight: 800;
+  padding-left: 2px;
+}
+
+.set-row[data-edit-ex] { cursor: pointer; }
+
 /* 完了済みカード */
 .done-card { padding: 11px 14px; margin-bottom: 8px; }
 

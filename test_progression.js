@@ -790,6 +790,132 @@ function testEscapeHtml() {
   assert.strictEqual(isolatedApi.escapeHtml(null), '');
 }
 
+function testMixedOneRmAttemptKeepsSuccessAndFailure() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  // 同じ測定内の「成功120kg + 失敗125kg」を両方記録する
+  const log = big3Log({
+    id: 'mixed-max-log',
+    menuType: 'max-test-trueOneRm',
+    rotation: 4,
+    plannedSets: 2,
+    doneSets: 1,
+    sets: [
+      { weight: 120, reps: 1, done: true },
+      { weight: 125, reps: 1, done: false },
+    ],
+    rpe: '10',
+  });
+  const attempt = isolatedApi.getTrueOneRmAttemptFromLog(log);
+  assert.strictEqual(attempt.challengeSucceeded, true, 'success must not be erased by a later failed attempt');
+  assert.strictEqual(attempt.measuredMaxWeight, 120);
+  assert.strictEqual(attempt.failedAttemptWeight, 125);
+  assert.strictEqual(attempt.challengeFailed, true);
+
+  const test = isolatedApi.upsertMaxTestResultFromLog(log);
+  assert.strictEqual(test.challengeSucceeded, true);
+  assert.strictEqual(test.measuredMaxWeight, 120);
+  assert.strictEqual(test.failedAttemptWeight, 125);
+
+  const maxBefore = isolatedStore.settings.maxes.bench;
+  const html = isolatedApi.renderMaxTestHistory(10, 'bench');
+  assert.ok(html.includes('120.0kg 成功'), 'successful 1RM must appear as MAX');
+  assert.ok(html.includes('✗ 125.0'), 'failed attempt must remain in MAX history');
+  assert.strictEqual(isolatedStore.settings.maxes.bench, maxBefore, 'MAX setting stays user-approved');
+}
+
+function testBestMeasuredAndEstimatedSelection() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  // 実測MAX: 直近ではなく成功した1RMの最高値
+  isolatedStore.maxTestResults = [
+    { id: 't1', liftKey: 'bench', liftName: 'ベンチプレス', measuredMaxWeight: 122.5, challengeSucceeded: true, challengeFailed: false, date: '2026-05-01', ts: 1 },
+    { id: 't2', liftKey: 'bench', liftName: 'ベンチプレス', measuredMaxWeight: 120, challengeSucceeded: true, challengeFailed: false, date: '2026-06-01', ts: 2 },
+    { id: 't3', liftKey: 'bench', liftName: 'ベンチプレス', measuredMaxWeight: null, attemptedWeight: 127.5, challengeSucceeded: false, challengeFailed: true, date: '2026-06-10', ts: 3 },
+  ];
+  const bestMeasured = isolatedApi.bestMeasuredMaxForLift('bench');
+  assert.strictEqual(bestMeasured.id, 't1', 'best measured 1RM should win over the latest one');
+  assert.strictEqual(isolatedApi.bestMeasuredMaxForLift('squat'), null);
+
+  // 推定MAX: 条件に合う記録（採用候補/採用済み）の中の最大値を表示する
+  isolatedStore.estimatedMaxHistory = [
+    { id: 'e1', liftKey: 'bench', estimatedMax: 118, maxUseKind: 'candidate', useForMaxUpdate: true, adopted: false, date: '2026-05-02', sourceWeight: 100, sourceReps: 5, rpe: '8', ts: 1 },
+    { id: 'e2', liftKey: 'bench', estimatedMax: 121, maxUseKind: 'candidate', useForMaxUpdate: true, adopted: false, date: '2026-05-10', sourceWeight: 105, sourceReps: 4, rpe: '8.5', ts: 2 },
+    { id: 'e3', liftKey: 'bench', estimatedMax: 130, maxUseKind: 'reference', useForMaxUpdate: false, adopted: false, date: '2026-06-01', sourceWeight: 90, sourceReps: 8, rpe: '9', ts: 3 },
+    { id: 'e4', liftKey: 'bench', estimatedMax: 140, maxUseKind: 'excluded', useForMaxUpdate: false, adopted: false, date: '2026-06-05', sourceWeight: 80, sourceReps: 12, rpe: '10', ts: 4 },
+  ];
+  const bestEmax = isolatedApi.bestEstimatedMaxEntryForLift('bench');
+  assert.strictEqual(bestEmax.id, 'e2', 'main display should be the max among qualified entries, not the latest');
+
+  // 候補が無い場合は参考の最大値へフォールバック
+  isolatedStore.estimatedMaxHistory = isolatedStore.estimatedMaxHistory.filter(e => e.maxUseKind !== 'candidate');
+  assert.strictEqual(isolatedApi.bestEstimatedMaxEntryForLift('bench').id, 'e3');
+}
+
+function testMoveExerciseToActive() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+
+  const makeEx = (key, done) => ({
+    key,
+    name: key,
+    menuType: `${key}-hi-main`,
+    plannedSets: 1,
+    sets: [{ weight: 100, reps: 5, done }],
+    rpe: '未入力',
+    pains: [],
+    note: '',
+  });
+  const session = { exercises: [makeEx('a', true), makeEx('b', false), makeEx('c', false), makeEx('d', false)] };
+
+  // 「d」を次に実施 → 最初の未完了位置(インデックス1)へ移動。ローテは触らない
+  const moved = isolatedApi.moveExerciseToActive(session, 3);
+  assert.strictEqual(moved.ok, true);
+  assert.strictEqual(moved.moved, true);
+  assert.deepStrictEqual(session.exercises.map(ex => ex.key), ['a', 'd', 'b', 'c']);
+
+  // 完了済みは選べない / すでに先頭ならそのまま
+  assert.strictEqual(isolatedApi.moveExerciseToActive(session, 0).ok, false);
+  assert.strictEqual(isolatedApi.moveExerciseToActive(session, 1).moved, false);
+}
+
+function testUpdateExerciseRestSetting() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  isolatedStore.settings.exerciseRestSettings = [{
+    id: 'rest-edit-target',
+    name: '胸・肩',
+    parts: ['胸', '肩'],
+    exercises: [],
+    startDate: '2026-06-02',
+    endDate: '2026-06-15',
+    note: '',
+  }];
+
+  const updated = isolatedApi.updateExerciseRestSetting('rest-edit-target', {
+    name: '肩',
+    parts: ['肩'],
+    exercises: ['ベンチプレス'],
+    endDate: '2099-12-31',
+    note: '長引きそう',
+  });
+  assert.ok(updated);
+  assert.strictEqual(updated.id, 'rest-edit-target', 'id must be preserved (no delete & recreate)');
+  assert.deepStrictEqual(updated.parts, ['肩']);
+  assert.deepStrictEqual(updated.exercises, ['ベンチプレス']);
+  assert.strictEqual(updated.startDate, '2026-06-02', 'start date stays unless changed');
+  assert.strictEqual(updated.endDate, '2099-12-31');
+  assert.strictEqual(updated.note, '長引きそう');
+  assert.strictEqual(isolatedStore.settings.exerciseRestSettings.length, 1);
+  assert.strictEqual(isolatedApi.updateExerciseRestSetting('missing-id', { note: 'x' }), null);
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();
@@ -803,6 +929,10 @@ testLogGroupSummaryExcludesRestLogs();
 testMaxTestHistoryRendering();
 testSkippedSetsBehavior();
 testEscapeHtml();
+testMixedOneRmAttemptKeepsSuccessAndFailure();
+testBestMeasuredAndEstimatedSelection();
+testMoveExerciseToActive();
+testUpdateExerciseRestSetting();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
