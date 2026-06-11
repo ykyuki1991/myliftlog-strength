@@ -1082,15 +1082,45 @@ function getTrueOneRmAttemptFromLog(log) {
     Number.isFinite(plannedWeight) ? plannedWeight : 0,
     ...oneRepSets.map(set => set.weight)
   );
-  const measuredMaxWeight = Math.max(0, ...oneRepSets.filter(set => set.done).map(set => set.weight));
-  const success = measuredMaxWeight > 0 && !hasExplicitFailedSet(log);
+  // 成功と失敗を独立に評価する（同じ測定内に成功120kg+失敗125kgが共存できる）
+  const doneWeights = oneRepSets.filter(set => set.done).map(set => set.weight);
+  const failedWeights = oneRepSets.filter(set => !set.done).map(set => set.weight);
+  const measuredMaxWeight = doneWeights.length ? Math.max(...doneWeights) : null;
+  const failedAttemptWeight = failedWeights.length ? Math.max(...failedWeights) : null;
+  const success = measuredMaxWeight != null;
   return {
     mode: 'trueOneRm',
     attemptedWeight,
-    measuredMaxWeight: success ? measuredMaxWeight : null,
+    measuredMaxWeight,
+    failedAttemptWeight,
     challengeSucceeded: success,
-    challengeFailed: !success,
+    challengeFailed: failedAttemptWeight != null || !success,
   };
+}
+
+// 実測MAX（成功1RMの最高値）。MAX設定値や推定MAXとは独立
+function bestMeasuredMaxForLift(liftKey) {
+  const successes = (store.maxTestResults || [])
+    .filter(t => t.liftKey === liftKey && t.challengeSucceeded && parseFloat(t.measuredMaxWeight) > 0);
+  if (!successes.length) return null;
+  return successes.reduce((best, t) =>
+    parseFloat(t.measuredMaxWeight) > parseFloat(best.measuredMaxWeight) ? t : best
+  );
+}
+
+// 推定MAXのメイン表示: 条件に合う記録（採用候補/採用済み）の中の最大値。
+// 候補が無い場合は参考の最大値、それも無ければ最新を返す
+function bestEstimatedMaxEntryForLift(liftKey) {
+  const entries = (store.estimatedMaxHistory || []).filter(e => e.liftKey === liftKey);
+  if (!entries.length) return null;
+  const maxBy = list => list.reduce((best, e) =>
+    parseFloat(e.estimatedMax) > parseFloat(best.estimatedMax) ? e : best
+  );
+  const candidates = entries.filter(e => e.adopted || e.useForMaxUpdate || e.maxUseKind === 'candidate');
+  if (candidates.length) return maxBy(candidates);
+  const references = entries.filter(e => e.maxUseKind === 'reference');
+  if (references.length) return maxBy(references);
+  return [...entries].sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
 }
 
 function upsertMaxTestResultFromLog(log, entry = null) {
@@ -1122,6 +1152,7 @@ function upsertMaxTestResultFromLog(log, entry = null) {
     pains: log.pains || [],
     note: log.note || '',
     measuredMaxWeight: attempt.measuredMaxWeight,
+    failedAttemptWeight: attempt.failedAttemptWeight ?? null,
     isMeasuredMax: attempt.challengeSucceeded,
     challengeSucceeded: attempt.challengeSucceeded,
     challengeFailed: attempt.challengeFailed,
@@ -1245,6 +1276,7 @@ function renderMaxTestHistory(limit = 10, liftKey = null) {
           ${!liftKey ? `<span class="h-src">${test.liftName}</span>` : ''}
         </span>
         ${test.adopted ? '<span class="chip chip-max-fill">採用中</span>' : ''}
+        ${success && test.failedAttemptWeight ? `<span class="chip chip-pause">✗ ${fmtW(test.failedAttemptWeight)}</span>` : ''}
         <span class="chip ${success ? 'chip-ok' : 'chip-pause'}" title="${success ? '実測MAX' : 'MAX挑戦'}">${success ? `✓ ${fmtW(test.measuredMaxWeight)}kg 成功` : `✗ ${fmtW(weight)}kg 失敗`}</span>
       </div>
     `;
@@ -2542,20 +2574,122 @@ function exercisePlanText(ex) {
   return `${ex.plannedReps} × ${sets}`;
 }
 
-// 記録済みセット行（done / skip / todo）
-function renderStaticSetRow(set, setIdx) {
+// 記録済みセット行（done / skip / todo）。editExIdx指定時はタップでセット編集
+function renderStaticSetRow(set, setIdx, editExIdx = null) {
   const stateClass = set.done ? 'set-row-done' : (set.skipped ? 'set-row-skip' : '');
   const value = set.skipped && !set.done
     ? '<span class="chip chip-pause">スキップ</span>'
     : `${fmtW(set.weight)}<span class="u">kg</span> × ${set.reps ?? '-'}`;
   const check = set.done ? '<span class="ck">✓</span>' : '<span class="ck"></span>';
+  const editAttr = editExIdx != null ? ` data-edit-ex="${editExIdx}"` : '';
   return `
-    <div class="set-row ${stateClass}">
+    <div class="set-row ${stateClass}"${editAttr}>
       <div class="sn">${setIdx + 1}</div>
       <div class="sv">${value}</div>
       <div class="st">${check}</div>
     </div>
   `;
+}
+
+// その日の実施順だけ入れ替える（ローテ・予定は変更しない）
+function moveExerciseToActive(session, exIdx) {
+  const exercises = session?.exercises;
+  const target = exercises?.[exIdx];
+  if (!target) return { ok: false, reason: 'missing-exercise' };
+  if (isExerciseComplete(target)) return { ok: false, reason: 'completed' };
+  const firstIncompleteIdx = exercises.findIndex(ex => !isExerciseComplete(ex));
+  if (firstIncompleteIdx < 0 || firstIncompleteIdx === exIdx) return { ok: true, moved: false };
+  exercises.splice(exIdx, 1);
+  const insertAt = exIdx < firstIncompleteIdx ? firstIncompleteIdx - 1 : firstIncompleteIdx;
+  exercises.splice(insertAt, 0, target);
+  return { ok: true, moved: true };
+}
+
+// セット編集シート: 任意の種目・任意のセットを後から修正する
+function openSetEditSheet(exIdx) {
+  const session = store.daySessions[todaySessionKey()];
+  const ex = session?.exercises?.[exIdx];
+  if (!ex) return;
+  const draft = ex.sets.map(s => ({
+    weight: s.weight ?? '',
+    reps: s.reps ?? '',
+    state: s.done ? 'done' : (s.skipped ? 'skip' : 'todo'),
+  }));
+  let draftRpe = ex.rpe || '未入力';
+
+  const stateBtn = (idx, state, label) =>
+    `<button class="seg-opt ${draft[idx].state === state ? (state === 'skip' ? 'on-pause' : 'on') : ''}" data-se-state="${state}" data-se-idx="${idx}">${label}</button>`;
+
+  const body = () => `
+    <div class="sec-label">${escapeHtml(ex.name)}</div>
+    ${draft.map((d, i) => `
+      <div class="row" style="gap:8px;margin-bottom:10px;align-items:center;">
+        <span class="sn" style="flex:0 0 22px;text-align:center;color:var(--text-3);font-weight:800;">${i + 1}</span>
+        <input type="number" inputmode="decimal" step="0.5" value="${d.weight}" placeholder="kg" data-se-field="weight" data-se-idx="${i}" style="flex:1.2;min-height:44px;text-align:center;" />
+        <input type="number" inputmode="numeric" value="${d.reps}" placeholder="回" data-se-field="reps" data-se-idx="${i}" style="flex:1;min-height:44px;text-align:center;" />
+        <div class="seg" style="flex:1.6;">${stateBtn(i, 'done', '✓')}${stateBtn(i, 'skip', 'スキップ')}${stateBtn(i, 'todo', '—')}</div>
+      </div>
+    `).join('')}
+    <div class="sec-label mt-8">RPE</div>
+    <div class="sheet-chips">
+      ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<span class="chip chip-tap ${draftRpe === r ? 'on' : ''}" data-se-rpe="${r}">${r}</span>`).join('')}
+    </div>
+    <button class="btn-primary" id="btnSetEditSave">保存</button>
+    <button class="btn-text btn-block" id="btnSetEditCancel">キャンセル</button>
+  `;
+
+  const bind = () => {
+    document.querySelectorAll('input[data-se-field]').forEach(input => {
+      input.oninput = () => {
+        const i = parseInt(input.dataset.seIdx, 10);
+        if (!draft[i]) return;
+        draft[i][input.dataset.seField] = input.value;
+      };
+    });
+    document.querySelectorAll('button[data-se-state]').forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.seIdx, 10);
+        if (!draft[i]) return;
+        draft[i].state = btn.dataset.seState;
+        paint();
+      };
+    });
+    document.querySelectorAll('[data-se-rpe]').forEach(chip => {
+      chip.onclick = () => {
+        draftRpe = draftRpe === chip.dataset.seRpe ? '未入力' : chip.dataset.seRpe;
+        paint();
+      };
+    });
+    const saveBtn = document.getElementById('btnSetEditSave');
+    if (saveBtn) saveBtn.onclick = () => {
+      ex.sets = draft.map(d => {
+        const weight = parseFloat(d.weight);
+        const reps = parseInt(d.reps, 10);
+        return {
+          weight: Number.isFinite(weight) ? weight : null,
+          reps: Number.isFinite(reps) ? reps : '',
+          done: d.state === 'done',
+          skipped: d.state === 'skip',
+        };
+      });
+      ex.rpe = draftRpe;
+      todayEdit = null;
+      saveStore();
+      closeModal();
+      render();
+    };
+    const cancelBtn = document.getElementById('btnSetEditCancel');
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+  };
+
+  const paint = () => {
+    const bodyEl = document.getElementById('modalBody');
+    if (!bodyEl) return;
+    bodyEl.innerHTML = body();
+    bind();
+  };
+
+  openModal('セット編集', body(), bind);
 }
 
 // 進行中の種目カード（アクティブセットブロック入り）
@@ -2565,8 +2699,8 @@ function renderActiveExerciseCard(ex, exIdx) {
   const set = ex.sets[setIdx] || {};
   const totalSets = ex.sets.length;
   const isBodyweight = ex.weightType === 'bodyweight';
-  const doneRows = ex.sets.slice(0, setIdx).map((s2, i) => renderStaticSetRow(s2, i)).join('');
-  const todoRows = ex.sets.slice(setIdx + 1).map((s2, i) => renderStaticSetRow(s2, setIdx + 1 + i)).join('');
+  const doneRows = ex.sets.slice(0, setIdx).map((s2, i) => renderStaticSetRow(s2, i, exIdx)).join('');
+  const todoRows = ex.sets.slice(setIdx + 1).map((s2, i) => renderStaticSetRow(s2, setIdx + 1 + i, exIdx)).join('');
   const editing = todayEdit && todayEdit.exIdx === exIdx ? todayEdit.field : null;
   const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
 
@@ -2656,6 +2790,7 @@ function renderActiveExerciseCard(ex, exIdx) {
           <button class="btn-secondary btn-small" data-action="adjust" data-ex="${exIdx}">重量調整</button>
           ${ex.isBig3 ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">BIG3編集</button>` : ''}
           ${ex.isAccessory ? `<button class="btn-secondary btn-small" data-action="editAccessory" data-ex="${exIdx}">補助編集</button>` : ''}
+          <button class="btn-secondary btn-small" data-action="editSets" data-ex="${exIdx}">セット編集</button>
           ${hasRecordedSet ? `<button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
         </div>
       </details>
@@ -2681,7 +2816,10 @@ function renderCompletedExerciseCard(ex, exIdx) {
       </div>
       <div class="dn-row mt-8">
         <span class="dn-best">${bestText}</span>
-        <button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">戻す</button>
+        <span class="row" style="gap:6px;">
+          <button class="btn-ghost btn-small" data-action="editSets" data-ex="${exIdx}">編集</button>
+          <button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">戻す</button>
+        </span>
       </div>
     </div>
   `;
@@ -2723,11 +2861,12 @@ function renderToday() {
   const nextCard = upNext.length
     ? `<div class="card">
         <div class="sec-label">次の種目</div>
-        ${upNext.map(({ ex }) => `
-          <div class="next-row">
+        ${upNext.map(({ ex, exIdx }) => `
+          <div class="next-row" data-make-active="${exIdx}" role="button">
             <span class="nx-name">${ex.name}</span>
             <span class="nx-detail">${exercisePlanText(ex)}</span>
             ${exerciseRoleChipHtml(ex)}
+            <span class="nx-go" aria-hidden="true">›</span>
           </div>
         `).join('')}
       </div>`
@@ -2923,7 +3062,28 @@ function afterToday() {
         openMainSetEditModal(exIdx);
       } else if (action === 'editAccessory') {
         openAccessoryTodayModal(exIdx);
+      } else if (action === 'editSets') {
+        openSetEditSheet(exIdx);
       }
+    });
+  });
+
+  // 次の種目をタップ → その種目を先に実施（その日の順番だけ入れ替え）
+  document.querySelectorAll('[data-make-active]').forEach(row => {
+    row.addEventListener('click', () => {
+      const result = moveExerciseToActive(session, parseInt(row.dataset.makeActive, 10));
+      if (result.ok && result.moved) {
+        todayEdit = null;
+        saveStore();
+        render();
+      }
+    });
+  });
+
+  // 記録済みセット行をタップ → セット編集シート
+  document.querySelectorAll('.set-row[data-edit-ex]').forEach(row => {
+    row.addEventListener('click', () => {
+      openSetEditSheet(parseInt(row.dataset.editEx, 10));
     });
   });
 
@@ -3485,7 +3645,10 @@ function bindAccessorySlotEditorActions() {
 
 function bindExerciseRestSettingsActions() {
   const addBtn = document.getElementById('btnAddExerciseRest');
-  if (addBtn) addBtn.onclick = openExerciseRestSheet;
+  if (addBtn) addBtn.onclick = () => openExerciseRestSheet();
+  document.querySelectorAll('button[data-edit-exercise-rest]').forEach(btn => {
+    btn.onclick = () => openExerciseRestSheet(btn.dataset.editExerciseRest);
+  });
   document.querySelectorAll('button[data-end-exercise-rest]').forEach(btn => {
     btn.onclick = () => {
       const id = btn.dataset.endExerciseRest;
@@ -4303,21 +4466,24 @@ function liftSegHtml(selectedKey, dataAttr) {
 // MAXタブ: 1RM挑戦の履歴（実測のみ・推定とは別系統）
 function renderMaxLogTab() {
   const liftKey = BIG3_LIFTS[logFilter.maxLift] ? logFilter.maxLift : 'bench';
-  const lift = BIG3_LIFTS[liftKey];
-  const currentMax = parseFloat(store.settings.maxes?.[lift.maxKey]) || 0;
   const tests = [...(store.maxTestResults || [])]
     .filter(t => t.liftKey === liftKey)
     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  // MAX = 実際に成功した1RMの最高値（設定MAXや推定MAXとは別物）
+  const best = bestMeasuredMaxForLift(liftKey);
   const latest = tests[0];
-  const latestSub = latest
-    ? `${fmtDateShort(latest.date)} ${latest.challengeSucceeded ? '成功' : '失敗'}${latest.adopted ? ' ・ 採用中' : ''}`
-    : '記録なし';
+  const value = best ? `${fmtW(best.measuredMaxWeight)}<span class="u">kg</span>` : '—';
+  const sub = best
+    ? `${fmtDateShort(best.date)} 成功${best.adopted ? ' ・ 採用中' : ''}`
+    : latest
+      ? `挑戦 ${fmtW(latest.attemptedWeight ?? latest.weight)}kg ✗`
+      : '1RM挑戦でここに記録されます';
   return `
     ${liftSegHtml(liftKey, 'data-max-lift')}
     <div class="card max-current gold">
       <div class="mc-label">MAX</div>
-      <div class="max-current-val">${fmtW(currentMax)}<span class="u">kg</span></div>
-      <div class="mc-sub">${latestSub}</div>
+      <div class="max-current-val">${value}</div>
+      <div class="mc-sub">${sub}</div>
     </div>
     <div class="card">
       <div class="sec-label">履歴</div>
@@ -4332,12 +4498,13 @@ function renderEmaxLogTab() {
   const entries = [...(store.estimatedMaxHistory || [])]
     .filter(e => e.liftKey === liftKey)
     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  const latest = entries[0];
-  const currentCard = latest
+  // メイン表示は「条件に合う記録の中の最大推定値」（直近値ではない）
+  const best = bestEstimatedMaxEntryForLift(liftKey);
+  const currentCard = best
     ? `<div class="card max-current">
         <div class="mc-label">推定MAX</div>
-        <div class="max-current-val">${fmtW(latest.estimatedMax)}<span class="u">kg</span></div>
-        <div class="mc-sub">${fmtDateShort(latest.date)} ・ ${fmtW(latest.sourceWeight)}×${latest.sourceReps} @${latest.rpe || '-'}</div>
+        <div class="max-current-val">${fmtW(best.estimatedMax)}<span class="u">kg</span></div>
+        <div class="mc-sub">${fmtDateShort(best.date)} ・ ${fmtW(best.sourceWeight)}×${best.sourceReps} @${best.rpe || '-'}</div>
       </div>`
     : '<div class="card flat"><div class="muted text-center">推定MAXの記録はまだありません</div></div>';
   const rows = entries.slice(0, 14).map(entry => {
@@ -4878,6 +5045,7 @@ function renderExerciseRestSettings() {
             <div class="muted mt-8">${restPeriodText(rest)}</div>
             ${rest.note ? `<div class="muted" style="font-size:12px;">${escapeHtml(rest.note)}</div>` : ''}
             <div class="btn-pair mt-8">
+              <button class="btn-sec btn-small" data-edit-exercise-rest="${rest.id}">編集</button>
               <button class="btn-sec btn-small" data-end-exercise-rest="${rest.id}" ${rest.ended ? 'disabled style="opacity:0.45;"' : ''}>終了</button>
               <button class="btn-ghost btn-small" data-delete-exercise-rest="${rest.id}">削除</button>
             </div>
@@ -4894,8 +5062,20 @@ function renderExerciseRestSettings() {
   `;
 }
 
-// 休止追加ボトムシート（対象チップ / 期間セグ / メモ の3項目のみ）
-function openExerciseRestSheet() {
+// 既存休止設定の更新（削除して作り直さなくて済むように）
+function updateExerciseRestSetting(id, patch = {}) {
+  const list = store.settings.exerciseRestSettings || [];
+  const idx = list.findIndex(rest => rest.id === id);
+  if (idx < 0) return null;
+  const merged = normalizeExerciseRestSetting({ ...normalizeExerciseRestSetting(list[idx]), ...patch, id });
+  if (!merged) return null;
+  store.settings.exerciseRestSettings = [...list.slice(0, idx), merged, ...list.slice(idx + 1)];
+  return merged;
+}
+
+// 休止の追加/編集ボトムシート（対象チップ / 期間セグ / メモ の3項目のみ）
+// editId 指定時は既存設定を読み込み、保存で同じIDを更新する
+function openExerciseRestSheet(editId = null) {
   const targets = [...EXERCISE_REST_PARTS, 'ベンチプレス', 'スクワット', 'デッド'];
   const periods = [
     { key: '1w', label: '1週', days: 6 },
@@ -4903,25 +5083,36 @@ function openExerciseRestSheet() {
     { key: '1m', label: '1ヶ月', days: 29 },
     { key: 'open', label: '未定', days: null },
   ];
-  const state = { targets: new Set(), period: '2w' };
-  openModal('休止を追加', `
+  const editing = editId
+    ? (store.settings.exerciseRestSettings || []).map(normalizeExerciseRestSetting).find(rest => rest && rest.id === editId)
+    : null;
+  const initialTargets = editing ? [...(editing.parts || []), ...(editing.exercises || [])] : [];
+  const initialPeriod = (() => {
+    if (!editing) return '2w';
+    if (!editing.endDate || editing.endDate >= '2099-01-01') return 'open';
+    const span = dateDiffDays(editing.startDate, editing.endDate);
+    const match = periods.find(p => p.days === span);
+    return match ? match.key : 'keep';
+  })();
+  const state = { targets: new Set(initialTargets), period: initialPeriod };
+  openModal(editing ? '休止を編集' : '休止を追加', `
     <div class="sec-label">対象</div>
     <div class="sheet-chips">
-      ${targets.map(t => `<span class="chip chip-tap" data-rest-target="${t}">${t}</span>`).join('')}
+      ${targets.map(t => `<span class="chip chip-tap ${state.targets.has(t) ? 'on-pause' : ''}" data-rest-target="${t}">${t}</span>`).join('')}
     </div>
-    <div class="sec-label">期間</div>
+    <div class="sec-label">期間${editing ? `（現在 ${restPeriodText(editing)}）` : ''}</div>
     <div class="seg mb-12">
-      ${periods.map(p => `<button class="seg-opt ${p.key === '2w' ? 'on-pause' : ''}" data-rest-period="${p.key}">${p.label}</button>`).join('')}
+      ${periods.map(p => `<button class="seg-opt ${state.period === p.key ? 'on-pause' : ''}" data-rest-period="${p.key}">${p.label}</button>`).join('')}
     </div>
-    <label class="field"><span>メモ（任意）</span><input type="text" id="exercise-rest-note" placeholder="例: 肩の違和感" /></label>
-    <div class="card flat" id="restSheetPreview" style="display:none;">
+    <label class="field"><span>メモ（任意）</span><input type="text" id="exercise-rest-note" value="${editing ? escapeHtml(editing.note || '') : ''}" placeholder="例: 肩の違和感" /></label>
+    <div class="card flat" id="restSheetPreview" style="display:${state.targets.size ? '' : 'none'};">
       <div class="sec-label">今日画面では</div>
       <div class="next-row pause-row">
-        <span class="nx-name" id="restSheetPreviewName"></span>
+        <span class="nx-name" id="restSheetPreviewName">${escapeHtml(initialTargets.join('・'))}</span>
         <span class="chip chip-pause">休止中</span>
       </div>
     </div>
-    <button class="btn-primary mt-8" id="btnConfirmExerciseRest" style="opacity:0.4;" disabled>追加</button>
+    <button class="btn-primary mt-8" id="btnConfirmExerciseRest" ${state.targets.size ? '' : 'style="opacity:0.4;" disabled'}>${editing ? '保存' : '追加'}</button>
     <button class="btn-text btn-block" id="btnCancelExerciseRest">キャンセル</button>
   `, () => {
     const refresh = () => {
@@ -4968,16 +5159,41 @@ function openExerciseRestSheet() {
       const selected = [...state.targets];
       const parts = selected.filter(t => EXERCISE_REST_PARTS.includes(t));
       const exercises = selected.filter(t => !EXERCISE_REST_PARTS.includes(t));
-      const period = periods.find(p => p.key === state.period) || periods[1];
+      const note = document.getElementById('exercise-rest-note')?.value || '';
+      const period = periods.find(p => p.key === state.period) || null;
+
+      if (editing) {
+        const startDate = editing.startDate;
+        const endDate = !period
+          ? editing.endDate // 期間未変更（カスタム期間はそのまま）
+          : period.days == null ? '2099-12-31' : addDaysStr(startDate, period.days);
+        const updated = updateExerciseRestSetting(editing.id, {
+          name: selected.join('・'),
+          parts,
+          exercises,
+          startDate,
+          endDate,
+          note,
+        });
+        if (!updated) return;
+        saveStore();
+        recalculateTodaySession();
+        closeModal();
+        render();
+        showToast('休止を更新しました');
+        return;
+      }
+
       const today = todayStr();
+      const effective = period || periods[1];
       const setting = normalizeExerciseRestSetting({
         id: `rest_${uid()}`,
         name: selected.join('・'),
         parts,
         exercises,
         startDate: today,
-        endDate: period.days == null ? '2099-12-31' : addDaysStr(today, period.days),
-        note: document.getElementById('exercise-rest-note')?.value || '',
+        endDate: effective.days == null ? '2099-12-31' : addDaysStr(today, effective.days),
+        note,
       });
       if (!setting) return;
       store.settings.exerciseRestSettings = [...(store.settings.exerciseRestSettings || []), setting];
@@ -5387,6 +5603,10 @@ if (typeof window !== 'undefined') {
     toggleNextSetCompletion,
     skipNextSet,
     undoLastSetRecord,
+    moveExerciseToActive,
+    bestMeasuredMaxForLift,
+    bestEstimatedMaxEntryForLift,
+    updateExerciseRestSetting,
     defaultAccessorySlots,
     buildAccessoryExercises,
     accessoryExerciseFromSlot,
