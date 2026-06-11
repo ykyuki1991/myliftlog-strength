@@ -1,12 +1,12 @@
 /* MyLiftLog Strength Planner - Service Worker
    オフラインで最低限起動できるよう静的ファイルをキャッシュ */
 
-const CACHE_NAME = 'mll-strength-v4';
+const CACHE_NAME = 'mll-strength-v5';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=20260430-ui2',
-  './app.js?v=20260430-ui2',
+  './styles.css?v=20260611-ui-refresh-cache',
+  './app.js?v=20260611-ui-refresh-cache',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
