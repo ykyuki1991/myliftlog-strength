@@ -738,6 +738,7 @@ function createEstimatedMaxEntry(log, source = 'training') {
     block: log.block ?? store.currentState.block,
     rotation: log.rotation ?? store.currentState.rotation,
     day: log.day ?? store.currentState.day,
+    menuType: log.menuType || null,
     estimatedMax: estimate.value,
     currentMax,
     diff: roundToIncrement(estimate.value - currentMax, 0.5),
@@ -765,9 +766,18 @@ function upsertEstimatedMaxFromLog(log, source = 'training') {
     entry.trendWarning = '低下: 様子見';
   }
   store.estimatedMaxHistory = store.estimatedMaxHistory || [];
-  const existingIdx = store.estimatedMaxHistory.findIndex(e => e.logId && e.logId === entry.logId && e.liftKey === entry.liftKey);
+  const existingIdx = store.estimatedMaxHistory.findIndex(e => sameEstimatedMaxEntry(e, entry));
   if (existingIdx >= 0) {
-    store.estimatedMaxHistory[existingIdx] = { ...store.estimatedMaxHistory[existingIdx], ...entry, id: store.estimatedMaxHistory[existingIdx].id };
+    const existing = store.estimatedMaxHistory[existingIdx];
+    const keepAdoption = sameEstimatedMaxResult(existing, entry);
+    store.estimatedMaxHistory[existingIdx] = {
+      ...existing,
+      ...entry,
+      id: existing.id,
+      adopted: keepAdoption && !!existing.adopted,
+      adoptedAt: keepAdoption ? existing.adoptedAt : null,
+      adoptedMax: keepAdoption ? existing.adoptedMax : null,
+    };
     return store.estimatedMaxHistory[existingIdx];
   }
   store.estimatedMaxHistory.push(entry);
@@ -775,10 +785,71 @@ function upsertEstimatedMaxFromLog(log, source = 'training') {
 }
 
 function recentEstimatedMaxes(liftKey, limit = 2) {
-  return [...(store.estimatedMaxHistory || [])]
+  return collectEstimatedMaxEntries(liftKey)
     .filter(e => e.liftKey === liftKey && e.useForMaxUpdate)
     .sort((a, b) => b.ts - a.ts)
     .slice(0, limit);
+}
+
+function sameEstimatedMaxEntry(a, b) {
+  if (!a || !b || a.liftKey !== b.liftKey) return false;
+  if (a.logId && b.logId && a.logId === b.logId) return true;
+  return String(a.date || '') === String(b.date || '') &&
+    Number(a.block) === Number(b.block) &&
+    Number(a.rotation) === Number(b.rotation) &&
+    Number(a.day) === Number(b.day) &&
+    String(a.menuType || '') === String(b.menuType || '');
+}
+
+function sameEstimatedMaxResult(a, b) {
+  if (!a || !b) return false;
+  return Number(a.estimatedMax) === Number(b.estimatedMax) &&
+    Number(a.sourceWeight) === Number(b.sourceWeight) &&
+    Number(a.sourceReps) === Number(b.sourceReps) &&
+    String(a.rpe || '') === String(b.rpe || '');
+}
+
+function estimatedMaxEntryKey(entry) {
+  if (entry.logId) return `log:${entry.logId}:${entry.liftKey}`;
+  return [
+    'slot',
+    entry.date || '',
+    entry.block ?? '',
+    entry.rotation ?? '',
+    entry.day ?? '',
+    entry.liftKey || '',
+    entry.menuType || '',
+  ].join('|');
+}
+
+function collectEstimatedMaxEntries(liftKey = null) {
+  const stored = [...(store.estimatedMaxHistory || [])]
+    .filter(e => !liftKey || e.liftKey === liftKey);
+  const derived = (store.logs || [])
+    .map(log => createEstimatedMaxEntry(log, 'log-derived'))
+    .filter(Boolean)
+    .filter(entry => !liftKey || entry.liftKey === liftKey)
+    .map(entry => {
+      const existing = stored.find(item => sameEstimatedMaxEntry(item, entry));
+      const keepAdoption = existing && sameEstimatedMaxResult(existing, entry);
+      return {
+        ...(existing || {}),
+        ...entry,
+        id: existing?.id || `derived_${entry.logId || `${entry.date}_${entry.liftKey}_${entry.menuType || ''}`}`,
+        logId: existing?.logId || entry.logId,
+        adopted: keepAdoption && !!existing?.adopted,
+        adoptedAt: keepAdoption ? existing?.adoptedAt : null,
+        adoptedMax: keepAdoption ? existing?.adoptedMax : null,
+        ts: entry.ts || existing?.ts || 0,
+        derivedFromLog: !existing,
+      };
+    });
+  const merged = new Map();
+  stored.forEach(entry => merged.set(estimatedMaxEntryKey(entry), entry));
+  derived.forEach(entry => merged.set(estimatedMaxEntryKey(entry), entry));
+  return [...merged.values()]
+    .filter(e => !liftKey || e.liftKey === liftKey)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
 }
 
 function normalizeExerciseRestSetting(setting) {
@@ -1176,7 +1247,7 @@ function bestMeasuredMaxForLift(liftKey) {
 // 推定MAXのメイン表示: 条件に合う記録（採用候補/採用済み）の中の最大値。
 // 候補が無い場合は参考の最大値、それも無ければ最新を返す
 function bestEstimatedMaxEntryForLift(liftKey) {
-  const entries = (store.estimatedMaxHistory || []).filter(e => e.liftKey === liftKey);
+  const entries = collectEstimatedMaxEntries(liftKey);
   if (!entries.length) return null;
   const maxBy = list => list.reduce((best, e) =>
     parseFloat(e.estimatedMax) > parseFloat(best.estimatedMax) ? e : best
@@ -1304,10 +1375,10 @@ function recordMaxTestResult(result) {
 }
 
 function renderEstimatedMaxHistory(limit = 6) {
-  const entries = [...(store.estimatedMaxHistory || [])].sort((a, b) => b.ts - a.ts).slice(0, limit);
+  const entries = collectEstimatedMaxEntries().slice(0, limit);
   if (entries.length === 0) return '<div class="muted">推定MAX履歴はまだありません</div>';
   return entries.map(entry => {
-    const candidate = getMaxUpdateCandidate(entry);
+    const candidate = !entry.derivedFromLog ? getMaxUpdateCandidate(entry) : null;
     const statusKind = entry.adopted ? 'candidate' : (entry.maxUseKind || 'excluded');
     const statusLabel = entry.adopted ? '採用済み' : (entry.maxUseLabel || '除外');
     return `
@@ -1346,7 +1417,6 @@ function renderMaxTestHistory(limit = 10, liftKey = null) {
 }
 
 function renderEstimatedMaxSummary() {
-  const entries = [...(store.estimatedMaxHistory || [])].sort((a, b) => b.ts - a.ts);
   const lifts = [
     { key: 'bench', name: 'ベンチ' },
     { key: 'squat', name: 'スクワット' },
@@ -1354,7 +1424,7 @@ function renderEstimatedMaxSummary() {
     { key: 'floorDead', name: '床引きデッド' },
   ];
   const rows = lifts.map(lift => {
-    const entry = entries.find(e => e.liftKey === lift.key);
+    const entry = bestEstimatedMaxEntryForLift(lift.key);
     if (!entry) {
       return `
         <div class="suggestion-row emax-summary-row">
@@ -1363,7 +1433,7 @@ function renderEstimatedMaxSummary() {
         </div>
       `;
     }
-    const candidate = getMaxUpdateCandidate(entry);
+    const candidate = !entry.derivedFromLog ? getMaxUpdateCandidate(entry) : null;
     const statusKind = entry.adopted ? 'candidate' : (entry.maxUseKind || 'excluded');
     const statusLabel = entry.adopted ? '採用済み' : (entry.maxUseLabel || '参考');
     return `
@@ -2763,6 +2833,9 @@ function openSetEditSheet(exIdx) {
         };
       });
       ex.rpe = draftRpe;
+      if (session.completed || findSessionExerciseLogIndex(session, ex) >= 0) {
+        upsertExerciseLogFromSession(session, ex, true);
+      }
       todayEdit = null;
       saveStore();
       closeModal();
@@ -3814,6 +3887,70 @@ function bindExerciseRestSettingsActions() {
   });
 }
 
+function findSessionExerciseLogIndex(session, ex) {
+  if (!session || !ex) return -1;
+  return (store.logs || []).findIndex(l =>
+    l.date === session.date && Number(l.day) === Number(session.day) &&
+    Number(l.block) === Number(session.block) && Number(l.rotation) === Number(session.rotation) &&
+    l.exerciseKey === ex.key && l.menuType === ex.menuType
+  );
+}
+
+function buildExerciseLogFromSession(session, ex, existing = null) {
+  return {
+    id: existing?.id || uid(),
+    date: session.date,
+    day: session.day,
+    block: session.block,
+    rotation: session.rotation,
+    isDeload: session.isDeload,
+    isAdjustmentRotation: !!session.isAdjustmentRotation,
+    r4AdjustmentMode: session.r4AdjustmentMode || null,
+    exerciseKey: ex.key,
+    exerciseName: ex.name,
+    menuType: ex.menuType,
+    plannedWeight: ex.plannedWeight,
+    plannedReps: ex.plannedReps,
+    plannedSets: ex.plannedSets,
+    targetRpe: ex.targetRpe,
+    isDeloadAccessory: !!ex.isDeloadAccessory,
+    normalPlannedSets: ex.normalPlannedSets,
+    deloadPlannedSets: ex.isDeloadAccessory ? ex.plannedSets : null,
+    normalTargetRpe: ex.normalTargetRpe,
+    deloadTargetRpe: ex.deloadTargetRpe,
+    categories: ex.categories || [],
+    fatigueTags: ex.fatigueTags || [],
+    weightType: ex.weightType,
+    slotId: ex.slotId,
+    slotName: ex.slotName,
+    sets: (ex.sets || []).map(s => ({ weight: s.weight, reps: s.reps, done: !!s.done, skipped: !!s.skipped })),
+    doneSets: (ex.sets || []).filter(s => s.done).length,
+    rpe: ex.rpe,
+    pains: ex.pains || [],
+    note: ex.note || '',
+    manualAdjusted: !!ex.adjusted,
+    maxTestId: existing?.maxTestId,
+    ts: Date.now(),
+  };
+}
+
+function upsertExerciseLogFromSession(session, ex, allowCreate = false) {
+  store.logs = store.logs || [];
+  const existIdx = findSessionExerciseLogIndex(session, ex);
+  if (existIdx < 0 && !allowCreate) return null;
+  const existing = existIdx >= 0 ? store.logs[existIdx] : null;
+  const log = buildExerciseLogFromSession(session, ex, existing);
+  if (existIdx >= 0) store.logs[existIdx] = log;
+  else store.logs.push(log);
+  const savedLog = existIdx >= 0 ? store.logs[existIdx] : store.logs[store.logs.length - 1];
+  if (isBig3Key(savedLog.exerciseKey)) {
+    const entry = upsertEstimatedMaxFromLog(savedLog);
+    if (isMaxTestMenu(savedLog.menuType)) upsertMaxTestResultFromLog(savedLog, entry);
+    upsertRotationProgressionFromLog(savedLog);
+  }
+  return savedLog;
+}
+
 function finishTodaySession() {
   const key = todaySessionKey();
   const session = store.daySessions[key];
@@ -3825,58 +3962,7 @@ function finishTodaySession() {
 
   // 各種目をログ化
   session.exercises.forEach(ex => {
-    const log = {
-      id: uid(),
-      date: session.date,
-      day: session.day,
-      block: session.block,
-      rotation: session.rotation,
-      isDeload: session.isDeload,
-      isAdjustmentRotation: !!session.isAdjustmentRotation,
-      r4AdjustmentMode: session.r4AdjustmentMode || null,
-      exerciseKey: ex.key,
-      exerciseName: ex.name,
-      menuType: ex.menuType,
-      plannedWeight: ex.plannedWeight,
-      plannedReps: ex.plannedReps,
-      plannedSets: ex.plannedSets,
-      targetRpe: ex.targetRpe,
-      isDeloadAccessory: !!ex.isDeloadAccessory,
-      normalPlannedSets: ex.normalPlannedSets,
-      deloadPlannedSets: ex.isDeloadAccessory ? ex.plannedSets : null,
-      normalTargetRpe: ex.normalTargetRpe,
-      deloadTargetRpe: ex.deloadTargetRpe,
-      categories: ex.categories || [],
-      fatigueTags: ex.fatigueTags || [],
-      weightType: ex.weightType,
-      slotId: ex.slotId,
-      slotName: ex.slotName,
-      sets: ex.sets.map(s => ({ weight: s.weight, reps: s.reps, done: s.done, skipped: !!s.skipped })),
-      doneSets: ex.sets.filter(s => s.done).length,
-      rpe: ex.rpe,
-      pains: ex.pains,
-      note: ex.note,
-      manualAdjusted: !!ex.adjusted,
-      ts: Date.now(),
-    };
-    // 重複チェック（同じセッションキー+exerciseKey+menuType）
-    const existIdx = store.logs.findIndex(l =>
-      l.date === log.date && l.day === log.day && l.block === log.block &&
-      l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
-    );
-    let savedLog;
-    if (existIdx >= 0) {
-      store.logs[existIdx] = log;
-      savedLog = store.logs[existIdx];
-    } else {
-      store.logs.push(log);
-      savedLog = store.logs[store.logs.length - 1];
-    }
-    if (isBig3Key(savedLog.exerciseKey)) {
-      const entry = upsertEstimatedMaxFromLog(savedLog);
-      if (isMaxTestMenu(savedLog.menuType)) upsertMaxTestResultFromLog(savedLog, entry);
-      upsertRotationProgressionFromLog(savedLog);
-    }
+    upsertExerciseLogFromSession(session, ex, true);
   });
 
   (session.skippedRestExercises || []).forEach(ex => {
@@ -3919,7 +4005,7 @@ function finishTodaySession() {
       l.date === log.date && l.day === log.day && l.block === log.block &&
       l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
     );
-    if (existIdx >= 0) store.logs[existIdx] = log;
+    if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
     else store.logs.push(log);
   });
 
@@ -3956,7 +4042,7 @@ function finishTodaySession() {
       l.date === log.date && l.day === log.day && l.block === log.block &&
       l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
     );
-    if (existIdx >= 0) store.logs[existIdx] = log;
+    if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
     else store.logs.push(log);
   });
 
@@ -4633,9 +4719,7 @@ function renderMaxLogTab() {
 // 推定MAXタブ: 計算値の履歴（MAXとは完全に別タブ）
 function renderEmaxLogTab() {
   const liftKey = BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench';
-  const entries = [...(store.estimatedMaxHistory || [])]
-    .filter(e => e.liftKey === liftKey)
-    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const entries = collectEstimatedMaxEntries(liftKey);
   // メイン表示は「条件に合う記録の中の最大推定値」（直近値ではない）
   const best = bestEstimatedMaxEntryForLift(liftKey);
   const currentCard = best
@@ -4654,7 +4738,7 @@ function renderEmaxLogTab() {
         : kind === 'reference'
           ? '<span class="chip chip-pause">参考</span>'
           : '<span class="chip chip-pause">除外</span>';
-    const candidate = !entry.adopted ? getMaxUpdateCandidate(entry) : null;
+    const candidate = !entry.adopted && !entry.derivedFromLog ? getMaxUpdateCandidate(entry) : null;
     return `
       <div class="hist-row ${kind === 'excluded' ? 'excluded' : ''}">
         <span class="h-date">${fmtDateShort(entry.date)}</span>
@@ -5714,6 +5798,7 @@ if (typeof window !== 'undefined') {
     classifyEstimatedMaxUse,
     createEstimatedMaxEntry,
     upsertEstimatedMaxFromLog,
+    collectEstimatedMaxEntries,
     evaluateRotationProgression,
     upsertRotationProgressionFromLog,
     adoptRotationProgression,
@@ -5764,6 +5849,7 @@ if (typeof window !== 'undefined') {
     collectMaxTestRecords,
     bestMeasuredMaxForLift,
     bestEstimatedMaxEntryForLift,
+    upsertExerciseLogFromSession,
     updateExerciseRestSetting,
     defaultAccessorySlots,
     buildAccessoryExercises,

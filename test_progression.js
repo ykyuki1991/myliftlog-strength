@@ -1087,6 +1087,184 @@ function testEstimatedMaxPicksBestActualSet() {
   assert.strictEqual(triple10.kind, 'candidate');
 }
 
+function testEstimatedMaxMainDisplayReevaluatesLogs() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  const staleEntry = {
+    id: 'emax-old',
+    logId: 'old-log-id',
+    liftKey: 'halfDead',
+    maxKey: 'halfDead',
+    liftName: 'ハーフデッド',
+    date: '2026-06-13',
+    block: 1,
+    rotation: 2,
+    day: 3,
+    menuType: 'halfDead-hi-main',
+    estimatedMax: 201,
+    currentMax: 190,
+    sourceWeight: 170,
+    sourceReps: 5,
+    rpe: '9.5',
+    maxUseKind: 'candidate',
+    maxUseLabel: '採用候補',
+    useForMaxUpdate: true,
+    adopted: true,
+    ts: 100,
+  };
+  const updatedLog = big3Log({
+    id: 'new-log-id',
+    date: '2026-06-13',
+    block: 1,
+    rotation: 2,
+    day: 3,
+    exerciseKey: 'halfDead',
+    exerciseName: 'ハーフデッド',
+    menuType: 'halfDead-hi-main',
+    plannedWeight: 170,
+    plannedReps: 5,
+    plannedSets: 3,
+    doneSets: 3,
+    rpe: '9.5',
+    sets: [
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 7, done: true },
+    ],
+    ts: 200,
+  });
+
+  isolatedStore.estimatedMaxHistory = [staleEntry];
+  isolatedStore.logs = [updatedLog];
+
+  const entries = isolatedApi.collectEstimatedMaxEntries('halfDead');
+  assert.strictEqual(entries.length, 1, 'stale history and matching latest log should render as one entry');
+  assert.strictEqual(entries[0].sourceReps, 7, 'display entry must re-evaluate the latest saved log');
+  assert.strictEqual(entries[0].estimatedMax, 212.5);
+  assert.strictEqual(entries[0].adopted, false, 'old adopted state must not be applied to a changed estimate');
+  assert.strictEqual(entries[0].maxUseLabel, '採用候補');
+
+  const best = isolatedApi.bestEstimatedMaxEntryForLift('halfDead');
+  assert.strictEqual(best.estimatedMax, 212.5, 'main e1RM display should not stay pinned to old 201.0');
+  assert.strictEqual(best.sourceReps, 7);
+}
+
+function testEstimatedMaxUpsertUpdatesSameSlotWhenLogIdChanges() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  isolatedStore.estimatedMaxHistory = [{
+    id: 'emax-old',
+    logId: 'old-log-id',
+    liftKey: 'halfDead',
+    maxKey: 'halfDead',
+    liftName: 'ハーフデッド',
+    date: '2026-06-13',
+    block: 1,
+    rotation: 2,
+    day: 3,
+    menuType: 'halfDead-hi-main',
+    estimatedMax: 201,
+    currentMax: 190,
+    sourceWeight: 170,
+    sourceReps: 5,
+    rpe: '9.5',
+    maxUseKind: 'candidate',
+    maxUseLabel: '採用候補',
+    useForMaxUpdate: true,
+    adopted: true,
+    ts: 100,
+  }];
+  const log = big3Log({
+    id: 'new-log-id',
+    date: '2026-06-13',
+    block: 1,
+    rotation: 2,
+    day: 3,
+    exerciseKey: 'halfDead',
+    exerciseName: 'ハーフデッド',
+    menuType: 'halfDead-hi-main',
+    rpe: '9.5',
+    sets: [
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 7, done: true },
+    ],
+    doneSets: 3,
+  });
+
+  const entry = isolatedApi.upsertEstimatedMaxFromLog(log);
+  assert.strictEqual(entry.id, 'emax-old', 'same day/day-slot should update the old e1RM history row');
+  assert.strictEqual(entry.logId, 'new-log-id');
+  assert.strictEqual(entry.adopted, false, 'manual adoption state must reset when the source set changes');
+  assert.strictEqual(entry.estimatedMax, 212.5);
+  assert.strictEqual(isolatedStore.estimatedMaxHistory.length, 1, 're-saving must not duplicate stale e1RM rows');
+}
+
+function testCompletedSetEditSyncsLogAndEstimatedMax() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  const session = {
+    date: '2026-06-13',
+    day: 3,
+    block: 1,
+    rotation: 2,
+    isDeload: false,
+    completed: true,
+    exercises: [],
+  };
+  const ex = {
+    key: 'halfDead',
+    name: 'ハーフデッド',
+    menuType: 'halfDead-hi-main',
+    plannedWeight: 170,
+    plannedReps: 5,
+    plannedSets: 3,
+    sets: [
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 5, done: true },
+    ],
+    rpe: '9.5',
+    pains: [],
+    note: '',
+  };
+  session.exercises.push(ex);
+  isolatedStore.logs = [big3Log({
+    id: 'saved-log',
+    date: session.date,
+    day: session.day,
+    block: session.block,
+    rotation: session.rotation,
+    exerciseKey: 'halfDead',
+    exerciseName: 'ハーフデッド',
+    menuType: 'halfDead-hi-main',
+    rpe: '9.5',
+    sets: ex.sets,
+    doneSets: 3,
+  })];
+  isolatedStore.estimatedMaxHistory = [];
+  isolatedApi.upsertEstimatedMaxFromLog(isolatedStore.logs[0]);
+  assert.strictEqual(isolatedStore.estimatedMaxHistory[0].estimatedMax, 201);
+
+  ex.sets = [
+    { weight: 170, reps: 5, done: true },
+    { weight: 170, reps: 5, done: true },
+    { weight: 170, reps: 7, done: true },
+  ];
+  const saved = isolatedApi.upsertExerciseLogFromSession(session, ex, true);
+  assert.strictEqual(saved.id, 'saved-log', 'completed-session edits should preserve the existing log id');
+  assert.strictEqual(saved.sets[2].reps, 7);
+  assert.strictEqual(isolatedStore.estimatedMaxHistory.length, 1);
+  assert.strictEqual(isolatedStore.estimatedMaxHistory[0].estimatedMax, 212.5);
+  assert.strictEqual(isolatedApi.bestEstimatedMaxEntryForLift('halfDead').sourceReps, 7);
+}
+
 function testCompletionCommitsCleanRecordValues() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
@@ -1236,6 +1414,9 @@ testBodyweightExerciseUsesKgInput();
 testInclineDbCurlPresetAndRestScope();
 testEstimatedMaxFormulaRegression();
 testEstimatedMaxPicksBestActualSet();
+testEstimatedMaxMainDisplayReevaluatesLogs();
+testEstimatedMaxUpsertUpdatesSameSlotWhenLogIdChanges();
+testCompletedSetEditSyncsLogAndEstimatedMax();
 testCompletionCommitsCleanRecordValues();
 testRecalcKeepsSkipsAndTodayOnlyExercises();
 testFutureAccessoryEditCoversSetsRepsRpe();
