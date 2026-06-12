@@ -731,6 +731,24 @@ button:active { transform: scale(0.96); }
   font-weight: 900;
 }
 
+.vb-editor .stp-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 27px;
+  font-weight: 900;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-nest);
+  color: var(--text);
+  padding: 6px 4px;
+}
+
+.vb-editor .stp-input:focus { border-color: var(--accent); }
+
 .vb-editor .stp-val .u {
   font-size: 14px;
   color: var(--text-3);

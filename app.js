@@ -203,6 +203,7 @@ const ACCESSORY_PRESET_GROUPS = [
     group: '腕',
     presets: [
       { key: 'preacher', name: 'ワンハンドDBプリーチャーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
+      { key: 'incline_db_curl', name: 'インクラインダンベルカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
       { key: 'preacher_curl', name: 'プリーチャーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'upper_machine' },
       { key: 'hammer_curl', name: 'ハンマーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
       { key: 'cable_curl', name: 'ケーブルカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'cable' },
@@ -407,7 +408,8 @@ function normalizeList(value, allowed = null) {
 }
 
 function normalizeSearchText(value) {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+  // 「ダンベル」と「DB」の表記ゆれを吸収して種目名マッチを安定させる
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '').replace(/ダンベル/g, 'db');
 }
 
 function parseRangeMax(value, fallback = 1) {
@@ -2750,29 +2752,33 @@ function renderActiveExerciseCard(ex, exIdx) {
   const setIdx = firstPendingSetIndex(ex);
   const set = ex.sets[setIdx] || {};
   const totalSets = ex.sets.length;
-  const isBodyweight = ex.weightType === 'bodyweight';
   const doneRows = ex.sets.slice(0, setIdx).map((s2, i) => renderStaticSetRow(s2, i, exIdx)).join('');
   const todoRows = ex.sets.slice(setIdx + 1).map((s2, i) => renderStaticSetRow(s2, setIdx + 1 + i, exIdx)).join('');
   const editing = todayEdit && todayEdit.exIdx === exIdx ? todayEdit.field : null;
   const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
 
-  const kgVal = isBodyweight ? '自重' : `${fmtW(set.weight ?? ex.plannedWeight)}<span class="u">kg</span>`;
-  const repsVal = `${set.reps ?? ex.plannedReps ?? '-'}`;
+  // 自重種目（チンニング等）もkgで表示・編集する（アシスト=軽く/加重=重くを同じ欄で扱う）
+  const currentWeight = set.weight ?? ex.plannedWeight;
+  const kgVal = currentWeight != null ? `${fmtW(currentWeight)}<span class="u">kg</span>` : '—';
+  const hasSetReps = set.reps != null && set.reps !== '';
+  const repsVal = hasSetReps ? `${set.reps}` : `${ex.plannedReps ?? '-'}`;
   const rpeVal = ex.rpe && ex.rpe !== '未入力' ? `@${ex.rpe}` : '—';
 
   let editorHtml = '';
-  if (editing === 'kg' && !isBodyweight) {
+  if (editing === 'kg') {
     editorHtml = `
       <div class="vb-editor">
         <button class="stepper" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}">−</button>
-        <div class="stp-val">${fmtW(set.weight ?? ex.plannedWeight)}<span class="u">kg</span></div>
+        <input class="stp-input" type="number" inputmode="decimal" step="0.1" min="0"
+          value="${currentWeight ?? ''}" placeholder="kg" data-direct-field="kg" data-ex="${exIdx}" />
         <button class="stepper" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}">＋</button>
       </div>`;
   } else if (editing === 'reps') {
     editorHtml = `
       <div class="vb-editor">
         <button class="stepper" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}">−</button>
-        <div class="stp-val">${set.reps ?? '-'}<span class="u">回</span></div>
+        <input class="stp-input" type="number" inputmode="numeric" step="1" min="0"
+          value="${hasSetReps ? set.reps : ''}" placeholder="${ex.plannedReps ?? '回'}" data-direct-field="reps" data-ex="${exIdx}" />
         <button class="stepper" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}">＋</button>
       </div>`;
   } else if (editing === 'rpe') {
@@ -2786,10 +2792,10 @@ function renderActiveExerciseCard(ex, exIdx) {
     <div class="active-set">
       <div class="as-head">
         <span class="as-title">セット ${setIdx + 1} / ${totalSets}</span>
-        <span class="as-prev">予定 ${exercisePlanText(ex)}${ex.pctNote ? ` ・ ${ex.pctNote}` : ''}</span>
+        <span class="as-prev">予定 ${exercisePlanText(ex)}${ex.pctNote ? ` ・ ${ex.pctNote}` : ''}${ex.isAccessory && ex.targetRpe ? ` ・ @${ex.targetRpe}` : ''}</span>
       </div>
       <div class="vbox-row">
-        <div class="vbox ${editing === 'kg' ? 'selected' : ''} ${isBodyweight ? 'disabled' : ''}" data-vbox="kg" data-ex="${exIdx}">
+        <div class="vbox ${editing === 'kg' ? 'selected' : ''}" data-vbox="kg" data-ex="${exIdx}">
           <span class="vb-label">重量</span>
           <span class="vb-val">${kgVal}</span>
         </div>
@@ -2983,7 +2989,6 @@ function afterToday() {
       const field = box.dataset.vbox;
       const ex = session.exercises[exIdx];
       if (!ex) return;
-      if (field === 'kg' && ex.weightType === 'bodyweight') return;
       if (todayEdit && todayEdit.exIdx === exIdx && todayEdit.field === field) {
         todayEdit = null; // 再タップで閉じる
       } else {
@@ -3010,8 +3015,41 @@ function afterToday() {
         const base = parseFloat(set.weight ?? ex.plannedWeight) || 0;
         set.weight = Math.max(0, Math.round((base + dir * inc) * 100) / 100);
       } else if (field === 'reps') {
-        const base = parseInt(set.reps, 10) || 0;
+        const parsed = parseInt(set.reps, 10);
+        // 未入力時はレンジ表記（8〜12等）の上限を初期値にして±する
+        const base = Number.isFinite(parsed) ? parsed : parseRangeMax(ex.plannedReps, 0);
         set.reps = Math.max(0, base + dir);
+      }
+      saveStore();
+      render();
+    });
+  });
+
+  // 直接入力（kg=小数可 / 回=整数）。不正値は保存しない
+  document.querySelectorAll('input[data-direct-field]').forEach(input => {
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('change', () => {
+      const exIdx = parseInt(input.dataset.ex);
+      const field = input.dataset.directField;
+      const ex = session.exercises[exIdx];
+      if (!ex) return;
+      const setIdx = firstPendingSetIndex(ex);
+      const set = ex.sets[setIdx];
+      if (!set) return;
+      if (field === 'kg') {
+        const value = parseFloat(input.value);
+        if (!Number.isFinite(value) || value < 0) {
+          render();
+          return;
+        }
+        set.weight = Math.round(value * 100) / 100;
+      } else if (field === 'reps') {
+        const value = parseInt(input.value, 10);
+        if (!Number.isFinite(value) || value < 0) {
+          render();
+          return;
+        }
+        set.reps = value;
       }
       saveStore();
       render();
@@ -3470,7 +3508,8 @@ function openAccessoryTodayAddModal() {
     plannedSets: 2,
     reps: '8〜12',
     targetRpe: '8',
-    categories: ['肩補助'],
+    // カテゴリは自動付与しない（未分類のまま）。休止判定は明示的に選んだ部位・種目のみに適用する
+    categories: [],
     fatigueTags: ['低リスク'],
     weightType: 'upper_machine',
     restType: 'default',
@@ -3624,7 +3663,8 @@ function openAccessorySlotAddModal(day) {
     plannedSets: 2,
     reps: '8〜12',
     targetRpe: '8',
-    categories: ['肩補助'],
+    // カテゴリは自動付与しない（休止判定は明示的に選んだ部位・種目のみ）
+    categories: [],
     fatigueTags: ['低リスク'],
     weightType: 'upper_machine',
     restType: 'default',
