@@ -1048,6 +1048,124 @@ function testEstimatedMaxFormulaRegression() {
   assert.strictEqual(highRep.maxUseReason, '高レップ');
 }
 
+function testEstimatedMaxPicksBestActualSet() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+
+  // 実機ケース: ハーフデッド 170×5 / 170×5 / 170×7 @RPE9.5
+  // → 採用セットは最大出力の7回セット（212.5）になるべき
+  const log = big3Log({
+    exerciseKey: 'halfDead',
+    exerciseName: 'ハーフデッド',
+    menuType: 'halfDead-hi-main',
+    plannedWeight: 170,
+    plannedReps: 5,
+    plannedSets: 3,
+    doneSets: 3,
+    rpe: '9.5',
+    sets: [
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 5, done: true },
+      { weight: 170, reps: 7, done: true },
+    ],
+  });
+  const entry = isolatedApi.createEstimatedMaxEntry(log);
+  assert.strictEqual(entry.sourceReps, 7, 'the actually-performed best set must be selected');
+  assert.strictEqual(entry.sourceWeight, 170);
+  assert.strictEqual(entry.estimatedMax, 212.5, '170×7@9.5 should beat 170×5@9.5 (201.0)');
+  assert.strictEqual(entry.maxUseLabel, '採用候補');
+
+  // 7回@9.5 は採用候補、7回@7.5 は従来どおり参考(6〜8回)
+  const c7 = isolatedApi.classifyEstimatedMaxUse(log, 7, { value: 212.5 });
+  assert.strictEqual(c7.kind, 'candidate');
+  const lowRpe = isolatedApi.classifyEstimatedMaxUse({ ...log, rpe: '7.5' }, 7, { value: 200 });
+  assert.strictEqual(lowRpe.kind, 'reference');
+  assert.strictEqual(lowRpe.reason, '6〜8回');
+
+  // 2〜5回@10（限界トリプル等）も採用候補に入る
+  const triple10 = isolatedApi.classifyEstimatedMaxUse({ ...log, rpe: '10' }, 3, { value: 220 });
+  assert.strictEqual(triple10.kind, 'candidate');
+}
+
+function testCompletionCommitsCleanRecordValues() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+
+  const session = {
+    exercises: [{
+      isAccessory: true,
+      key: 'chinning',
+      name: 'チンニング',
+      menuType: 'accessory-x',
+      plannedWeight: 5,
+      plannedReps: '5〜8',
+      plannedSets: 3,
+      sets: [
+        { weight: null, reps: '', done: false },
+        { weight: null, reps: '5〜8', done: false },
+        { weight: 7.5, reps: 8, done: false },
+      ],
+      rpe: '未入力',
+      pains: [],
+      note: '',
+    }],
+  };
+
+  // 空欄のまま完了 → 予定重量とレンジ下限が実績として確定（レンジ文字列を残さない）
+  isolatedApi.toggleNextSetCompletion(session, 0);
+  assert.strictEqual(session.exercises[0].sets[0].weight, 5);
+  assert.strictEqual(session.exercises[0].sets[0].reps, 5, 'range reps must commit as the lower bound number');
+
+  // レンジ文字列が入っていた旧データも数値へ正規化される
+  isolatedApi.toggleNextSetCompletion(session, 0);
+  assert.strictEqual(session.exercises[0].sets[1].reps, 5);
+
+  // 入力済みの値は上書きしない
+  isolatedApi.toggleNextSetCompletion(session, 0);
+  assert.strictEqual(session.exercises[0].sets[2].weight, 7.5);
+  assert.strictEqual(session.exercises[0].sets[2].reps, 8);
+
+  assert.strictEqual(isolatedApi.parseRangeMin('8〜12', null), 8);
+  assert.strictEqual(isolatedApi.parseRangeMin('', null), null);
+}
+
+function testRecalcKeepsSkipsAndTodayOnlyExercises() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  isolatedStore.currentState = { block: 1, rotation: 1, day: 2 };
+  isolatedApi.renderToday();
+  const session = Object.values(isolatedStore.daySessions).find(s => s.day === 2);
+
+  // 1セット目完了・2セット目スキップ
+  isolatedApi.toggleNextSetCompletion(session, 0);
+  isolatedApi.skipNextSet(session, 0);
+  // 今日だけ追加の種目を模擬
+  session.exercises.push({
+    isAccessory: true,
+    key: 'custom_today_x',
+    name: '今日だけ種目',
+    menuType: 'accessory-today_x',
+    plannedWeight: 20,
+    plannedReps: '10',
+    plannedSets: 2,
+    sets: [{ weight: 20, reps: 10, done: true }, { weight: 20, reps: '', done: false }],
+    rpe: '未入力',
+    pains: [],
+    note: '',
+    todayOnlyAdded: true,
+  });
+
+  isolatedApi.recalculateTodaySession();
+  const after = Object.values(isolatedStore.daySessions).find(s => s.day === 2);
+  const firstEx = after.exercises[0];
+  assert.strictEqual(firstEx.sets.filter(s => s.done).length, 1, 'done sets must survive recalc');
+  assert.strictEqual(firstEx.sets.filter(s => s.skipped).length, 1, 'skipped sets must survive recalc as records');
+  assert.ok(after.exercises.some(ex => ex.todayOnlyAdded && ex.key === 'custom_today_x'),
+    'today-only added exercises must survive recalc');
+}
+
 function testFutureAccessoryEditCoversSetsRepsRpe() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
@@ -1117,6 +1235,9 @@ testFutureAccessoryEditWinsNextGeneration();
 testBodyweightExerciseUsesKgInput();
 testInclineDbCurlPresetAndRestScope();
 testEstimatedMaxFormulaRegression();
+testEstimatedMaxPicksBestActualSet();
+testCompletionCommitsCleanRecordValues();
+testRecalcKeepsSkipsAndTodayOnlyExercises();
 testFutureAccessoryEditCoversSetsRepsRpe();
 testUpdateExerciseRestSetting();
 testMaxUpdateAndRotationProgressionAreCapped();
