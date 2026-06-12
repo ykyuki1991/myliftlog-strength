@@ -5669,7 +5669,23 @@ function init() {
 
   // Service Worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('service-worker.js').catch(e => console.warn('SW reg failed', e));
+    navigator.serviceWorker.register('service-worker.js')
+      .then(reg => {
+        // 起動ごとに更新チェック（PWAが古いJS/CSSを掴み続けるのを防ぐ）
+        if (reg && typeof reg.update === 'function') reg.update().catch(() => {});
+      })
+      .catch(e => console.warn('SW reg failed', e));
+    // 新しいSWに制御が切り替わったら一度だけ再読み込みして最新アセットを読む
+    // （初回インストール時はリロードしない）
+    if (typeof navigator.serviceWorker.addEventListener === 'function') {
+      const hadController = !!navigator.serviceWorker.controller;
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded || !hadController) return;
+        reloaded = true;
+        window.location.reload();
+      });
+    }
   }
 
   navigate('today');
