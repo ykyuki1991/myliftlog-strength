@@ -412,6 +412,12 @@ function normalizeSearchText(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '').replace(/ダンベル/g, 'db');
 }
 
+function parseRangeMin(value, fallback = null) {
+  const nums = String(value ?? '').match(/\d+(?:\.\d+)?/g);
+  if (!nums || nums.length === 0) return fallback;
+  return Math.min(...nums.map(Number));
+}
+
 function parseRangeMax(value, fallback = 1) {
   const nums = String(value ?? '').match(/\d+(?:\.\d+)?/g);
   if (!nums || nums.length === 0) return fallback;
@@ -660,8 +666,8 @@ function estimateMaxFromSet(weight, reps, rpe, increment = 0.5) {
   const rir = Math.max(0, 10 - rpeValue);
   const value = roundToIncrement(w * (1 + (r + rir) / 30), increment);
   let confidence = '低';
-  if (r >= 2 && r <= 5 && rpeValue >= 8 && rpeValue <= 9.5) confidence = '高';
-  else if (r >= 6 && r <= 8 && rpeValue >= 7 && rpeValue <= 9) confidence = '中';
+  if (r >= 2 && r <= 5 && rpeValue >= 8 && rpeValue <= 10) confidence = '高';
+  else if (r >= 6 && r <= 8 && rpeValue >= 7 && rpeValue <= 10) confidence = '中';
   return { value, rir, confidence, reason: `${w}kg×${r}回@RPE${rpeValue}` };
 }
 
@@ -703,7 +709,11 @@ function classifyEstimatedMaxUse(log, reps, estimate) {
   if (isVolumeBig3Menu(log.menuType)) return { kind: 'reference', label: '参考', reason: 'ボリューム日' };
   if (!isIntensityMainMenu(log.menuType)) return { kind: 'excluded', label: '除外', reason: '強度メインではない' };
   if (reps === 1 && rpe >= 9.5 && rpe <= 10) return { kind: 'candidate', label: '採用候補', reason: '1RM測定' };
-  if (reps >= 2 && reps <= 5 && rpe >= 8 && rpe <= 9.5) return { kind: 'candidate', label: '採用候補', reason: '強度メイン' };
+  // 強度メインの実施セットは2〜8回・RPE8〜10を採用候補にする
+  // （以前は2〜5回かつRPE9.5までで、7回@9.5等の高出力セットが「参考」止まりになり、
+  //   より低い5回セットの推定値が採用候補に選ばれるズレが起きていた）
+  if (reps >= 2 && reps <= 5 && rpe >= 8 && rpe <= 10) return { kind: 'candidate', label: '採用候補', reason: '強度メイン' };
+  if (reps >= 6 && reps <= 8 && rpe >= 8 && rpe <= 10) return { kind: 'candidate', label: '採用候補', reason: '強度メイン' };
   if (reps >= 6 && reps <= 8) return { kind: 'reference', label: '参考', reason: '6〜8回' };
   if (rpe >= 7 && rpe < 8) return { kind: 'reference', label: '参考', reason: 'RPE低め' };
   return { kind: 'reference', label: '参考', reason: '測定意図低め' };
@@ -2429,11 +2439,33 @@ function applyMainSetOverridesToMenu(exercises, day, settings = store.settings) 
   });
 }
 
+// 完了時に実績値を確定する。空欄やレンジ表記（5〜8等）を保存データに残さない
+function commitSetRecordDefaults(ex, set) {
+  if (!ex || !set) return;
+  if (set.weight == null || set.weight === '') {
+    if (ex.plannedWeight != null) set.weight = ex.plannedWeight;
+  }
+  if (set.reps == null || set.reps === '') {
+    if (typeof ex.plannedReps === 'number') {
+      set.reps = ex.plannedReps;
+    } else {
+      // レンジ表記の場合は下限を実績の最低保証として確定（過大記録を避ける）
+      const minReps = parseRangeMin(ex.plannedReps, null);
+      if (minReps != null) set.reps = minReps;
+    }
+  } else if (typeof set.reps === 'string') {
+    // 旧データ等でレンジ文字列が入っていた場合は数値へ正規化
+    const parsed = parseInt(set.reps, 10);
+    if (Number.isFinite(parsed)) set.reps = parsed;
+  }
+}
+
 function toggleNextSetCompletion(session, exIdx) {
   const ex = session?.exercises?.[exIdx];
   if (!ex) return { ok: false, reason: 'missing-exercise' };
   const nextIdx = firstPendingSetIndex(ex);
   if (nextIdx >= 0) {
+    commitSetRecordDefaults(ex, ex.sets[nextIdx]);
     ex.sets[nextIdx].done = true;
     return { ok: true, completedSet: nextIdx, allDone: isExerciseComplete(ex), reverted: false };
   }
@@ -2527,9 +2559,9 @@ function recalculateTodaySession() {
       };
     }
 
-    // 既存セットを完了/未完了に分割
-    const doneSets = oldEx.sets.filter(s => s.done);
-    const undoneSets = oldEx.sets.filter(s => !s.done);
+    // 既存セットを記録済み（完了/スキップ）と未実施に分割。スキップも実績として保持する
+    const doneSets = oldEx.sets.filter(s => s.done || s.skipped);
+    const undoneSets = oldEx.sets.filter(s => !s.done && !s.skipped);
 
     // 未完了セットの目標数 = max(0, targetSets - doneSets.length)
     const undoneTarget = Math.max(0, targetSets - doneSets.length);
@@ -2562,7 +2594,11 @@ function recalculateTodaySession() {
     };
   });
 
-  oldSession.exercises = newExercises;
+  // 「今日だけ追加」した種目は再生成メニューに含まれないため、消さずに引き継ぐ
+  const todayOnlyExtras = oldSession.exercises.filter(ex =>
+    ex.todayOnlyAdded && !menu.exercises.some(newEx => newEx.key === ex.key && newEx.menuType === ex.menuType)
+  );
+  oldSession.exercises = [...newExercises, ...todayOnlyExtras];
   oldSession.dayName = menu.name;
   oldSession.isDeload = menu.isDeload;
   oldSession.isAdjustmentRotation = menu.isAdjustmentRotation;
@@ -5706,6 +5742,9 @@ if (typeof window !== 'undefined') {
     skipNextSet,
     undoLastSetRecord,
     moveExerciseToActive,
+    recalculateTodaySession,
+    commitSetRecordDefaults,
+    parseRangeMin,
     collectMaxTestRecords,
     bestMeasuredMaxForLift,
     bestEstimatedMaxEntryForLift,
