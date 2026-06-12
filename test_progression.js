@@ -970,6 +970,99 @@ function testFutureAccessoryEditWinsNextGeneration() {
   assert.ok(!isolatedStore.settings.accessorySlots['2'].some(s => String(s.slotId).startsWith('today_')), 'today-only ids must not leak into settings');
 }
 
+function testBodyweightExerciseUsesKgInput() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  isolatedStore.currentState = { block: 1, rotation: 1, day: 2 };
+  isolatedApi.renderToday();
+  const session = Object.values(isolatedStore.daySessions).find(s => s.day === 2);
+  const chinIdx = session.exercises.findIndex(ex => ex.key === 'chinning');
+  assert.ok(chinIdx >= 0, 'chinning should be on day2');
+  assert.strictEqual(session.exercises[chinIdx].weightType, 'bodyweight');
+
+  // チンニングをアクティブにしてもkg欄が「自重」固定にならない
+  isolatedApi.moveExerciseToActive(session, chinIdx);
+  let html = isolatedApi.renderToday();
+  assert.ok(!html.includes('>自重<'), 'bodyweight exercises must not show fixed 自重 label');
+  assert.ok(html.includes('data-vbox="kg"'), 'weight box must stay tappable');
+  assert.ok(html.includes('5〜8'), 'planned reps range should show as the reps default');
+
+  // 加重5kg（またはアシスト−相当）をkgとして表示できる
+  const chin = session.exercises.find(ex => ex.key === 'chinning');
+  const pending = chin.sets[isolatedApi.firstPendingSetIndex(chin)];
+  pending.weight = 5;
+  html = isolatedApi.renderToday();
+  assert.ok(html.includes('5.0<span class="u">kg</span>'), 'entered weight must render as kg');
+}
+
+function testInclineDbCurlPresetAndRestScope() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+
+  // 通常の種目候補に存在し、部位カテゴリが正規化されている
+  const preset = isolatedApi.getAccessoryPreset('incline_db_curl');
+  assert.ok(preset, 'インクラインダンベルカール should be a normal preset');
+  assert.strictEqual(preset.name, 'インクラインダンベルカール');
+  const slot = isolatedApi.applyAccessoryPresetToSlot({}, 'incline_db_curl');
+  assert.strictEqual(JSON.stringify(slot.categories), JSON.stringify(['腕']));
+  assert.strictEqual(slot.weightType, 'dumbbell');
+
+  // 胸・肩の休止に腕種目が巻き込まれない
+  const rest = { parts: ['胸', '肩'], exercises: ['ベンチプレス', 'ショルダープレス'] };
+  const curlEx = { key: 'incline_db_curl', name: 'インクラインダンベルカール', categories: ['腕'], fatigueTags: ['肘負荷'] };
+  assert.strictEqual(isolatedApi.exerciseMatchesRestSetting(curlEx, rest), false,
+    'arm exercise must not be paused by chest/shoulder rest');
+
+  // カテゴリ未分類のカスタム種目も、明示指定なしでは休止されない
+  const customEx = { key: 'custom_x', name: 'インクラインダンベルカール', categories: [], fatigueTags: ['低リスク'] };
+  assert.strictEqual(isolatedApi.exerciseMatchesRestSetting(customEx, rest), false,
+    'uncategorized custom exercise must not be paused implicitly');
+
+  // 明示的に種目指定した場合だけ休止対象（DB/ダンベルの表記ゆれも吸収）
+  assert.strictEqual(isolatedApi.exerciseMatchesRestSetting(customEx, { parts: [], exercises: ['インクラインダンベルカール'] }), true);
+  assert.strictEqual(isolatedApi.exerciseMatchesRestSetting(customEx, { parts: [], exercises: ['インクラインDBカール'] }), true,
+    'DB/ダンベル variants should match the same exercise');
+}
+
+function testEstimatedMaxFormulaRegression() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+
+  // Epley + RIR補正: e1RM = w × (1 + (reps + RIR) / 30), RIR = 10 − RPE
+  assert.strictEqual(isolatedApi.estimateMaxFromSet(170, 7, '9.5').value, 212.5);
+  assert.strictEqual(isolatedApi.estimateMaxFromSet(170, 5, '9.5').value, 201, '実機の「推定201.0」は 170×5@9.5 に一致（回数記録ずれが原因で式は正しい）');
+  assert.strictEqual(isolatedApi.estimateMaxFromSet(170, 7, '10').value, 209.5);
+  assert.strictEqual(isolatedApi.estimateMaxFromSet(100, 5, '8').value, 123.5);
+  // 1RMは実重量そのまま（インフレさせない）
+  assert.strictEqual(isolatedApi.estimateMaxFromSet(120, 1, '10').value, 120);
+  assert.strictEqual(isolatedApi.estimateMaxFromSet(120, 1, '10').confidence, '高');
+  // 低RPE・高回数は信頼度を下げ、10回以上は採用候補にしない
+  assert.strictEqual(isolatedApi.estimateMaxFromSet(100, 12, '8').confidence, '低');
+  const highRep = isolatedApi.createEstimatedMaxEntry(big3Log({
+    menuType: 'bench-hi-main', rpe: '8',
+    sets: [{ weight: 100, reps: 12, done: true }], doneSets: 1, plannedSets: 1,
+  }));
+  assert.strictEqual(highRep.maxUseLabel, '除外');
+  assert.strictEqual(highRep.maxUseReason, '高レップ');
+}
+
+function testFutureAccessoryEditCoversSetsRepsRpe() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  const slot = isolatedStore.settings.accessorySlots['2'].find(s => s.key === 'incline_db');
+  assert.ok(slot);
+  isolatedApi.updateAccessorySlot(2, slot.slotId, { ...slot, plannedSets: 5, reps: '6〜8', targetRpe: '9', plannedWeight: 40.5 });
+  const next = isolatedApi.buildAccessoryExercises(2, isolatedStore.settings, false).find(ex => ex.key === 'incline_db');
+  assert.strictEqual(next.plannedSets, 5, 'sets must carry to next generation');
+  assert.strictEqual(next.plannedReps, '6〜8', 'reps must carry to next generation');
+  assert.strictEqual(next.targetRpe, '9', 'target RPE must carry to next generation');
+  assert.strictEqual(next.plannedWeight, 40.5, 'decimal weights must be preserved');
+}
+
 function testUpdateExerciseRestSetting() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
@@ -1021,6 +1114,10 @@ testBestMeasuredAndEstimatedSelection();
 testMoveExerciseToActive();
 testMaxTabRestoresFromExistingLogs();
 testFutureAccessoryEditWinsNextGeneration();
+testBodyweightExerciseUsesKgInput();
+testInclineDbCurlPresetAndRestScope();
+testEstimatedMaxFormulaRegression();
+testFutureAccessoryEditCoversSetsRepsRpe();
 testUpdateExerciseRestSetting();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
