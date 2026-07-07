@@ -1448,7 +1448,13 @@ function weeklyLog(overrides = {}) {
     weeklySplit: true,
     date: '2026-06-17',
     weekday: 3,
+    performedWeekday: 3,
+    scheduledWeekday: 3,
+    scheduledSplitKey: 'chest',
+    performedSplitKey: 'chest',
+    selectedSplitKey: 'chest',
     splitKey: 'chest',
+    splitName: '胸',
     day: 3,
     block: null,
     rotation: null,
@@ -1508,15 +1514,20 @@ function testWeeklyScheduleAndMenus() {
   assert.strictEqual(wed.exercises.find(ex => ex.isWeeklyMain).plannedWeight, 95);
   assert.ok(wed.exercises.some(ex => ex.name === 'インクラインDBプレス' && ex.plannedWeight === 38));
 
-  // 背中の日はハーフ⇔床引きを週交互（第1週ハーフ）
+  // 背中の日は実施ログベースでハーフ⇔床引き。未実施週では進まない。
   const thuW1 = isolatedApi.buildWeeklyMenu('2026-06-18');
   assert.strictEqual(thuW1.exercises.find(ex => ex.isWeeklyMain).key, 'halfDead');
   assert.strictEqual(thuW1.exercises.find(ex => ex.isWeeklyMain).plannedWeight, 162.5);
+  const thuW2NoLog = isolatedApi.buildWeeklyMenu('2026-06-25');
+  assert.strictEqual(thuW2NoLog.exercises.find(ex => ex.isWeeklyMain).key, 'halfDead', 'skipped back weeks do not advance deadlift alternation');
+  isolatedStore.logs = [weeklyLog({
+    date: '2026-06-18', exerciseKey: 'halfDead', exerciseName: 'ハーフデッド', menuType: 'weekly-main-halfDead',
+    weekday: 4, performedWeekday: 4, splitKey: 'back', performedSplitKey: 'back', selectedSplitKey: 'back', splitName: '背中',
+    deadliftVariant: 'rack', plannedWeight: 162.5,
+  })];
   const thuW2 = isolatedApi.buildWeeklyMenu('2026-06-25');
   assert.strictEqual(thuW2.exercises.find(ex => ex.isWeeklyMain).key, 'floorDead');
   assert.strictEqual(thuW2.exercises.find(ex => ex.isWeeklyMain).plannedWeight, 145);
-  const thuW3 = isolatedApi.buildWeeklyMenu('2026-07-02');
-  assert.strictEqual(thuW3.exercises.find(ex => ex.isWeeklyMain).key, 'halfDead');
   assert.ok(thuW1.exercises.some(ex => ex.name === 'マシンロウ' && ex.plannedWeight === 160));
 }
 
@@ -1639,6 +1650,11 @@ function testWeeklySessionRecordingAndCompat() {
   assert.strictEqual(mainLog.block, null, 'new records must not use block');
   assert.strictEqual(mainLog.rotation, null, 'new records must not use rotation');
   assert.strictEqual(mainLog.weekday, 3);
+  assert.strictEqual(mainLog.scheduledDate, '2026-06-17');
+  assert.strictEqual(mainLog.performedDate, '2026-06-17');
+  assert.strictEqual(mainLog.scheduledSplitKey, 'chest');
+  assert.strictEqual(mainLog.performedSplitKey, 'chest');
+  assert.strictEqual(mainLog.splitName, '胸');
 
   // 推定1RMは週次メインからも記録される（BIG3のみ）
   assert.ok(isolatedStore.estimatedMaxHistory.some(e => e.logId === mainLog.id), 'weekly main feeds e1RM history');
@@ -1680,11 +1696,131 @@ function testWeeklySlotEditing() {
   assert.ok(isolatedStore.settings.weeklySlots['3'], 'edits persist into settings.weeklySlots');
 }
 
+
+function testWeeklyFlexibleMenuSelectionAndLogs() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  // 火曜の休み日に胸を選んで実施できる
+  isolatedApi.setNowProvider(() => Date.UTC(2026, 5, 16, 12, 0, 0));
+  let session = isolatedApi.getOrCreateTodaySession();
+  assert.strictEqual(session.isRest, true);
+  assert.strictEqual(isolatedApi.selectWeeklyTodayMenu('chest'), true);
+  session = isolatedApi.getOrCreateTodaySession();
+  assert.strictEqual(session.isRest, false);
+  assert.strictEqual(session.scheduledSplitKey, 'rest');
+  assert.strictEqual(session.performedSplitKey, 'chest');
+  assert.strictEqual(session.splitName, '胸');
+  assert.ok(session.exercises.some(ex => ex.key === 'bench'));
+
+  session.exercises.find(ex => ex.key === 'bench').sets.forEach(set => { set.done = true; });
+  session.exercises.find(ex => ex.key === 'bench').rpe = '8';
+  isolatedApi.finishTodaySession();
+  const chestLog = isolatedStore.logs.find(l => l.menuType === 'weekly-main-bench');
+  assert.ok(chestLog, 'rest day selected menu is saved as a chest weekly log');
+  assert.strictEqual(chestLog.scheduledSplitKey, 'rest');
+  assert.strictEqual(chestLog.performedSplitKey, 'chest');
+  assert.strictEqual(chestLog.performedWeekday, 2);
+  assert.strictEqual(isolatedApi.logGroupMetaText([chestLog]), '火曜 / 胸');
+
+  // 木曜予定の背中を胸へ変更しても胸ログとして保存される
+  const shifted = createHarness();
+  const shiftedApi = shifted.api;
+  const shiftedStore = shiftedApi.getStore();
+  shiftedApi.setNowProvider(() => Date.UTC(2026, 5, 18, 12, 0, 0));
+  shiftedApi.getOrCreateTodaySession();
+  assert.strictEqual(shiftedApi.selectWeeklyTodayMenu('chest'), true);
+  const shiftedSession = shiftedApi.getOrCreateTodaySession();
+  assert.strictEqual(shiftedSession.scheduledSplitKey, 'back');
+  assert.strictEqual(shiftedSession.performedSplitKey, 'chest');
+  shiftedSession.exercises.find(ex => ex.key === 'bench').sets.forEach(set => { set.done = true; });
+  shiftedSession.exercises.find(ex => ex.key === 'bench').rpe = '8';
+  shiftedApi.finishTodaySession();
+  const shiftedLog = shiftedStore.logs.find(l => l.menuType === 'weekly-main-bench');
+  assert.strictEqual(shiftedLog.scheduledSplitKey, 'back');
+  assert.strictEqual(shiftedLog.performedSplitKey, 'chest');
+  assert.strictEqual(shiftedApi.logGroupMetaText([shiftedLog]), '木曜 / 胸');
+}
+
+function testWeeklyDeadliftAlternatesByPerformedBackLogs() {
+  const isolated = createHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.logs = [];
+  assert.strictEqual(api.buildWeeklyMenu('2026-06-18').exercises.find(ex => ex.isWeeklyMain).key, 'halfDead');
+  assert.strictEqual(api.buildWeeklyMenu('2026-06-25').exercises.find(ex => ex.isWeeklyMain).key, 'halfDead', 'no performed back log means no alternation advance');
+  store.logs = [weeklyLog({
+    date: '2026-06-22', exerciseKey: 'halfDead', exerciseName: 'ハーフデッド', menuType: 'weekly-main-halfDead',
+    splitKey: 'back', performedSplitKey: 'back', selectedSplitKey: 'back', splitName: '背中', weekday: 4, performedWeekday: 1,
+    deadliftVariant: 'rack', plannedWeight: 162.5,
+  })];
+  assert.strictEqual(api.buildWeeklyMenu('2026-06-25').exercises.find(ex => ex.isWeeklyMain).key, 'floorDead', 'moved back session advances alternation when performed');
+  store.logs.push(weeklyLog({
+    date: '2026-06-27', exerciseKey: 'floorDead', exerciseName: '床引きデッド', menuType: 'weekly-main-floorDead',
+    splitKey: 'back', performedSplitKey: 'back', selectedSplitKey: 'back', splitName: '背中', weekday: 4, performedWeekday: 6,
+    deadliftVariant: 'floor', plannedWeight: 145, ts: Date.now() + 1,
+  }));
+  assert.strictEqual(api.buildWeeklyMenu('2026-07-02').exercises.find(ex => ex.isWeeklyMain).key, 'halfDead');
+}
+
+function testWeeklyRestDeletedLogsAndPlanMarkup() {
+  const isolated = createHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  api.setNowProvider(() => Date.UTC(2026, 5, 17, 12, 0, 0));
+  const session = api.getOrCreateTodaySession();
+  session.skippedRestExercises = [{ key: 'bench', name: 'ベンチプレス', menuType: 'weekly-main-bench', restSettingName: '胸休止' }];
+  session.deletedAccessories = [{ exerciseKey: 'pec_fly', exerciseName: 'ペックフライ', slotId: 'w3-pec-fly', slotName: '胸補助' }];
+  api.finishTodaySession();
+  const specialLogs = store.logs.filter(l => l.isExerciseRest || l.todayOnlyDeleted);
+  assert.ok(specialLogs.length >= 2, 'rest/deleted weekly logs are saved');
+  specialLogs.forEach(log => {
+    assert.strictEqual(log.weeklySplit, true);
+    assert.strictEqual(log.block, null);
+    assert.strictEqual(log.rotation, null);
+    assert.strictEqual(log.scheduledSplitKey, 'chest');
+    assert.strictEqual(log.performedSplitKey, 'chest');
+    assert.ok(!JSON.stringify(log).includes('undefined'));
+  });
+
+  const blockHtml = api.renderBlock();
+  assert.ok(blockHtml.includes('今週のスケジュール'));
+  assert.ok(blockHtml.includes('参照: 記録なし'));
+  assert.ok(!blockHtml.includes('undefined'));
+  assert.ok(!blockHtml.includes('NaN'));
+}
+
+function testWeeklyAndLegacyLogLabels() {
+  const isolated = createHarness();
+  const api = isolated.api;
+  const weekly = weeklyLog({ date: '2026-06-17', performedWeekday: 3, performedSplitKey: 'chest', splitName: '胸' });
+  const legacy = big3Log({ date: '2026-05-01', block: 2, rotation: 3, day: 7 });
+  assert.strictEqual(api.logGroupMetaText([weekly]), '水曜 / 胸');
+  assert.strictEqual(api.logGroupMetaText([legacy]), 'B2 / R3 / Day7');
+}
+
+function testWeeklyImportDefaultsAndLoadSummary() {
+  const isolated = createHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.settings.programMode = 'weekly';
+  store.settings.weeklySlots = null;
+  const major = api.summarizeMajorAccessoryLoad(store.settings);
+  assert.ok(major.chest.sets > 0, 'weekly load summary uses weekly slots when in weekly mode');
+  assert.ok(major.leg.sets > 0);
+}
+
 testWeeklyScheduleAndMenus();
 testWeeklyMainProgression();
 testWeeklyAccessoryProgression();
 testWeeklySessionRecordingAndCompat();
 testWeeklySlotEditing();
+testWeeklyFlexibleMenuSelectionAndLogs();
+testWeeklyDeadliftAlternatesByPerformedBackLogs();
+testWeeklyRestDeletedLogsAndPlanMarkup();
+testWeeklyAndLegacyLogLabels();
+testWeeklyImportDefaultsAndLoadSummary();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
 console.log('test_progression.js: all tests passed');
