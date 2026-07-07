@@ -92,6 +92,8 @@ function big3Log(overrides = {}) {
 const h = createHarness();
 const api = h.api;
 const store = api.getStore();
+// 既存スイートは旧8日ローテのロジック互換を検証する（週次はtestWeekly*で検証）
+store.settings.programMode = 'legacy';
 
 function testBig3FormulaUnaffected() {
   const day1 = api.getDayMenu(1, 1, store.settings);
@@ -309,6 +311,7 @@ function testMaxUpdateAndRotationProgressionAreCapped() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
   isolatedStore.settings.maxes.bench = 130;
   isolatedStore.logs = [big3Log({ plannedWeight: 100, ts: 1 })];
 
@@ -346,6 +349,7 @@ function testDeloadAccessoryAndMaxTestTiming() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
 
   const day1R4 = isolatedApi.getDayMenu(1, 4, isolatedStore.settings);
   const legPress = day1R4.exercises.find(ex => ex.isAccessory && ex.key === 'legpress');
@@ -442,6 +446,7 @@ function testFutureMainSetOverride() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
   isolatedStore.logs = [big3Log({ plannedWeight: 100, plannedReps: 5, plannedSets: 3, ts: 1 })];
   const originalLog = JSON.stringify(isolatedStore.logs[0]);
   const todayBench = isolatedApi.getDayMenu(2, 1, isolatedStore.settings)
@@ -472,6 +477,7 @@ function testAdaptiveR4ProposalAndSelection() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   isolatedStore.logs = [
     big3Log({ date: '2026-05-01', day: 1, rotation: 3, block: 1, ts: 1 }),
@@ -525,6 +531,7 @@ function testExerciseRestSettings() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
   isolatedStore.currentState = { block: 1, rotation: 1, day: 2 };
   isolatedStore.settings.exerciseRestSettings = [{
     id: 'rest-chest-shoulder',
@@ -576,6 +583,7 @@ function testRotationFlowAndMaxRecordsFromSession() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
 
   let state = { block: 1, rotation: 1, day: 1 };
   for (let i = 0; i < 31; i++) state = isolatedApi.nextDay(state);
@@ -974,6 +982,7 @@ function testBodyweightExerciseUsesKgInput() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
 
   isolatedStore.currentState = { block: 1, rotation: 1, day: 2 };
   isolatedApi.renderToday();
@@ -1311,6 +1320,7 @@ function testRecalcKeepsSkipsAndTodayOnlyExercises() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
   const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.programMode = 'legacy';
 
   isolatedStore.currentState = { block: 1, rotation: 1, day: 2 };
   isolatedApi.renderToday();
@@ -1429,6 +1439,252 @@ testLogDailyAndMonthlyViews();
 testFloorDeadDayUsesBulgarianInsteadOfSquat();
 testExerciseRestSettings();
 testRotationFlowAndMaxRecordsFromSession();
+
+// ===== 週固定4分割プログラム =====
+
+function weeklyLog(overrides = {}) {
+  return {
+    id: `wlog-${Math.random()}`,
+    weeklySplit: true,
+    date: '2026-06-17',
+    weekday: 3,
+    splitKey: 'chest',
+    day: 3,
+    block: null,
+    rotation: null,
+    isDeload: false,
+    exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス',
+    menuType: 'weekly-main-bench',
+    plannedWeight: 95,
+    plannedReps: 5,
+    plannedSets: 3,
+    sets: [
+      { weight: 95, reps: 5, done: true },
+      { weight: 95, reps: 5, done: true },
+      { weight: 95, reps: 5, done: true },
+    ],
+    doneSets: 3,
+    rpe: '8',
+    pains: [],
+    note: '',
+    ts: Date.now(),
+    ...overrides,
+  };
+}
+
+function testWeeklyScheduleAndMenus() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  assert.strictEqual(isolatedApi.isWeeklyMode(), true, 'weekly split is the default program');
+  isolatedStore.settings.weeklyProgram = { anchorDate: '2026-06-14' }; // 日曜
+
+  // 曜日→部位とメイン種目
+  const sun = isolatedApi.buildWeeklyMenu('2026-06-14');
+  assert.strictEqual(sun.splitKey, 'shoulder_arm');
+  const sunMain = sun.exercises.find(ex => ex.isWeeklyMain);
+  assert.strictEqual(sunMain.key, 'shoulderPress');
+  assert.strictEqual(sunMain.plannedWeight, 55);
+  assert.strictEqual(sunMain.plannedSets, 3);
+  assert.strictEqual(sunMain.plannedReps, 5);
+  assert.ok(sun.exercises.every(ex => ex.restSec === 300), 'rest timer defaults to 300s for all exercises');
+  assert.ok(sun.exercises.some(ex => ex.name === 'サイドレイズ' && ex.plannedSets === 3 && ex.plannedReps === 12));
+  assert.ok(sun.exercises.some(ex => ex.name === 'インクラインダンベルカール' && ex.plannedWeight === 18));
+  assert.ok(sun.exercises.some(ex => ex.name === 'ケーブルプレスダウン' && ex.plannedWeight === 46));
+  assert.ok(sun.exercises.some(ex => ex.name === 'ナローベンチプレス' && ex.plannedWeight == null), 'unlisted initial weights stay blank');
+
+  const mon = isolatedApi.buildWeeklyMenu('2026-06-15');
+  assert.strictEqual(mon.exercises.find(ex => ex.isWeeklyMain).key, 'squat');
+  assert.strictEqual(mon.exercises.find(ex => ex.isWeeklyMain).plannedWeight, 135);
+  assert.ok(mon.exercises.some(ex => ex.name === 'レッグプレス' && ex.plannedWeight === 250 && ex.plannedSets === 4));
+
+  assert.strictEqual(isolatedApi.buildWeeklyMenu('2026-06-16').isRest, true, '火曜は休み');
+  assert.strictEqual(isolatedApi.buildWeeklyMenu('2026-06-19').isRest, true, '金曜は休み');
+  assert.strictEqual(isolatedApi.buildWeeklyMenu('2026-06-20').isRest, true, '土曜は休み');
+
+  const wed = isolatedApi.buildWeeklyMenu('2026-06-17');
+  assert.strictEqual(wed.exercises.find(ex => ex.isWeeklyMain).key, 'bench');
+  assert.strictEqual(wed.exercises.find(ex => ex.isWeeklyMain).plannedWeight, 95);
+  assert.ok(wed.exercises.some(ex => ex.name === 'インクラインDBプレス' && ex.plannedWeight === 38));
+
+  // 背中の日はハーフ⇔床引きを週交互（第1週ハーフ）
+  const thuW1 = isolatedApi.buildWeeklyMenu('2026-06-18');
+  assert.strictEqual(thuW1.exercises.find(ex => ex.isWeeklyMain).key, 'halfDead');
+  assert.strictEqual(thuW1.exercises.find(ex => ex.isWeeklyMain).plannedWeight, 162.5);
+  const thuW2 = isolatedApi.buildWeeklyMenu('2026-06-25');
+  assert.strictEqual(thuW2.exercises.find(ex => ex.isWeeklyMain).key, 'floorDead');
+  assert.strictEqual(thuW2.exercises.find(ex => ex.isWeeklyMain).plannedWeight, 145);
+  const thuW3 = isolatedApi.buildWeeklyMenu('2026-07-02');
+  assert.strictEqual(thuW3.exercises.find(ex => ex.isWeeklyMain).key, 'halfDead');
+  assert.ok(thuW1.exercises.some(ex => ex.name === 'マシンロウ' && ex.plannedWeight === 160));
+}
+
+function testWeeklyMainProgression() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.weeklyProgram = { anchorDate: '2026-06-14' };
+
+  // 完遂 → 翌週+2.5kg
+  isolatedStore.logs = [weeklyLog()];
+  assert.strictEqual(isolatedApi.weeklyMainPlan('bench', '2026-06-24').weight, 97.5);
+
+  // 未達 → 同重量
+  isolatedStore.logs = [weeklyLog({ doneSets: 2, sets: [
+    { weight: 95, reps: 5, done: true },
+    { weight: 95, reps: 4, done: true },
+    { weight: 95, reps: 5, done: false },
+  ] })];
+  assert.strictEqual(isolatedApi.weeklyMainPlan('bench', '2026-06-24').weight, 95);
+
+  // 同重量2週連続未達 → 約-10%で再スタート（該当種目のみ）
+  isolatedStore.logs = [
+    weeklyLog({ date: '2026-06-10', doneSets: 2, sets: [
+      { weight: 95, reps: 5, done: true }, { weight: 95, reps: 4, done: true }, { weight: 95, reps: 3, done: false },
+    ], ts: 1 }),
+    weeklyLog({ date: '2026-06-17', doneSets: 2, sets: [
+      { weight: 95, reps: 5, done: true }, { weight: 95, reps: 4, done: true }, { weight: 95, reps: 3, done: false },
+    ], ts: 2 }),
+  ];
+  const stalled = isolatedApi.weeklyMainPlan('bench', '2026-06-24');
+  assert.strictEqual(stalled.stalled, true);
+  assert.strictEqual(stalled.weight, 85, '95kg * 0.9 = 85.5 → 2.5kg刻みで85');
+  // 他種目には影響しない
+  assert.strictEqual(isolatedApi.weeklyMainPlan('squat', '2026-06-24').weight, 135);
+
+  // ログが無ければ初週重量
+  isolatedStore.logs = [];
+  assert.strictEqual(isolatedApi.weeklyMainPlan('halfDead', '2026-06-18').weight, 162.5);
+  assert.strictEqual(isolatedApi.weeklyMainPlan('floorDead', '2026-06-25').weight, 145);
+  assert.strictEqual(isolatedApi.weeklyMainPlan('shoulderPress', '2026-06-21').weight, 55);
+}
+
+function testWeeklyAccessoryProgression() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  isolatedStore.settings.weeklyProgram = { anchorDate: '2026-06-14' };
+
+  const legpress = isolatedApi.getWeeklySlotsForDay(1).find(s => s.key === 'legpress');
+  const curl = isolatedApi.getWeeklySlotsForDay(0).find(s => s.key === 'incline_db_curl');
+
+  // 前週の使用重量を引き継ぐ
+  isolatedStore.logs = [weeklyLog({
+    exerciseKey: 'legpress', exerciseName: 'レッグプレス', menuType: `accessory-${legpress.slotId}`,
+    weekday: 1, splitKey: 'legs', date: '2026-06-15', plannedWeight: 255, plannedReps: 10, plannedSets: 4,
+    sets: [
+      { weight: 255, reps: 10, done: true }, { weight: 255, reps: 10, done: true },
+      { weight: 255, reps: 10, done: true }, { weight: 255, reps: 10, done: true },
+    ], doneSets: 4,
+  })];
+  const lpPlan = isolatedApi.weeklyAccessoryPlan(legpress, '2026-06-22');
+  assert.strictEqual(lpPlan.weight, 255, 'weight carries over from last week');
+  assert.ok(lpPlan.suggestion.includes('+5kg'), 'machine exercises suggest +5kg at rep cap');
+
+  // ダンベル系は+2kg
+  isolatedStore.logs = [weeklyLog({
+    exerciseKey: 'incline_db_curl', exerciseName: 'インクラインダンベルカール', menuType: `accessory-${curl.slotId}`,
+    weekday: 0, splitKey: 'shoulder_arm', date: '2026-06-14', plannedWeight: 18, plannedReps: 10, plannedSets: 3,
+    sets: [
+      { weight: 18, reps: 10, done: true }, { weight: 18, reps: 10, done: true }, { weight: 18, reps: 10, done: true },
+    ], doneSets: 3,
+  })];
+  assert.ok(isolatedApi.weeklyAccessoryPlan(curl, '2026-06-21').suggestion.includes('+2kg'));
+
+  // レップ未達なら提案なし・重量据え置き
+  isolatedStore.logs = [weeklyLog({
+    exerciseKey: 'legpress', menuType: `accessory-${legpress.slotId}`, weekday: 1, date: '2026-06-15',
+    plannedWeight: 255, plannedSets: 4,
+    sets: [
+      { weight: 255, reps: 10, done: true }, { weight: 255, reps: 8, done: true },
+      { weight: 255, reps: 8, done: true }, { weight: 255, reps: 7, done: true },
+    ], doneSets: 4,
+  })];
+  const miss = isolatedApi.weeklyAccessoryPlan(legpress, '2026-06-22');
+  assert.strictEqual(miss.weight, 255);
+  assert.strictEqual(miss.suggestion, null);
+}
+
+function testWeeklySessionRecordingAndCompat() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+  // 2026-06-17(水) 12:00 UTC に固定
+  isolatedApi.setNowProvider(() => Date.UTC(2026, 5, 17, 12, 0, 0));
+  isolatedStore.settings.weeklyProgram = { anchorDate: '2026-06-14' };
+
+  // 過去(8日ローテ)のログが残っていても週次メニュー生成に影響しない
+  isolatedStore.logs = [big3Log({ date: '2026-05-01', ts: 1 })];
+
+  const html = isolatedApi.renderToday();
+  assert.ok(html.includes('胸の日'), 'today screen should follow the weekday split');
+  assert.ok(html.includes('ベンチプレス'));
+  assert.ok(!html.includes('R4'), 'R4 panels must not appear in weekly mode');
+
+  const session = isolatedApi.getOrCreateTodaySession();
+  assert.strictEqual(session.weekly, true);
+  assert.strictEqual(session.weekday, 3);
+  const main = session.exercises.find(ex => ex.isWeeklyMain);
+  assert.strictEqual(main.plannedWeight, 95);
+
+  // メインを完遂して保存
+  main.sets.forEach(set => { set.done = true; });
+  main.rpe = '8';
+  isolatedApi.finishTodaySession();
+
+  const mainLog = isolatedStore.logs.find(l => l.menuType === 'weekly-main-bench');
+  assert.ok(mainLog, 'weekly main log saved');
+  assert.strictEqual(mainLog.weeklySplit, true);
+  assert.strictEqual(mainLog.block, null, 'new records must not use block');
+  assert.strictEqual(mainLog.rotation, null, 'new records must not use rotation');
+  assert.strictEqual(mainLog.weekday, 3);
+
+  // 推定1RMは週次メインからも記録される（BIG3のみ）
+  assert.ok(isolatedStore.estimatedMaxHistory.some(e => e.logId === mainLog.id), 'weekly main feeds e1RM history');
+  // 旧ローテ提案は作られない
+  assert.strictEqual((isolatedStore.rotationProgressions || []).length, 0);
+
+  // 再保存で重複しない
+  const count = isolatedStore.logs.filter(l => l.menuType === 'weekly-main-bench').length;
+  isolatedApi.finishTodaySession();
+  assert.strictEqual(isolatedStore.logs.filter(l => l.menuType === 'weekly-main-bench').length, count);
+
+  // 翌週の同曜日は+2.5kg提案
+  assert.strictEqual(isolatedApi.weeklyMainPlan('bench', '2026-06-24').weight, 97.5);
+
+  // 過去ログは書き換えられていない
+  const oldLog = isolatedStore.logs.find(l => l.date === '2026-05-01');
+  assert.strictEqual(oldLog.block, 1);
+  assert.strictEqual(oldLog.rotation, 1);
+}
+
+function testWeeklySlotEditing() {
+  const isolated = createHarness();
+  const isolatedApi = isolated.api;
+  const isolatedStore = isolatedApi.getStore();
+
+  const before = isolatedApi.getWeeklySlotsForDay(3).length;
+  const added = isolatedApi.addWeeklySlot(3, { name: 'ケーブルフライ', key: 'cable_fly', plannedSets: 3, reps: 12, weightType: 'cable' });
+  assert.ok(added.slotId);
+  assert.strictEqual(isolatedApi.getWeeklySlotsForDay(3).length, before + 1);
+
+  assert.strictEqual(isolatedApi.updateWeeklySlot(3, added.slotId, { plannedWeight: 20 }), true);
+  assert.strictEqual(isolatedApi.getWeeklySlotsForDay(3).find(s => s.slotId === added.slotId).plannedWeight, 20);
+
+  isolatedApi.deleteWeeklySlot(3, added.slotId);
+  assert.strictEqual(isolatedApi.getWeeklySlotsForDay(3).length, before);
+
+  // 編集後も他の曜日は影響なし
+  assert.strictEqual(isolatedApi.getWeeklySlotsForDay(0).length, 11);
+  assert.ok(isolatedStore.settings.weeklySlots['3'], 'edits persist into settings.weeklySlots');
+}
+
+testWeeklyScheduleAndMenus();
+testWeeklyMainProgression();
+testWeeklyAccessoryProgression();
+testWeeklySessionRecordingAndCompat();
+testWeeklySlotEditing();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
 console.log('test_progression.js: all tests passed');

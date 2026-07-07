@@ -64,6 +64,8 @@ function createHarness() {
 const h = createHarness();
 const api = h.api;
 const store = api.getStore();
+// 既存スイートは旧8日ローテのロジック互換を検証する（週次はtestWeekly*で検証）
+store.settings.programMode = 'legacy';
 
 function testBig3Unaffected() {
   const day1 = api.getDayMenu(1, 1, store.settings);
