@@ -9,12 +9,6 @@ const STORAGE_KEY = 'mll_strength_planner_v1';
 const APP_VERSION = '1.0.0';
 
 const DEFAULT_SETTINGS = {
-  // 'weekly' = 週固定4分割（現行） / 'legacy' = 旧8日ローテ（過去データ表示互換用）
-  programMode: 'weekly',
-  // 週次プログラムの状態（anchorDate = デッド交互判定の基準週・初回利用時に自動設定）
-  weeklyProgram: { anchorDate: null },
-  // 曜日別の補助スロット（null なら DEFAULT_WEEKLY_SLOTS を使用）
-  weeklySlots: null,
   maxes: {
     bench: 115,
     squat: 160,
@@ -165,9 +159,6 @@ const ACCESSORY_PRESET_GROUPS = [
       { key: 'machine_chest_press', name: 'マシンチェストプレス', slotName: '胸補助', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], weightType: 'upper_machine' },
       { key: 'pec_fly', name: 'ペックフライ', slotName: '胸補助', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'upper_machine' },
       { key: 'cable_fly', name: 'ケーブルフライ', slotName: '胸補助', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'], weightType: 'cable' },
-      { key: 'cable_crossover', name: 'ケーブルクロスオーバー', slotName: '胸補助', setsText: '3', plannedSets: 3, reps: '12', targetRpe: '8〜9', categories: ['胸'], fatigueTags: ['低リスク'], weightType: 'cable' },
-      { key: 'incline_press_machine', name: 'インクラインプレスマシン', slotName: '胸補助', setsText: '3', plannedSets: 3, reps: '10', targetRpe: '8〜9', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], weightType: 'upper_machine' },
-      { key: 'decline_press_machine', name: 'デクラインプレスマシン', slotName: '胸補助', setsText: '3', plannedSets: 3, reps: '10', targetRpe: '8〜9', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], weightType: 'upper_machine' },
       { key: 'dips', name: 'ディップス', slotName: '胸・三頭補助', setsText: '2〜3', plannedSets: 3, reps: '6〜10', targetRpe: '8〜9', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'], weightType: 'bodyweight' },
     ],
   },
@@ -181,9 +172,6 @@ const ACCESSORY_PRESET_GROUPS = [
       { key: 'cable_row', name: 'ケーブルロウ', slotName: '背中', setsText: '3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], weightType: 'cable' },
       { key: 'one_hand_db_row', name: 'ワンハンドDBロウ', slotName: '背中', setsText: '2〜3', plannedSets: 3, reps: '8〜12', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['腰負荷', '握力負荷'], weightType: 'dumbbell' },
       { key: 'barbell_row', name: 'バーベルロウ', slotName: '背中', setsText: '2〜3', plannedSets: 3, reps: '6〜10', targetRpe: '8', categories: ['背中', 'ロウ系', 'デッド・腰背部負荷'], fatigueTags: ['腰負荷', '握力負荷'], weightType: 'barbell' },
-      { key: 'dy_row', name: 'DYロウ', slotName: '背中', setsText: '3', plannedSets: 3, reps: '10', targetRpe: '8〜9', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], weightType: 'upper_machine' },
-      { key: 'rotary_pulldown', name: 'ロータリープルダウンマシン', slotName: '背中', setsText: '3', plannedSets: 3, reps: '10', targetRpe: '8〜9', categories: ['背中'], fatigueTags: ['低リスク'], weightType: 'upper_machine' },
-      { key: 'shrug', name: 'シュラッグ', slotName: '背中', setsText: '3', plannedSets: 3, reps: '12', targetRpe: '8〜9', categories: ['背中'], fatigueTags: ['握力負荷'], weightType: 'barbell' },
     ],
   },
   {
@@ -216,8 +204,6 @@ const ACCESSORY_PRESET_GROUPS = [
     presets: [
       { key: 'preacher', name: 'ワンハンドDBプリーチャーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
       { key: 'incline_db_curl', name: 'インクラインダンベルカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
-      { key: 'barbell_curl', name: 'バーベルカール', slotName: '腕', setsText: '3', plannedSets: 3, reps: '10', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'barbell' },
-      { key: 'narrow_bench', name: 'ナローベンチプレス', slotName: '腕', setsText: '3', plannedSets: 3, reps: '8', targetRpe: '8', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肘負荷'], weightType: 'barbell' },
       { key: 'preacher_curl', name: 'プリーチャーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'upper_machine' },
       { key: 'hammer_curl', name: 'ハンマーカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜12', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'dumbbell' },
       { key: 'cable_curl', name: 'ケーブルカール', slotName: '腕', setsText: '2〜3', plannedSets: 3, reps: '10〜15', targetRpe: '8〜9', categories: ['腕'], fatigueTags: ['肘負荷'], weightType: 'cable' },
@@ -506,7 +492,7 @@ function isMaxTestBackoffMenu(menuType = '') {
 
 function isIntensityMainMenu(menuType = '') {
   const type = String(menuType || '');
-  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.includes('floorDead-main') || type.startsWith('weekly-main-') || isMaxTestMenu(type);
+  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.includes('floorDead-main') || isMaxTestMenu(type);
 }
 
 function hasFormIssue(note = '') {
@@ -2000,8 +1986,7 @@ function roundToIncrement(weight, increment = 2.5) {
 }
 
 function todayStr() {
-  // nowProvider 経由にすることで、テストから日付を固定できる
-  const d = new Date(nowMs());
+  const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -2386,450 +2371,14 @@ function nextDay(state) {
   return { day, rotation, block };
 }
 
-// ===== 週固定4分割プログラム =====
-// 日=肩・腕 / 月=脚 / 火=休み / 水=胸 / 木=背中 / 金・土=休み
-// 8日ローテ(block/rotation/day)は新規記録では使用しない（過去ログ表示互換のためロジックは残置）
-
-const WEEKLY_SPLIT = {
-  0: { key: 'shoulder_arm', name: '肩・腕', main: 'shoulderPress' },
-  1: { key: 'legs', name: '脚', main: 'squat' },
-  2: null,
-  3: { key: 'chest', name: '胸', main: 'bench' },
-  4: { key: 'back', name: '背中', main: 'deadAlt' },
-  5: null,
-  6: null,
-};
-
-const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
-const WEEKLY_TRAINING_DAYS = [0, 1, 3, 4];
-const WEEKLY_SPLIT_SELECT_OPTIONS = [
-  { key: 'shoulder_arm', label: '肩・腕' },
-  { key: 'legs', label: '脚' },
-  { key: 'chest', label: '胸' },
-  { key: 'back', label: '背中' },
-  { key: 'rest', label: '休み' },
-];
-
-function weeklySplitWeekday(splitKey) {
-  const found = Object.entries(WEEKLY_SPLIT).find(([, split]) => split?.key === splitKey);
-  return found ? parseInt(found[0], 10) : null;
-}
-
-function weeklySplitByKey(splitKey) {
-  if (!splitKey || splitKey === 'rest') return null;
-  const weekday = weeklySplitWeekday(splitKey);
-  return weekday == null ? null : WEEKLY_SPLIT[weekday];
-}
-
-function weeklySplitName(splitKey) {
-  if (!splitKey || splitKey === 'rest') return '休み';
-  return weeklySplitByKey(splitKey)?.name || splitKey;
-}
-
-function weeklyDisplayLabelFromLog(log = {}) {
-  const splitKey = log.performedSplitKey || log.selectedSplitKey || log.splitKey || log.scheduledSplitKey || null;
-  const weekday = log.performedWeekday ?? log.weekday ?? log.scheduledWeekday;
-  const weekdayLabel = weekday != null ? `${WEEKDAY_LABELS[weekday] || '-'}曜` : '';
-  const splitName = log.splitName || weeklySplitName(splitKey);
-  return [weekdayLabel, splitName].filter(Boolean).join(' / ') || '週固定';
-}
-
-// 初週重量は直近トップの約90%（疲労リセット）
-const WEEKLY_MAIN_LIFTS = {
-  bench: { key: 'bench', name: 'ベンチプレス', startWeight: 95, sets: 3, reps: 5 },
-  squat: { key: 'squat', name: 'スクワット', startWeight: 135, sets: 3, reps: 5 },
-  halfDead: { key: 'halfDead', name: 'ハーフデッド', startWeight: 162.5, sets: 3, reps: 5 },
-  floorDead: { key: 'floorDead', name: '床引きデッド', startWeight: 145, sets: 3, reps: 5 },
-  shoulderPress: { key: 'shoulderPress', name: 'ショルダープレス', startWeight: 55, sets: 3, reps: 5 },
-};
-
-// 曜日別の補助種目プリセット（セット×レップは決め打ち、初期重量は指定があるもののみ）
-const DEFAULT_WEEKLY_SLOTS = {
-  0: [
-    { slotId: 'w0-side-raise', key: 'side_raise', name: 'サイドレイズ', plannedSets: 3, reps: 12, plannedWeight: null, weightType: 'dumbbell', categories: ['肩', '横肩'], fatigueTags: ['低リスク'] },
-    { slotId: 'w0-rear-delt', key: 'rear_delt_fly', name: 'リアデルトフライ', plannedSets: 3, reps: 12, plannedWeight: null, weightType: 'upper_machine', categories: ['肩', '後ろ肩'], fatigueTags: ['低リスク'] },
-    { slotId: 'w0-face-pull', key: 'face_pull', name: 'フェイスプル', plannedSets: 3, reps: 12, plannedWeight: null, weightType: 'cable', categories: ['肩', '後ろ肩'], fatigueTags: ['低リスク'] },
-    { slotId: 'w0-incline-curl', key: 'incline_db_curl', name: 'インクラインダンベルカール', plannedSets: 3, reps: 10, plannedWeight: 18, weightType: 'dumbbell', categories: ['腕'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w0-bb-curl', key: 'barbell_curl', name: 'バーベルカール', plannedSets: 3, reps: 10, plannedWeight: null, weightType: 'barbell', categories: ['腕'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w0-preacher', key: 'preacher', name: 'ワンハンドDBプリーチャーカール', plannedSets: 3, reps: 10, plannedWeight: 16, weightType: 'dumbbell', categories: ['腕'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w0-hammer', key: 'hammer_curl', name: 'ハンマーカール', plannedSets: 3, reps: 10, plannedWeight: null, weightType: 'dumbbell', categories: ['腕'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w0-pressdown', key: 'cable_pressdown', name: 'ケーブルプレスダウン', plannedSets: 3, reps: 12, plannedWeight: 46, weightType: 'cable', categories: ['腕'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w0-lying-ext', key: 'lying_ext', name: 'ライイングエクステンション', plannedSets: 3, reps: 10, plannedWeight: 30, weightType: 'barbell', categories: ['腕'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w0-narrow-bench', key: 'narrow_bench', name: 'ナローベンチプレス', plannedSets: 3, reps: 8, plannedWeight: null, weightType: 'barbell', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w0-dips', key: 'dips', name: 'ディップス', plannedSets: 3, reps: 10, plannedWeight: null, weightType: 'bodyweight', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'] },
-  ],
-  1: [
-    { slotId: 'w1-legpress', key: 'legpress', name: 'レッグプレス', plannedSets: 4, reps: 10, plannedWeight: 250, weightType: 'leg_machine', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'] },
-    { slotId: 'w1-hack', key: 'hack_squat', name: 'ハックスクワット', plannedSets: 4, reps: 10, plannedWeight: 120, weightType: 'leg_machine', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'] },
-    { slotId: 'w1-bulgarian', key: 'bulgarian_split_squat', name: 'ブルガリアンスクワット', plannedSets: 3, reps: 8, plannedWeight: 26, weightType: 'dumbbell', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'] },
-    { slotId: 'w1-leg-ext', key: 'leg_extension', name: 'レッグエクステンション', plannedSets: 3, reps: 12, plannedWeight: null, weightType: 'leg_machine', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'] },
-    { slotId: 'w1-leg-curl', key: 'leg_curl', name: 'レッグカール', plannedSets: 3, reps: 12, plannedWeight: null, weightType: 'leg_machine', categories: ['脚後側', '脚補助'], fatigueTags: ['低リスク'] },
-    { slotId: 'w1-rdl', key: 'romanian_deadlift', name: 'ルーマニアンデッドリフト', plannedSets: 3, reps: 8, plannedWeight: null, weightType: 'barbell', categories: ['脚後側', 'デッド・腰背部負荷'], fatigueTags: ['腰負荷'] },
-    { slotId: 'w1-calf', key: 'calf', name: 'カーフレイズ', plannedSets: 4, reps: 12, plannedWeight: 120, weightType: 'leg_machine', categories: ['カーフ', '脚補助'], fatigueTags: ['低リスク'] },
-  ],
-  3: [
-    { slotId: 'w3-incline-db', key: 'incline_db', name: 'インクラインDBプレス', plannedSets: 4, reps: 10, plannedWeight: 38, weightType: 'dumbbell', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'] },
-    { slotId: 'w3-incline-machine', key: 'incline_press_machine', name: 'インクラインプレスマシン', plannedSets: 3, reps: 10, plannedWeight: 50, weightType: 'upper_machine', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'] },
-    { slotId: 'w3-decline-machine', key: 'decline_press_machine', name: 'デクラインプレスマシン', plannedSets: 3, reps: 10, plannedWeight: 100, weightType: 'upper_machine', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'] },
-    { slotId: 'w3-db-press', key: 'db_press', name: 'ダンベルプレス', plannedSets: 3, reps: 10, plannedWeight: null, weightType: 'dumbbell', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'] },
-    { slotId: 'w3-pec-fly', key: 'pec_fly', name: 'ペックフライ', plannedSets: 3, reps: 10, plannedWeight: 50, weightType: 'upper_machine', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'] },
-    { slotId: 'w3-cable-cross', key: 'cable_crossover', name: 'ケーブルクロスオーバー', plannedSets: 3, reps: 12, plannedWeight: null, weightType: 'cable', categories: ['胸'], fatigueTags: ['低リスク'] },
-    { slotId: 'w3-dips', key: 'dips', name: 'ディップス', plannedSets: 3, reps: 10, plannedWeight: null, weightType: 'bodyweight', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'] },
-  ],
-  4: [
-    { slotId: 'w4-chinning', key: 'chinning', name: 'チンニング', plannedSets: 3, reps: 8, plannedWeight: null, weightType: 'bodyweight', categories: ['背中', 'チンニング系'], fatigueTags: ['肘負荷', '握力負荷'] },
-    { slotId: 'w4-latpulldown', key: 'latpulldown', name: 'ラットプルダウン', plannedSets: 4, reps: 10, plannedWeight: 70, weightType: 'upper_machine', categories: ['背中'], fatigueTags: ['肘負荷'] },
-    { slotId: 'w4-dy-row', key: 'dy_row', name: 'DYロウ', plannedSets: 3, reps: 10, plannedWeight: 100, weightType: 'upper_machine', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'] },
-    { slotId: 'w4-machine-row', key: 'machine_row', name: 'マシンロウ', plannedSets: 3, reps: 10, plannedWeight: 160, weightType: 'upper_machine', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'] },
-    { slotId: 'w4-seated-row', key: 'seated_row', name: 'シーテッドロウ', plannedSets: 3, reps: 10, plannedWeight: 77, weightType: 'upper_machine', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'] },
-    { slotId: 'w4-bent-row', key: 'barbell_row', name: 'ベントオーバーロウ', plannedSets: 3, reps: 8, plannedWeight: null, weightType: 'barbell', categories: ['背中', 'ロウ系', 'デッド・腰背部負荷'], fatigueTags: ['腰負荷'] },
-    { slotId: 'w4-rotary', key: 'rotary_pulldown', name: 'ロータリープルダウンマシン', plannedSets: 3, reps: 10, plannedWeight: 100, weightType: 'upper_machine', categories: ['背中'], fatigueTags: ['低リスク'] },
-    { slotId: 'w4-shrug', key: 'shrug', name: 'シュラッグ', plannedSets: 3, reps: 12, plannedWeight: null, weightType: 'barbell', categories: ['背中'], fatigueTags: ['握力負荷'] },
-  ],
-};
-
-const WEEKLY_REST_SEC = 300; // レストタイマーは全種目デフォルト5分
-
-function isWeeklyMode(settings = store.settings) {
-  return (settings.programMode || 'weekly') === 'weekly';
-}
-
-function weekdayOf(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d.getDay();
-}
-
-function weekStartSunday(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  d.setDate(d.getDate() - d.getDay());
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// 基準週は初回利用時に自動保存（デッド交互の判定基準）
-function ensureWeeklyAnchor(dateStr = todayStr()) {
-  store.settings.weeklyProgram = store.settings.weeklyProgram || {};
-  if (!store.settings.weeklyProgram.anchorDate) {
-    store.settings.weeklyProgram.anchorDate = weekStartSunday(dateStr);
-    saveStore();
-  }
-  return store.settings.weeklyProgram.anchorDate;
-}
-
-function weeklyWeekIndex(dateStr, settings = store.settings) {
-  const anchor = settings.weeklyProgram?.anchorDate || weekStartSunday(dateStr);
-  return Math.max(0, Math.round(dateDiffDays(anchor, weekStartSunday(dateStr)) / 7));
-}
-
-function deadliftVariantFromExerciseKey(key) {
-  if (key === 'floorDead') return 'floor';
-  if (key === 'halfDead') return 'rack';
-  return null;
-}
-
-function getLastPerformedBackDeadliftLog(dateStr) {
-  return [...(store.logs || [])]
-    .filter(l => l.weeklySplit && l.date && l.date < dateStr)
-    .filter(l => (l.performedSplitKey || l.selectedSplitKey || l.splitKey) === 'back')
-    .filter(l => l.exerciseKey === 'halfDead' || l.exerciseKey === 'floorDead' || l.deadliftVariant)
-    .sort((a, b) => (b.date < a.date ? -1 : b.date > a.date ? 1 : (b.ts || 0) - (a.ts || 0)))[0] || null;
-}
-
-// 背中の日のデッドは「実施した背中メニュー」ベースで交互にする。
-// 未実施週では進めず、別曜日に背中を実施した時だけ次回が切り替わる。
-function getBackMainKeyForDate(dateStr, settings = store.settings) {
-  const last = getLastPerformedBackDeadliftLog(dateStr);
-  const variant = last?.deadliftVariant || deadliftVariantFromExerciseKey(last?.exerciseKey);
-  return !variant || variant === 'floor' ? 'halfDead' : 'floorDead';
-}
-
-function getWeeklySlotsForDay(weekday, settings = store.settings) {
-  const stored = settings.weeklySlots?.[String(weekday)];
-  const source = Array.isArray(stored) ? stored : deepClone(DEFAULT_WEEKLY_SLOTS[weekday] || []);
-  return source.map(slot => normalizeAccessorySlot({ targetRpe: '', restType: 'default', ...slot })).filter(Boolean);
-}
-
-function ensureWeeklySlotsEditable(weekday) {
-  store.settings.weeklySlots = store.settings.weeklySlots || {};
-  const key = String(weekday);
-  if (!Array.isArray(store.settings.weeklySlots[key])) {
-    store.settings.weeklySlots[key] = deepClone(DEFAULT_WEEKLY_SLOTS[weekday] || []);
-  }
-  return store.settings.weeklySlots[key];
-}
-
-function updateWeeklySlot(weekday, slotId, updatedSlot) {
-  const list = ensureWeeklySlotsEditable(weekday);
-  const idx = list.findIndex(slot => slot.slotId === slotId);
-  if (idx < 0) return false;
-  list[idx] = normalizeAccessorySlot({ ...list[idx], ...updatedSlot, slotId });
-  return true;
-}
-
-function addWeeklySlot(weekday, slotData = {}) {
-  const list = ensureWeeklySlotsEditable(weekday);
-  const normalized = normalizeAccessorySlot({
-    plannedSets: 3,
-    reps: 10,
-    targetRpe: '',
-    weightType: 'upper_machine',
-    categories: [],
-    fatigueTags: ['低リスク'],
-    restType: 'default',
-    ...slotData,
-    slotId: slotData.slotId && !String(slotData.slotId).startsWith('today_') ? slotData.slotId : `w${weekday}_custom_${uid()}`,
-  });
-  list.push(normalized);
-  return normalized;
-}
-
-function deleteWeeklySlot(weekday, slotId) {
-  const list = ensureWeeklySlotsEditable(weekday);
-  store.settings.weeklySlots[String(weekday)] = list.filter(slot => slot.slotId !== slotId);
-}
-
-function moveWeeklySlot(weekday, slotId, direction) {
-  const list = ensureWeeklySlotsEditable(weekday);
-  const idx = list.findIndex(slot => slot.slotId === slotId);
-  const nextIdx = idx + direction;
-  if (idx < 0 || nextIdx < 0 || nextIdx >= list.length) return;
-  const [slot] = list.splice(idx, 1);
-  list.splice(nextIdx, 0, slot);
-}
-
-// 種目の週次ログ（date より前・新しい順）
-function weeklyLogsForMenuType(menuType, dateStr, limit = 4) {
-  return [...(store.logs || [])]
-    .filter(l => l.weeklySplit && l.menuType === menuType && l.date && l.date < dateStr)
-    .sort((a, b) => (b.date < a.date ? -1 : b.date > a.date ? 1 : (b.ts || 0) - (a.ts || 0)))
-    .slice(0, limit);
-}
-
-// メイン種目の完遂判定（規定セット×レップ）
-function weeklyMainAchieved(log, def) {
-  const okSets = (log?.sets || []).filter(s => s.done && (parseInt(s.reps, 10) || 0) >= def.reps).length;
-  return okSets >= def.sets;
-}
-
-function weeklyLogTopWeight(log) {
-  const weights = (log?.sets || []).filter(s => s.done && s.weight != null).map(s => parseFloat(s.weight)).filter(Number.isFinite);
-  if (weights.length) return Math.max(...weights);
-  const planned = parseFloat(log?.plannedWeight);
-  return Number.isFinite(planned) ? planned : null;
-}
-
-// メイン種目の次回重量提案: 完遂+2.5kg / 未達は同重量 / 同重量2週連続未達で約-10%
-function weeklyMainPlan(liftKey, dateStr, settings = store.settings) {
-  const def = WEEKLY_MAIN_LIFTS[liftKey];
-  if (!def) return null;
-  const inc = parseFloat(settings.increment) || 2.5;
-  const logs = weeklyLogsForMenuType(`weekly-main-${def.key}`, dateStr, 3);
-  const prev = logs[0];
-  if (!prev) {
-    return {
-      weight: def.startWeight,
-      reason: '前回記録なしのため初期重量',
-      shortReason: '初週重量',
-      sourceDate: null,
-      sourceLabel: '記録なし',
-      stalled: false,
-    };
-  }
-  const prevWeight = weeklyLogTopWeight(prev) ?? def.startWeight;
-  if (weeklyMainAchieved(prev, def)) {
-    return {
-      weight: roundToIncrement(prevWeight + 2.5, inc),
-      reason: '前回完遂のため +2.5kg',
-      shortReason: '完遂 +2.5kg',
-      sourceDate: prev.date || null,
-      sourceLabel: prev.date || '記録なし',
-      stalled: false,
-    };
-  }
-  const prev2 = logs[1];
-  const sameWeightTwiceMissed = prev2 && weeklyLogTopWeight(prev2) === prevWeight && !weeklyMainAchieved(prev2, def);
-  if (sameWeightTwiceMissed) {
-    // 停滞: 該当種目のみ約10%下げて再スタート（他種目に影響しない）
-    return {
-      weight: roundToIncrement(prevWeight * 0.9, inc),
-      reason: '2週連続未達のため約10%減で再スタート',
-      shortReason: '2週未達 -10%',
-      sourceDate: prev.date || null,
-      sourceLabel: prev.date || '記録なし',
-      stalled: true,
-    };
-  }
-  return {
-    weight: prevWeight,
-    reason: '未達のため同重量継続',
-    shortReason: '未達 同重量',
-    sourceDate: prev.date || null,
-    sourceLabel: prev.date || '記録なし',
-    stalled: false,
-  };
-}
-
-// 補助種目: 前週の使用重量を引き継ぎ。全セットで規定レップ到達なら重量アップ提案
-function weeklyAccessoryIncrement(weightType) {
-  return weightType === 'dumbbell' || weightType === 'bodyweight' ? 2 : 5;
-}
-
-function weeklyAccessoryHitTop(log, slot) {
-  const targetReps = parseInt(slot.reps, 10) || parseRangeMax(slot.reps, 10);
-  const doneSets = (log?.sets || []).filter(s => s.done);
-  return doneSets.length >= (parseInt(slot.plannedSets, 10) || 1)
-    && doneSets.every(s => (parseInt(s.reps, 10) || 0) >= targetReps);
-}
-
-function weeklyAccessoryPlan(slot, dateStr) {
-  const logs = weeklyLogsForMenuType(`accessory-${slot.slotId}`, dateStr, 3);
-  const prev = logs[0];
-  const baseWeight = prev ? (weeklyLogTopWeight(prev) ?? slot.plannedWeight ?? null) : (slot.plannedWeight ?? null);
-  if (!prev) return { weight: baseWeight, suggestion: null };
-  const targetReps = parseInt(slot.reps, 10) || parseRangeMax(slot.reps, 10);
-  const hitTop = weeklyAccessoryHitTop(prev, slot);
-  if (hitTop && baseWeight != null) {
-    const step = weeklyAccessoryIncrement(slot.weightType);
-    return { weight: baseWeight, suggestion: `全セット${targetReps}回達成 → +${step}kg（${fmtW(baseWeight + step)}kg）` };
-  }
-  const prev2 = logs[1];
-  if (prev2 && baseWeight != null && weeklyLogTopWeight(prev2) === baseWeight
-      && !hitTop && !weeklyAccessoryHitTop(prev2, slot)) {
-    return { weight: baseWeight, suggestion: `停滞 → 約-10%（${fmtW(roundToIncrement(baseWeight * 0.9, 2.5))}kg）で再スタート` };
-  }
-  return { weight: baseWeight, suggestion: null };
-}
-
-// 週次メニュー生成（block/rotationに依存しない）
-function buildWeeklyMenu(dateStr, settings = store.settings, options = {}) {
-  const scheduledWd = weekdayOf(dateStr);
-  const scheduledSplit = WEEKLY_SPLIT[scheduledWd] || null;
-  const requestedSplitKey = options.selectedSplitKey != null ? options.selectedSplitKey : scheduledSplit?.key || 'rest';
-  const selectedSplitKey = requestedSplitKey || 'rest';
-  const performedSplit = weeklySplitByKey(selectedSplitKey);
-  const performedWd = performedSplit ? weeklySplitWeekday(performedSplit.key) : scheduledWd;
-  const label = `${fmtDateShort(dateStr)}(${WEEKDAY_LABELS[scheduledWd] ?? '-'})`;
-  const baseMeta = {
-    weekly: true,
-    date: dateStr,
-    scheduledDate: dateStr,
-    performedDate: dateStr,
-    scheduledWeekday: scheduledWd,
-    performedWeekday: scheduledWd,
-    scheduledSplitKey: scheduledSplit?.key || 'rest',
-    selectedSplitKey,
-    performedSplitKey: performedSplit?.key || 'rest',
-    splitName: performedSplit?.name || '休み',
-  };
-  if (!performedSplit) {
-    return {
-      ...baseMeta,
-      weekday: performedWd,
-      splitKey: null,
-      name: selectedSplitKey === 'rest' ? '休み' : '休み',
-      label,
-      isRest: true,
-      exercises: [],
-      skippedRestExercises: [],
-      activeExerciseRests: [],
-    };
-  }
-  const mainKey = performedSplit.main === 'deadAlt' ? getBackMainKeyForDate(dateStr, settings) : performedSplit.main;
-  const def = WEEKLY_MAIN_LIFTS[mainKey];
-  const plan = weeklyMainPlan(mainKey, dateStr, settings);
-  const mainExBase = {
-    key: def.key,
-    name: def.name,
-    menuType: `weekly-main-${def.key}`,
-    plannedWeight: plan.weight,
-    plannedReps: def.reps,
-    plannedSets: def.sets,
-    restSec: WEEKLY_REST_SEC,
-    isBig3: isBig3Key(def.key),
-    isWeeklyMain: true,
-    weeklyReason: plan.reason,
-    weeklySourceDate: plan.sourceDate,
-    weeklySourceLabel: plan.sourceLabel,
-    weeklyStalled: plan.stalled,
-    deadliftVariant: deadliftVariantFromExerciseKey(def.key),
-  };
-  const [mainEx] = applyMainSetOverridesToMenu([mainExBase], `Weekly-${performedSplit.key}`, settings);
-  const accessories = getWeeklySlotsForDay(performedWd, settings).map(slot => {
-    const accPlan = weeklyAccessoryPlan(slot, dateStr);
-    const ex = accessoryExerciseFromSlot({ ...slot, plannedWeight: accPlan.weight }, settings, false, performedWd);
-    ex.restSec = WEEKLY_REST_SEC;
-    ex.weeklySuggestion = accPlan.suggestion;
-    return ex;
-  });
-  const restApplied = applyExerciseRestSettingsToExercises([mainEx, ...accessories], dateStr, settings);
-  return {
-    ...baseMeta,
-    weekday: performedWd,
-    splitKey: performedSplit.key,
-    name: `${performedSplit.name}の日`,
-    label,
-    isRest: false,
-    mainLiftKey: mainKey,
-    exercises: restApplied.exercises,
-    skippedRestExercises: restApplied.skipped,
-    activeExerciseRests: restApplied.active,
-  };
-}
 // 今日のセッションキー
 function todaySessionKey() {
-  if (isWeeklyMode()) return `${todayStr()}-weekly`;
   return `${todayStr()}-b${store.currentState.block}-r${store.currentState.rotation}-d${store.currentState.day}`;
 }
 
 // 今日のセッション取得 or 作成
 function getOrCreateTodaySession() {
   const key = todaySessionKey();
-  if (isWeeklyMode()) {
-    if (!store.daySessions[key]) {
-      ensureWeeklyAnchor(todayStr());
-      const menu = buildWeeklyMenu(todayStr(), store.settings);
-      store.daySessions[key] = {
-        key,
-        weekly: true,
-        date: menu.performedDate || todayStr(),
-        scheduledDate: menu.scheduledDate || todayStr(),
-        performedDate: menu.performedDate || todayStr(),
-        scheduledWeekday: menu.scheduledWeekday,
-        performedWeekday: menu.performedWeekday,
-        scheduledSplitKey: menu.scheduledSplitKey,
-        selectedSplitKey: menu.selectedSplitKey,
-        performedSplitKey: menu.performedSplitKey,
-        splitName: menu.splitName,
-        weekday: menu.weekday,
-        splitKey: menu.splitKey,
-        mainLiftKey: menu.mainLiftKey || null,
-        isRest: menu.isRest,
-        dayName: menu.name,
-        label: menu.label,
-        activeExerciseRests: menu.activeExerciseRests || [],
-        skippedRestExercises: menu.skippedRestExercises || [],
-        exercises: menu.exercises.map(ex => ({
-          ...ex,
-          sets: Array.from({ length: typeof ex.plannedSets === 'number' ? ex.plannedSets : 3 }, () => ({
-            weight: ex.plannedWeight,
-            reps: typeof ex.plannedReps === 'number' ? ex.plannedReps : '',
-            done: false,
-          })),
-          rpe: '未入力',
-          pains: [],
-          note: '',
-          completed: false,
-        })),
-        completed: false,
-        ts: Date.now(),
-      };
-      saveStore();
-    }
-    return store.daySessions[key];
-  }
   if (!store.daySessions[key]) {
     const menu = getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
     store.daySessions[key] = {
@@ -2922,15 +2471,9 @@ function applyMainSetEdit(ex, values, options = {}) {
   return { ok: true, removingRecordedSets };
 }
 
-function mainSetOverrideScope(session) {
-  if (session?.weekly) return `Weekly-${session.performedSplitKey || session.selectedSplitKey || session.splitKey || 'rest'}`;
-  return `Day${session?.day}`;
-}
-
 function mainSetOverrideKey(day, ex) {
   if (!ex?.isBig3) return null;
-  const scope = String(day).startsWith('Weekly-') ? day : `Day${day}`;
-  return `${scope}-${ex.key}-${ex.menuType}`;
+  return `Day${day}-${ex.key}-${ex.menuType}`;
 }
 
 function saveMainSetOverride(day, ex) {
@@ -3039,9 +2582,7 @@ function undoLastSetRecord(session, exIdx) {
 function recalculateTodaySession() {
   const key = todaySessionKey();
   const oldSession = store.daySessions[key];
-  const menu = isWeeklyMode()
-    ? buildWeeklyMenu(todayStr(), store.settings, { selectedSplitKey: oldSession?.selectedSplitKey ?? oldSession?.performedSplitKey ?? oldSession?.splitKey ?? undefined })
-    : getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
+  const menu = getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
 
   if (!oldSession) {
     getOrCreateTodaySession();
@@ -3056,7 +2597,7 @@ function recalculateTodaySession() {
   //   - 実施済みセットは絶対に保持
   //   - 未実施セットは新メニューの予定セット数に合わせて再構築
   //   - 実施済み件数 > 新予定セット数 となる場合でも、実施済みセットは削除しない（実施件数優先）
-  if (!menu.weekly && menu.isAdjustmentRotation && getDeloadMaxTestLiftForDay(menu.day)) {
+  if (menu.isAdjustmentRotation && getDeloadMaxTestLiftForDay(menu.day)) {
     const lift = getDeloadMaxTestLiftForDay(menu.day);
     if (oldSession.maxTestSkipped) {
       const nonTest = buildR4NonTestExercise(lift.key, store.settings);
@@ -3129,27 +2670,10 @@ function recalculateTodaySession() {
   );
   oldSession.exercises = [...newExercises, ...todayOnlyExtras];
   oldSession.dayName = menu.name;
-  if (menu.weekly) {
-    oldSession.weekly = true;
-    oldSession.date = menu.performedDate || oldSession.date || todayStr();
-    oldSession.scheduledDate = menu.scheduledDate || oldSession.scheduledDate || todayStr();
-    oldSession.performedDate = menu.performedDate || oldSession.performedDate || oldSession.date;
-    oldSession.scheduledWeekday = menu.scheduledWeekday;
-    oldSession.performedWeekday = menu.performedWeekday;
-    oldSession.scheduledSplitKey = menu.scheduledSplitKey;
-    oldSession.selectedSplitKey = menu.selectedSplitKey;
-    oldSession.performedSplitKey = menu.performedSplitKey;
-    oldSession.splitName = menu.splitName;
-    oldSession.weekday = menu.weekday;
-    oldSession.splitKey = menu.splitKey;
-    oldSession.mainLiftKey = menu.mainLiftKey || null;
-    oldSession.label = menu.label;
-  } else {
-    oldSession.isDeload = menu.isDeload;
-    oldSession.isAdjustmentRotation = menu.isAdjustmentRotation;
-    oldSession.r4AdjustmentMode = menu.r4AdjustmentMode;
-    oldSession.maxTestMode = oldSession.maxTestSkipped ? 'normal' : (oldSession.maxTestMode === 'normal' ? 'normal' : 'trueOneRm');
-  }
+  oldSession.isDeload = menu.isDeload;
+  oldSession.isAdjustmentRotation = menu.isAdjustmentRotation;
+  oldSession.r4AdjustmentMode = menu.r4AdjustmentMode;
+  oldSession.maxTestMode = oldSession.maxTestSkipped ? 'normal' : (oldSession.maxTestMode === 'normal' ? 'normal' : 'trueOneRm');
   oldSession.isRest = menu.isRest;
   oldSession.activeExerciseRests = menu.activeExerciseRests || [];
   oldSession.skippedRestExercises = menu.skippedRestExercises || [];
@@ -3180,16 +2704,9 @@ function render() {
 }
 
 function updateHeader() {
+  const s = store.currentState;
   const el = document.getElementById('headerStatus');
   if (!el) return;
-  if (isWeeklyMode()) {
-    const date = todayStr();
-    const wd = weekdayOf(date);
-    const split = WEEKLY_SPLIT[wd];
-    el.innerHTML = `${fmtDateShort(date)}(${WEEKDAY_LABELS[wd] ?? '-'}) ・ ${split ? split.name : '休み'}`;
-    return;
-  }
-  const s = store.currentState;
   el.innerHTML =
     `B${s.block} / <span class="${Number(s.rotation) === 4 ? 'pos-r4' : ''}">R${s.rotation}</span> / Day${s.day}`;
 }
@@ -3408,20 +2925,10 @@ function renderActiveExerciseCard(ex, exIdx) {
     </div>
   ` : '';
 
-  const rotationProgression = (!session?.weekly && ex.isBig3) ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
-  let progressionNote = ex.isBig3 && rotationProgression?.status === 'suggested' && rotationProgression.delta
+  const rotationProgression = ex.isBig3 ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
+  const progressionNote = ex.isBig3 && rotationProgression?.status === 'suggested' && rotationProgression.delta
     ? `<div class="accessory-suggestion"><span class="suggestion-label">次回候補</span><span>${rotationProgression.message}</span><button class="btn-secondary btn-small" data-action="adoptRotation" data-progression-id="${rotationProgression.id}">採用</button></div>`
     : '';
-  // 週次モードの漸進・停滞提案
-  if (session?.weekly) {
-    if (ex.isWeeklyMain && ex.weeklyReason && ex.weeklyReason !== '初週') {
-      progressionNote = `<div class="accessory-suggestion"><span class="suggestion-label">${ex.weeklyStalled ? '停滞' : '漸進'}</span><span>${ex.weeklyReason}</span></div>`;
-    } else if (ex.weeklySuggestion) {
-      progressionNote = `<div class="accessory-suggestion"><span class="suggestion-label">次回</span><span>${ex.weeklySuggestion}</span></div>`;
-    } else {
-      progressionNote = '';
-    }
-  }
 
   const painChips = PAIN_OPTIONS.map(p => `
     <span class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" data-ex="${exIdx}" data-pain="${p}">${p}</span>
@@ -3490,17 +2997,6 @@ function renderToday() {
   const s = store.currentState;
 
   if (session.isRest) {
-    if (session.weekly) {
-      return `
-        <h2 class="screen-title">今日</h2>
-        ${renderWeeklyMenuSelector(session)}
-        <div class="rest-day-banner">
-          <div class="big">今日は休み</div>
-          <div class="muted">${session.label || ''} ・ 休息日</div>
-        </div>
-        <button class="btn-primary" id="btnFinishSession" style="min-height:56px;">休みとして保存</button>
-      `;
-    }
     return `
       <h2 class="screen-title">今日</h2>
       <div class="rest-day-banner">
@@ -3565,11 +3061,10 @@ function renderToday() {
   return `
     <div class="row between" style="margin:2px 0 12px;">
       <h2 class="screen-title" style="margin:0;">今日</h2>
-      <span class="muted">${session.weekly ? `${session.label} ・ ${session.dayName}` : session.dayName}</span>
+      <span class="muted">${session.dayName}</span>
     </div>
-    ${session.weekly ? renderWeeklyMenuSelector(session) : ''}
-    ${session.weekly ? '' : renderR4AdjustmentPanel(session)}
-    ${session.weekly ? '' : renderDeloadMaxTestPanel(session)}
+    ${renderR4AdjustmentPanel(session)}
+    ${renderDeloadMaxTestPanel(session)}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
     ${nextCard}
     ${completedCards}
@@ -3581,50 +3076,9 @@ function renderToday() {
   `;
 }
 
-function renderWeeklyMenuSelector(session) {
-  if (!session?.weekly) return '';
-  const current = session.selectedSplitKey || session.performedSplitKey || session.splitKey || 'rest';
-  const scheduled = session.scheduledSplitKey || 'rest';
-  return `
-    <div class="card flat weekly-menu-switch">
-      <div class="row between" style="align-items:center;gap:8px;">
-        <div>
-          <div class="sec-label">実施メニュー</div>
-          <div class="muted" style="font-size:12px;">予定: ${weeklySplitName(scheduled)}</div>
-        </div>
-        ${current !== scheduled ? '<span class="chip chip-outline">予定変更</span>' : ''}
-      </div>
-      <div class="seg weekly-menu-seg mt-8">
-        ${WEEKLY_SPLIT_SELECT_OPTIONS.map(opt => `<button class="seg-opt ${current === opt.key ? 'on' : ''}" data-weekly-menu="${opt.key}">${opt.label}</button>`).join('')}
-      </div>
-    </div>
-  `;
-}
-
-function selectWeeklyTodayMenu(splitKey) {
-  const session = store.daySessions[todaySessionKey()] || getOrCreateTodaySession();
-  if (!session?.weekly) return false;
-  const nextKey = splitKey || 'rest';
-  const current = session.selectedSplitKey || session.performedSplitKey || session.splitKey || 'rest';
-  if (nextKey === current) return true;
-  const hasRecords = (session.exercises || []).some(ex => (ex.sets || []).some(s => s.done || s.skipped));
-  if (hasRecords && !confirm('入力済みの種目があります。実施メニューを変更しますか？')) return false;
-  session.selectedSplitKey = nextKey;
-  session.performedSplitKey = nextKey === 'rest' ? 'rest' : nextKey;
-  session.splitKey = nextKey === 'rest' ? null : nextKey;
-  recalculateTodaySession();
-  saveStore();
-  return true;
-}
 
 function afterToday() {
   const session = store.daySessions[todaySessionKey()];
-
-  document.querySelectorAll('button[data-weekly-menu]').forEach(btn => {
-    btn.onclick = () => {
-      if (selectWeeklyTodayMenu(btn.dataset.weeklyMenu)) render();
-    };
-  });
 
   // メモ入力 → 保存
   document.querySelectorAll('textarea[data-field]').forEach(el => {
@@ -3886,26 +3340,13 @@ function openAdjustModal(exIdx) {
           sets: ex.plannedSets,
         };
         // スロットに明示重量がある場合はスロット側も更新（次回生成で確実に反映）
-        if (ex.slotId) {
-          if (session.weekly) updateWeeklySlot(session.weekday, ex.slotId, { plannedWeight: newW });
-          else updateAccessorySlot(session.day, ex.slotId, { plannedWeight: newW });
-        }
+        if (ex.slotId) updateAccessorySlot(session.day, ex.slotId, { plannedWeight: newW });
         ex.plannedWeight = newW;
         ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
         saveStore();
         closeModal();
         render();
         showToast('補助重量を今後にも反映しました');
-        return;
-      }
-      if (session.weekly) {
-        ex.plannedWeight = newW;
-        ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
-        saveMainSetOverride(mainSetOverrideScope(session), ex);
-        saveStore();
-        closeModal();
-        render();
-        showToast('週固定メイン重量を今後にも反映しました');
         return;
       }
       const diff = newW - ex.plannedWeight;
@@ -4095,7 +3536,7 @@ function openMainSetEditModal(exIdx) {
       }
       if (applyFuture) {
         if (!confirm('同じDay・種目・枠の今後の予定にも反映します。過去ログは変更しません。')) return;
-        saveMainSetOverride(mainSetOverrideScope(session), ex);
+        saveMainSetOverride(session.day, ex);
       }
       saveStore();
       closeModal();
@@ -4112,7 +3553,7 @@ function openAccessoryTodayModal(exIdx) {
   const ex = session.exercises[exIdx];
   if (!ex?.isAccessory) return;
   openModal('補助種目編集', `
-    <div class="muted mb-8">${ex.slotName || '補助スロット'} / ${session.weekly ? weeklySplitName(session.performedSplitKey || session.splitKey) : `Day${session.day}`}</div>
+    <div class="muted mb-8">${ex.slotName || '補助スロット'} / Day${session.day}</div>
     ${slotFormHtml('accToday', ex)}
     <div class="btn-row">
       <button class="btn-secondary" id="acc-today-only">今日だけ変更</button>
@@ -4132,16 +3573,11 @@ function openAccessoryTodayModal(exIdx) {
     };
     document.getElementById('acc-save-future').onclick = () => {
       const updated = readSlotForm('accToday', ex);
-      if (!confirmAccessoryChange(`この変更を今後の同じ${session.weekly ? '曜日' : 'Day'}にも反映しますか？`, updated, session.weekly ? session.weekday : session.day)) return;
+      if (!confirmAccessoryChange('この変更を今後の同じDayにも反映しますか？', updated, session.day)) return;
       // 既存スロットを更新。未登録（今日だけ追加した種目など）はスロットとして新規保存する
-      // 週次モードは曜日別スロットへ保存する
-      const persisted = session.weekly
-        ? updateWeeklySlot(session.weekday, ex.slotId, updated)
-        : updateAccessorySlot(session.day, ex.slotId, updated);
+      const persisted = updateAccessorySlot(session.day, ex.slotId, updated);
       if (!persisted) {
-        const savedSlot = session.weekly
-          ? addWeeklySlot(session.weekday, { ...updated, slotId: ex.slotId })
-          : addAccessorySlot(session.day, updated.slotName, { ...updated, slotId: ex.slotId });
+        const savedSlot = addAccessorySlot(session.day, updated.slotName, { ...updated, slotId: ex.slotId });
         if (savedSlot?.slotId) updated.slotId = savedSlot.slotId;
       }
       applySlotToExercise(ex, updated);
@@ -4174,7 +3610,7 @@ function openAccessoryTodayAddModal() {
   const session = store.daySessions[todaySessionKey()];
   if (!session || session.isRest) return;
   const base = normalizeAccessorySlot({
-    slotId: `today_${session.weekly ? session.weekday : session.day}_${uid()}`,
+    slotId: `today_${session.day}_${uid()}`,
     slotName: '補助スロット',
     key: `custom_${uid()}`,
     name: '新規補助種目',
@@ -4188,7 +3624,7 @@ function openAccessoryTodayAddModal() {
     restType: 'default',
   });
   openModal('補助種目を追加', `
-    <div class="muted mb-8">${session.weekly ? weeklySplitName(session.performedSplitKey || session.splitKey) : `Day${session.day}`} に追加します。今日だけ、または今後にも反映を選べます。</div>
+    <div class="muted mb-8">Day${session.day} に追加します。今日だけ、または今後にも反映を選べます。</div>
     ${slotFormHtml('accAddToday', { ...base, plannedReps: base.reps })}
     <div class="btn-row">
       <button class="btn-secondary" id="acc-add-today-only">今日だけ追加</button>
@@ -4199,7 +3635,7 @@ function openAccessoryTodayAddModal() {
     bindAccessoryPresetSelect('accAddToday');
     document.getElementById('acc-add-today-only').onclick = () => {
       const updated = readSlotForm('accAddToday', base);
-      const ex = accessoryExerciseFromSlot(updated, store.settings, session.isDeload, session.weekly ? session.weekday : session.day);
+      const ex = accessoryExerciseFromSlot(updated, store.settings, session.isDeload, session.day);
       ex.sets = Array.from({ length: ex.plannedSets }, () => ({ weight: ex.plannedWeight, reps: '', done: false }));
       ex.rpe = '未入力';
       ex.pains = ['なし'];
@@ -4213,12 +3649,9 @@ function openAccessoryTodayAddModal() {
     };
     document.getElementById('acc-add-future').onclick = () => {
       const updated = readSlotForm('accAddToday', base);
-      if (!confirmAccessoryChange('この補助種目を今後の同じ曜日にも追加しますか？', updated, session.weekly ? session.weekday : session.day)) return;
-      const savedSlot = session.weekly
-        ? addWeeklySlot(session.weekday, updated)
-        : addAccessorySlot(session.day, updated.slotName, updated);
-      const ex = accessoryExerciseFromSlot(savedSlot, store.settings, !!session.isDeload, session.weekly ? session.weekday : session.day);
-      if (session.weekly) ex.restSec = WEEKLY_REST_SEC;
+      if (!confirmAccessoryChange('この補助種目を今後の同じDayにも追加しますか？', updated, session.day)) return;
+      const savedSlot = addAccessorySlot(session.day, updated.slotName, updated);
+      const ex = accessoryExerciseFromSlot(savedSlot, store.settings, session.isDeload, session.day);
       ex.sets = Array.from({ length: ex.plannedSets }, () => ({ weight: ex.plannedWeight, reps: '', done: false }));
       ex.rpe = '未入力';
       ex.pains = ['なし'];
@@ -4456,11 +3889,6 @@ function bindExerciseRestSettingsActions() {
 
 function findSessionExerciseLogIndex(session, ex) {
   if (!session || !ex) return -1;
-  if (session.weekly) {
-    return (store.logs || []).findIndex(l =>
-      l.weeklySplit && l.date === session.date && l.exerciseKey === ex.key && l.menuType === ex.menuType
-    );
-  }
   return (store.logs || []).findIndex(l =>
     l.date === session.date && Number(l.day) === Number(session.day) &&
     Number(l.block) === Number(session.block) && Number(l.rotation) === Number(session.rotation) &&
@@ -4471,29 +3899,16 @@ function findSessionExerciseLogIndex(session, ex) {
 function buildExerciseLogFromSession(session, ex, existing = null) {
   return {
     id: existing?.id || uid(),
-    date: session.performedDate || session.date,
-    // 週次モードでは day に実施曜日(0-6)を入れ、block/rotation は使わない
-    day: session.weekly ? session.weekday : session.day,
-    block: session.weekly ? null : session.block,
-    rotation: session.weekly ? null : session.rotation,
-    weeklySplit: !!session.weekly,
-    weekday: session.weekly ? session.weekday : undefined,
-    scheduledDate: session.weekly ? (session.scheduledDate || session.date || null) : undefined,
-    performedDate: session.weekly ? (session.performedDate || session.date || null) : undefined,
-    scheduledWeekday: session.weekly ? (session.scheduledWeekday ?? weekdayOf(session.scheduledDate || session.date)) : undefined,
-    performedWeekday: session.weekly ? (session.performedWeekday ?? weekdayOf(session.performedDate || session.date)) : undefined,
-    scheduledSplitKey: session.weekly ? (session.scheduledSplitKey || 'rest') : undefined,
-    performedSplitKey: session.weekly ? (session.performedSplitKey || session.splitKey || 'rest') : undefined,
-    selectedSplitKey: session.weekly ? (session.selectedSplitKey || session.performedSplitKey || session.splitKey || 'rest') : undefined,
-    splitKey: session.weekly ? (session.splitKey || session.performedSplitKey || null) : undefined,
-    splitName: session.weekly ? (session.splitName || weeklySplitName(session.performedSplitKey || session.splitKey)) : undefined,
+    date: session.date,
+    day: session.day,
+    block: session.block,
+    rotation: session.rotation,
     isDeload: session.isDeload,
     isAdjustmentRotation: !!session.isAdjustmentRotation,
     r4AdjustmentMode: session.r4AdjustmentMode || null,
     exerciseKey: ex.key,
     exerciseName: ex.name,
     menuType: ex.menuType,
-    deadliftVariant: ex.deadliftVariant || deadliftVariantFromExerciseKey(ex.key) || undefined,
     plannedWeight: ex.plannedWeight,
     plannedReps: ex.plannedReps,
     plannedSets: ex.plannedSets,
@@ -4531,44 +3946,9 @@ function upsertExerciseLogFromSession(session, ex, allowCreate = false) {
   if (isBig3Key(savedLog.exerciseKey)) {
     const entry = upsertEstimatedMaxFromLog(savedLog);
     if (isMaxTestMenu(savedLog.menuType)) upsertMaxTestResultFromLog(savedLog, entry);
-    // 旧8日ローテの+2.5kg提案は週次モードでは使わない（週次は weeklyMainPlan が担当）
-    if (!session.weekly) upsertRotationProgressionFromLog(savedLog);
+    upsertRotationProgressionFromLog(savedLog);
   }
   return savedLog;
-}
-
-function weeklyLogMetadataFromSession(session) {
-  if (!session?.weekly) return {};
-  const performedDate = session.performedDate || session.date || todayStr();
-  const scheduledDate = session.scheduledDate || session.date || performedDate;
-  const scheduledWeekday = session.scheduledWeekday ?? weekdayOf(scheduledDate);
-  const performedSplitKey = session.performedSplitKey || session.selectedSplitKey || session.splitKey || 'rest';
-  const selectedSplitKey = session.selectedSplitKey || performedSplitKey;
-  const performedWeekday = session.performedWeekday ?? weekdayOf(performedDate);
-  return {
-    weeklySplit: true,
-    date: performedDate,
-    day: performedWeekday,
-    block: null,
-    rotation: null,
-    weekday: performedWeekday,
-    scheduledDate,
-    performedDate,
-    scheduledWeekday,
-    performedWeekday: weekdayOf(performedDate),
-    scheduledSplitKey: session.scheduledSplitKey || 'rest',
-    performedSplitKey,
-    selectedSplitKey,
-    splitKey: performedSplitKey === 'rest' ? null : performedSplitKey,
-    splitName: session.splitName || weeklySplitName(performedSplitKey),
-  };
-}
-
-function sessionLogIdentityMatches(a, b) {
-  if (b.weeklySplit) {
-    return a.weeklySplit && a.date === b.date && a.exerciseKey === b.exerciseKey && a.menuType === b.menuType;
-  }
-  return a.date === b.date && a.day === b.day && a.block === b.block && a.rotation === b.rotation && a.exerciseKey === b.exerciseKey && a.menuType === b.menuType;
 }
 
 function finishTodaySession() {
@@ -4588,12 +3968,10 @@ function finishTodaySession() {
   (session.skippedRestExercises || []).forEach(ex => {
     const log = {
       id: uid(),
-      ...(session.weekly ? weeklyLogMetadataFromSession(session) : {
-        date: session.date,
-        day: session.day,
-        block: session.block,
-        rotation: session.rotation,
-      }),
+      date: session.date,
+      day: session.day,
+      block: session.block,
+      rotation: session.rotation,
       isDeload: session.isDeload,
       isAdjustmentRotation: !!session.isAdjustmentRotation,
       r4AdjustmentMode: session.r4AdjustmentMode || null,
@@ -4623,7 +4001,10 @@ function finishTodaySession() {
       restEndDate: ex.restEndDate,
       ts: Date.now(),
     };
-    const existIdx = store.logs.findIndex(l => sessionLogIdentityMatches(l, log));
+    const existIdx = store.logs.findIndex(l =>
+      l.date === log.date && l.day === log.day && l.block === log.block &&
+      l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
+    );
     if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
     else store.logs.push(log);
   });
@@ -4631,12 +4012,10 @@ function finishTodaySession() {
   (session.deletedAccessories || []).forEach(deleted => {
     const log = {
       id: uid(),
-      ...(session.weekly ? weeklyLogMetadataFromSession(session) : {
-        date: session.date,
-        day: session.day,
-        block: session.block,
-        rotation: session.rotation,
-      }),
+      date: session.date,
+      day: session.day,
+      block: session.block,
+      rotation: session.rotation,
       isDeload: session.isDeload,
       exerciseKey: deleted.exerciseKey,
       exerciseName: deleted.exerciseName,
@@ -4659,7 +4038,10 @@ function finishTodaySession() {
       manualAdjusted: false,
       ts: deleted.ts || Date.now(),
     };
-    const existIdx = store.logs.findIndex(l => sessionLogIdentityMatches(l, log));
+    const existIdx = store.logs.findIndex(l =>
+      l.date === log.date && l.day === log.day && l.block === log.block &&
+      l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
+    );
     if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
     else store.logs.push(log);
   });
@@ -4668,9 +4050,6 @@ function finishTodaySession() {
   store.currentState.lastTrainingDate = session.date;
   saveStore();
   showToast('お疲れさま！記録を保存しました');
-
-  // 週次モードは日付で自動進行するため、Day送り・次ブロック提案は不要
-  if (session.weekly) return;
 
   // 4ローテD8（最後／休み）終了時のみ、次ブロック提案を表示
   // R4D7完了時は通常通りD8（休み）へ進める
@@ -4977,183 +4356,7 @@ function setupRestTimerLifecycleEvents() {
 }
 
 // ===== ブロック画面 =====
-// ===== 計画（週固定4分割） =====
-let weeklyPlanDay = null; // 編集対象の曜日（0/1/3/4）
-
-function currentWeekDateFor(weekday, baseDate = todayStr()) {
-  const start = weekStartSunday(baseDate);
-  const d = new Date(`${start}T00:00:00`);
-  d.setDate(d.getDate() + weekday);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function renderWeeklyPlan() {
-  const today = todayStr();
-  const todayWd = weekdayOf(today);
-
-  const scheduleRows = [0, 1, 2, 3, 4, 5, 6].map(wd => {
-    const split = WEEKLY_SPLIT[wd];
-    const date = currentWeekDateFor(wd, today);
-    if (!split) {
-      return `
-        <div class="weekly-schedule-row pause-row ${wd === todayWd ? 'today' : ''}">
-          <div class="weekly-day"><span>${WEEKDAY_LABELS[wd]}</span><small>${fmtDateShort(date)}</small></div>
-          <div class="weekly-main"><strong>休み</strong><span class="muted">記録する場合は今日画面でメニュー変更</span></div>
-        </div>
-      `;
-    }
-    const mainKey = split.main === 'deadAlt' ? getBackMainKeyForDate(date, store.settings) : split.main;
-    const def = WEEKLY_MAIN_LIFTS[mainKey];
-    const plan = weeklyMainPlan(mainKey, date, store.settings);
-    return `
-      <div class="weekly-schedule-row ${wd === todayWd ? 'today' : ''}">
-        <div class="weekly-day"><span>${WEEKDAY_LABELS[wd]}</span><small>${fmtDateShort(date)}</small></div>
-        <div class="weekly-main">
-          <strong>${split.name}</strong>
-          <span>${def.name} ${fmtW(plan.weight)}kg × ${def.reps} × ${def.sets}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  const nextDate = addDaysStr(today, 1); // 当日ログ保存後も次回提案へ反映するため翌日基準
-  const mainRows = Object.values(WEEKLY_MAIN_LIFTS).map(def => {
-    const plan = weeklyMainPlan(def.key, nextDate, store.settings);
-    const source = plan.sourceDate ? fmtDateShort(plan.sourceDate) : '記録なし';
-    return `
-      <div class="weekly-proposal-row ${plan.stalled ? 'stalled' : ''}">
-        <div class="proposal-main">
-          <strong>${def.name}</strong>
-          <span class="proposal-weight">${fmtW(plan.weight)}<span class="u">kg</span></span>
-        </div>
-        <div class="proposal-meta">
-          <span>${plan.reason}</span>
-          <span>参照: ${source}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  const trainingDays = WEEKLY_TRAINING_DAYS;
-  const editDay = trainingDays.includes(weeklyPlanDay) ? weeklyPlanDay : (trainingDays.includes(todayWd) ? todayWd : 0);
-  const daySeg = trainingDays.map(wd => `
-    <button class="seg-opt ${editDay === wd ? 'on' : ''}" data-weekly-day="${wd}">${WEEKDAY_LABELS[wd]} ${WEEKLY_SPLIT[wd].name}</button>
-  `).join('');
-  const slots = getWeeklySlotsForDay(editDay, store.settings);
-  const slotRows = slots.map((slot, i) => `
-    <div class="weekly-slot-row">
-      <div class="weekly-slot-main">
-        <strong>${escapeHtml(slot.name)}</strong>
-        <span>${slot.plannedSets}セット × ${slot.reps}${slot.plannedWeight != null ? ` ・ ${fmtW(slot.plannedWeight)}kg` : ''}</span>
-      </div>
-      <div class="weekly-slot-actions">
-        <button class="btn-ghost btn-small" data-wslot-move="-1" data-wslot-id="${slot.slotId}" ${i === 0 ? 'disabled style="opacity:0.4;"' : ''}>↑</button>
-        <button class="btn-ghost btn-small" data-wslot-move="1" data-wslot-id="${slot.slotId}" ${i === slots.length - 1 ? 'disabled style="opacity:0.4;"' : ''}>↓</button>
-        <button class="btn-sec btn-small" data-wslot-edit="${slot.slotId}">編集</button>
-        <button class="btn-ghost btn-small" data-wslot-del="${slot.slotId}">削除</button>
-      </div>
-    </div>
-  `).join('');
-
-  return `
-    <h2 class="screen-title">計画</h2>
-    <div class="card weekly-plan-card">
-      <div class="sec-label">今週のスケジュール</div>
-      <div class="weekly-schedule-list">${scheduleRows}</div>
-    </div>
-    <div class="card weekly-plan-card">
-      <div class="sec-label">メイン種目・次回提案</div>
-      <div class="weekly-proposal-list">${mainRows}</div>
-    </div>
-    <div class="card weekly-plan-card">
-      <div class="sec-label">補助種目（曜日別）</div>
-      <div class="seg mb-12">${daySeg}</div>
-      <div class="weekly-slot-list">${slotRows || '<div class="muted">種目なし</div>'}</div>
-      <button class="btn-sec mt-8 btn-block" id="btnWeeklySlotAdd">追加</button>
-    </div>
-  `;
-}
-function openWeeklySlotSheet(weekday, slot = null) {
-  const base = slot || {
-    slotId: null,
-    slotName: '補助スロット',
-    key: `custom_${uid()}`,
-    name: '',
-    plannedSets: 3,
-    reps: 10,
-    targetRpe: '',
-    plannedWeight: null,
-    weightType: 'upper_machine',
-    categories: [],
-    fatigueTags: ['低リスク'],
-    restType: 'default',
-  };
-  openModal(slot ? '種目を編集' : '種目を追加', `
-    ${slotFormHtml('wslot', { ...base, plannedReps: base.reps })}
-    <button class="btn-primary" id="wslot-save">保存</button>
-    <button class="btn-text btn-block" id="wslot-cancel">キャンセル</button>
-  `, () => {
-    bindSlotFormChips('wslot');
-    bindAccessoryPresetSelect('wslot');
-    const cancel = document.getElementById('wslot-cancel');
-    if (cancel) cancel.onclick = closeModal;
-    const save = document.getElementById('wslot-save');
-    if (save) save.onclick = () => {
-      const updated = readSlotForm('wslot', base);
-      if (slot) updateWeeklySlot(weekday, slot.slotId, updated);
-      else addWeeklySlot(weekday, updated);
-      saveStore();
-      if (weekdayOf(todayStr()) === weekday) recalculateTodaySession();
-      closeModal();
-      render();
-      showToast(slot ? '種目を更新しました' : '種目を追加しました');
-    };
-  });
-}
-
-function afterWeeklyPlan() {
-  const trainingDays = WEEKLY_TRAINING_DAYS;
-  const todayWd = weekdayOf(todayStr());
-  const editDay = trainingDays.includes(weeklyPlanDay) ? weeklyPlanDay : (trainingDays.includes(todayWd) ? todayWd : 0);
-
-  document.querySelectorAll('button[data-weekly-day]').forEach(btn => {
-    btn.onclick = () => {
-      weeklyPlanDay = parseInt(btn.dataset.weeklyDay, 10);
-      render();
-    };
-  });
-  document.querySelectorAll('button[data-wslot-edit]').forEach(btn => {
-    btn.onclick = () => {
-      const slot = getWeeklySlotsForDay(editDay, store.settings).find(s => s.slotId === btn.dataset.wslotEdit);
-      if (slot) openWeeklySlotSheet(editDay, slot);
-    };
-  });
-  document.querySelectorAll('button[data-wslot-del]').forEach(btn => {
-    btn.onclick = () => {
-      if (!confirm('この種目を削除しますか？過去ログは変更しません。')) return;
-      deleteWeeklySlot(editDay, btn.dataset.wslotDel);
-      saveStore();
-      if (weekdayOf(todayStr()) === editDay) recalculateTodaySession();
-      render();
-      showToast('削除しました');
-    };
-  });
-  document.querySelectorAll('button[data-wslot-move]').forEach(btn => {
-    btn.onclick = () => {
-      moveWeeklySlot(editDay, btn.dataset.wslotId, parseInt(btn.dataset.wslotMove, 10) || 0);
-      saveStore();
-      render();
-    };
-  });
-  const addBtn = document.getElementById('btnWeeklySlotAdd');
-  if (addBtn) addBtn.onclick = () => openWeeklySlotSheet(editDay);
-}
-
 function renderBlock() {
-  if (isWeeklyMode()) return renderWeeklyPlan();
   const s = store.currentState;
   const viewRotation = blockViewRotation || s.rotation;
   const cells = [1, 2, 3, 4].map(r => {
@@ -5281,10 +4484,6 @@ function renderBlock() {
 }
 
 function afterBlock() {
-  if (isWeeklyMode()) {
-    afterWeeklyPlan();
-    return;
-  }
   const sug = computeNextBlockSuggestion();
   const blockComplete = isCurrentBlockComplete();
 
@@ -5620,12 +4819,6 @@ function renderLogDetail(logs) {
   }).join('');
 }
 
-function logGroupMetaText(logs = []) {
-  const first = logs[0] || {};
-  if (first.weeklySplit) return weeklyDisplayLabelFromLog(first);
-  return `B${first.block || '-'} / R${first.rotation || '-'} / Day${first.day || '-'}`;
-}
-
 function renderDailyLogView(logMap = logsByDate()) {
   if (logMap.size === 0) return '<div class="card flat"><div class="muted text-center">記録がありません</div></div>';
   return `<div class="log-card-list">${[...logMap.entries()].map(([date, logs], cardIdx) => {
@@ -5640,7 +4833,7 @@ function renderDailyLogView(logMap = logsByDate()) {
       <details class="section ui-details log-card" ${cardIdx === 0 ? 'open' : ''}>
         <summary>
           <span>
-            <span class="log-card-title">${fmtDateShort(date)} <span class="muted">${logGroupMetaText(logs)}</span></span>
+            <span class="log-card-title">${fmtDateShort(date)} <span class="muted">B${first.block || '-'} / R${first.rotation || '-'} / Day${first.day || '-'}</span></span>
             <span class="muted" style="display:block;font-size:12px;">${summaryRows || summary.mainNames}</span>
           </span>
           <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}
@@ -5690,16 +4883,13 @@ function renderMonthlyLogView() {
   const trainedDays = monthDates.filter(d => dayInfo(d).trained);
   const maxDays = monthDates.filter(d => dayInfo(d).maxTested);
   const rotations = [...new Set(
-    monthDates.flatMap(d => (dateMap.get(d) || []).filter(log => !log.isExerciseRest && !log.todayOnlyDeleted && !log.weeklySplit).map(log => log.rotation)).filter(r => r != null)
+    monthDates.flatMap(d => (dateMap.get(d) || []).filter(log => !log.isExerciseRest && !log.todayOnlyDeleted).map(log => log.rotation)).filter(r => r != null)
   )].sort((a, b) => a - b);
-  const weeklySplits = [...new Set(
-    monthDates.flatMap(d => (dateMap.get(d) || []).filter(log => !log.isExerciseRest && !log.todayOnlyDeleted && log.weeklySplit).map(log => weeklySplitName(log.performedSplitKey || log.selectedSplitKey || log.splitKey))).filter(Boolean)
-  )];
 
   const selInfo = logFilter.selDate && logFilter.selDate.startsWith(month) ? dayInfo(logFilter.selDate) : null;
   const selFirst = selInfo?.logs[0];
   const selLine = selInfo && selInfo.logs.length
-    ? `<div class="muted mt-8">${fmtDateShort(logFilter.selDate)} ・ ${logGroupMetaText(selInfo.logs)} ・ ${[...new Set(selInfo.logs.map(log => log.exerciseName))].slice(0, 4).join('、')}</div>`
+    ? `<div class="muted mt-8">${fmtDateShort(logFilter.selDate)} ・ B${selFirst.block || '-'} / R${selFirst.rotation || '-'} / Day${selFirst.day || '-'} ・ ${[...new Set(selInfo.logs.map(log => log.exerciseName))].slice(0, 4).join('、')}</div>`
     : (logFilter.selDate && logFilter.selDate.startsWith(month) ? '<div class="muted mt-8">記録なし</div>' : '');
 
   return `
@@ -5723,7 +4913,7 @@ function renderMonthlyLogView() {
       <div class="cal-summary">
         <div class="cs-item"><div class="cs-val">${trainedDays.length}</div><div class="cs-label">トレ日</div></div>
         <div class="cs-item"><div class="cs-val">${maxDays.length}</div><div class="cs-label">MAX測定</div></div>
-        <div class="cs-item"><div class="cs-val">${weeklySplits.length ? weeklySplits.join('・') : (rotations.length ? rotations.map(r => `R${r}`).join('・') : '-')}</div><div class="cs-label">メニュー</div></div>
+        <div class="cs-item"><div class="cs-val">${rotations.length ? rotations.map(r => `R${r}`).join('・') : '-'}</div><div class="cs-label">ローテ</div></div>
       </div>
     </div>
   `;
@@ -5832,11 +5022,7 @@ function importData() {
       try {
         const data = JSON.parse(reader.result);
         if (!confirm('現在のデータを上書きしてインポートします。よろしいですか？')) return;
-        const base = defaultStore();
-        store = { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } };
-        store.settings.weeklyProgram = { ...base.settings.weeklyProgram, ...(data.settings?.weeklyProgram || {}) };
-        store.settings.exerciseRestSettings = Array.isArray(store.settings.exerciseRestSettings) ? store.settings.exerciseRestSettings : [];
-        if (!store.settings.weeklySlots || typeof store.settings.weeklySlots !== 'object') store.settings.weeklySlots = base.settings.weeklySlots;
+        store = { ...defaultStore(), ...data };
         saveStore();
         showToast('インポート完了');
         render();
@@ -5865,22 +5051,15 @@ function summarizeMajorAccessoryLoad(settings = store.settings) {
     arm: ['腕'],
     leg: ['脚前側', '脚後側', '脚補助', 'カーフ', 'デッド・腰背部負荷'],
   };
-  const collect = (ex) => {
-    const sets = parseInt(ex.plannedSets, 10) || 0;
-    Object.entries(matches).forEach(([key, cats]) => {
-      if ((ex.categories || []).some(c => cats.includes(c))) groups[key].sets += sets;
+  [1,2,3,4,5,6,7,8].forEach(day => {
+    const isDeload = false;
+    buildAccessoryExercises(day, settings, isDeload).forEach(ex => {
+      const sets = parseInt(ex.plannedSets, 10) || 0;
+      Object.entries(matches).forEach(([key, cats]) => {
+        if ((ex.categories || []).some(c => cats.includes(c))) groups[key].sets += sets;
+      });
     });
-  };
-  if (isWeeklyMode(settings)) {
-    WEEKLY_TRAINING_DAYS.forEach(wd => {
-      getWeeklySlotsForDay(wd, settings).forEach(slot => collect(slot));
-    });
-  } else {
-    [1,2,3,4,5,6,7,8].forEach(day => {
-      const isDeload = false;
-      buildAccessoryExercises(day, settings, isDeload).forEach(collect);
-    });
-  }
+  });
   return groups;
 }
 
@@ -6658,7 +5837,6 @@ if (typeof window !== 'undefined') {
     isExerciseComplete,
     firstPendingSetIndex,
     applyMainSetEdit,
-    mainSetOverrideScope,
     saveMainSetOverride,
     applyMainSetOverridesToMenu,
     toggleNextSetCompletion,
@@ -6699,29 +5877,6 @@ if (typeof window !== 'undefined') {
     finishTodaySession,
     nextDay,
     computeNextBlockSuggestion,
-    // 週固定4分割
-    isWeeklyMode,
-    buildWeeklyMenu,
-    weeklyMainPlan,
-    weeklyAccessoryPlan,
-    weeklyMainAchieved,
-    getBackMainKeyForDate,
-    getLastPerformedBackDeadliftLog,
-    deadliftVariantFromExerciseKey,
-    selectWeeklyTodayMenu,
-    logGroupMetaText,
-    weeklyDisplayLabelFromLog,
-    weeklyWeekIndex,
-    weekStartSunday,
-    ensureWeeklyAnchor,
-    getWeeklySlotsForDay,
-    updateWeeklySlot,
-    addWeeklySlot,
-    deleteWeeklySlot,
-    moveWeeklySlot,
-    getOrCreateTodaySession,
-    todaySessionKey,
-    updateHeader,
     getRestState: () => ({ ...restState }),
     getStore: () => store,
     setNowProvider: (fn) => { nowProvider = fn; },
