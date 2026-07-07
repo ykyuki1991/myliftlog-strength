@@ -1777,3 +1777,139 @@ body.sheet-open .bottom-nav { display: none; }
   .vbox-row { gap: 6px; }
   .vb-editor .stepper { flex-basis: 50px; width: 50px; }
 }
+
+/* Weekly split plan: readable stacked layout on mobile and desktop */
+.weekly-plan-card {
+  overflow: visible;
+}
+
+.weekly-schedule-list,
+.weekly-proposal-list,
+.weekly-slot-list {
+  display: grid;
+  gap: 8px;
+}
+
+.weekly-schedule-row,
+.weekly-proposal-row,
+.weekly-slot-row {
+  display: grid;
+  grid-template-columns: minmax(46px, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  min-width: 0;
+}
+
+.weekly-schedule-row:last-child,
+.weekly-proposal-row:last-child,
+.weekly-slot-row:last-child {
+  border-bottom: none;
+}
+
+.weekly-schedule-row.today {
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 10px;
+  border-bottom: none;
+}
+
+.weekly-day {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-width: 44px;
+}
+
+.weekly-day span {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.weekly-day small {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-family: var(--font-num);
+}
+
+.weekly-main,
+.weekly-slot-main,
+.proposal-main,
+.proposal-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.weekly-main,
+.weekly-slot-main {
+  display: grid;
+  gap: 3px;
+}
+
+.weekly-main strong,
+.weekly-slot-main strong,
+.proposal-main strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.weekly-main span,
+.weekly-slot-main span,
+.proposal-meta span {
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.weekly-proposal-row {
+  grid-template-columns: 1fr;
+}
+
+.proposal-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.proposal-weight {
+  flex: 0 0 auto;
+  color: var(--text-1);
+  font-size: 18px;
+  font-weight: 900;
+  font-family: var(--font-num);
+}
+
+.proposal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.weekly-slot-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.weekly-slot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.weekly-menu-switch .weekly-menu-seg {
+  flex-wrap: wrap;
+}
+
+.weekly-menu-switch .seg-opt {
+  flex: 1 1 72px;
+}
+
+@media (min-width: 720px) {
+  .weekly-schedule-row {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .weekly-slot-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
