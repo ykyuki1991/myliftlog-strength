@@ -58,7 +58,9 @@ function createHarness() {
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(APP_JS, context);
-  return { api: context.window.__mllTest, context, storage, elements };
+  const api = context.window.__mllTest;
+  api.getStore().settings.programMode = 'legacy8';
+  return { api, context, storage, elements };
 }
 
 function big3Log(overrides = {}) {
@@ -1392,6 +1394,156 @@ function testUpdateExerciseRestSetting() {
   assert.strictEqual(isolatedApi.updateExerciseRestSetting('missing-id', { note: 'x' }), null);
 }
 
+function createFourMenuHarness() {
+  const h = createHarness();
+  h.api.getStore().settings.programMode = 'fourMenu';
+  return h;
+}
+
+function testFourMenuPlanAndProgression() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.settings.maxes = { ...store.settings.maxes, bench: 125, squat: 170, halfDead: 205, floorDead: 190, shoulderPress: 77.5 };
+
+  const chest = api.buildFourMenu('chest', store.settings);
+  const bench = chest.exercises.find(ex => ex.key === 'bench');
+  assert.ok(bench, 'chest menu must include bench');
+  assert.strictEqual(bench.plannedSets, 3);
+  assert.strictEqual(bench.plannedReps, 5);
+  assert.strictEqual(bench.plannedWeight, 107.5);
+  assert.strictEqual(bench.progressionReason, '記録なしのため初期重量');
+
+  store.logs.push({
+    id: 'four-bench-complete',
+    date: '2026-07-01',
+    fourMenuRotation: true,
+    exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス',
+    menuType: 'four-main-bench',
+    plannedWeight: 107.5,
+    plannedReps: 5,
+    plannedSets: 3,
+    sets: [{ weight: 107.5, reps: 5, done: true }, { weight: 107.5, reps: 5, done: true }, { weight: 107.5, reps: 5, done: true }],
+    doneSets: 3,
+    rpe: '8',
+    pains: [],
+    ts: 1,
+  });
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).weight, 110);
+
+  store.logs.unshift({
+    id: 'four-bench-miss-2',
+    date: '2026-07-15',
+    fourMenuRotation: true,
+    exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス',
+    menuType: 'four-main-bench',
+    plannedWeight: 110,
+    plannedReps: 5,
+    plannedSets: 3,
+    sets: [{ weight: 110, reps: 5, done: true }, { weight: 110, reps: 4, done: true }, { weight: 110, reps: '', done: false }],
+    doneSets: 2,
+    rpe: '9.5',
+    pains: [],
+    ts: 3,
+  }, {
+    id: 'four-bench-miss-1',
+    date: '2026-07-08',
+    fourMenuRotation: true,
+    exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス',
+    menuType: 'four-main-bench',
+    plannedWeight: 110,
+    plannedReps: 5,
+    plannedSets: 3,
+    sets: [{ weight: 110, reps: 5, done: true }, { weight: 110, reps: 4, done: true }, { weight: 110, reps: '', done: false }],
+    doneSets: 2,
+    rpe: '9',
+    pains: [],
+    ts: 2,
+  });
+  const reduced = api.getFourMenuMainPlan('bench', 'chest', store.settings);
+  assert.strictEqual(reduced.weight, 100);
+  assert.strictEqual(reduced.reason, '2回連続未達のため約10%減');
+}
+
+function testFourMenuSessionSelectionAndDeadliftAlternation() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.currentState.nextMenuKey = 'shoulder_arm';
+  store.currentState.isRestSelected = false;
+  store.currentState.backCompletedCount = 0;
+
+  api.renderToday();
+  let session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
+  assert.ok(session);
+  assert.strictEqual(session.selectedSplitKey, 'shoulder_arm');
+  assert.ok(api.selectFourMenuForToday('rest'));
+  session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
+  assert.strictEqual(session.selectedSplitKey, 'rest');
+  assert.strictEqual(session.isRest, true);
+
+  assert.ok(api.selectFourMenuForToday('chest'));
+  session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
+  assert.strictEqual(session.selectedSplitKey, 'chest');
+  assert.strictEqual(session.performedSplitKey, 'chest');
+  assert.ok(session.exercises.some(ex => ex.key === 'bench'));
+
+  assert.strictEqual(api.getFourMenuBackLiftKey(store.currentState), 'halfDead');
+  store.currentState.backCompletedCount = 1;
+  assert.strictEqual(api.getFourMenuBackLiftKey(store.currentState), 'floorDead');
+  const back = api.buildFourMenu('back', store.settings);
+  assert.ok(back.exercises.some(ex => ex.key === 'floorDead'));
+}
+
+function testFourMenuLogRenderingAndOverrideScope() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.logs.push({
+    id: 'four-log',
+    date: '2026-07-01',
+    fourMenuRotation: true,
+    splitName: '胸',
+    performedSplitKey: 'chest',
+    exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス',
+    menuType: 'four-main-bench',
+    plannedWeight: 107.5,
+    plannedReps: 5,
+    plannedSets: 3,
+    sets: [{ weight: 107.5, reps: 5, done: true }],
+    doneSets: 1,
+    rpe: '8',
+    ts: 1,
+  }, {
+    id: 'legacy-log',
+    date: '2026-06-01',
+    block: 1,
+    rotation: 1,
+    day: 2,
+    exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス',
+    menuType: 'bench-volume',
+    plannedSets: 3,
+    doneSets: 3,
+    sets: [],
+    ts: 0,
+  });
+  const html = api.renderDailyLogView();
+  assert.ok(html.includes('胸'), 'four-menu logs should show split name');
+  assert.ok(html.includes('B1 / R1 / Day2'), 'legacy logs should keep old metadata');
+
+  const menu = api.buildFourMenu('chest', store.settings);
+  const bench = menu.exercises.find(ex => ex.key === 'bench');
+  bench.plannedWeight = 120;
+  assert.ok(api.saveMainSetOverride('chest', bench));
+  assert.strictEqual(api.buildFourMenu('chest', store.settings).exercises.find(ex => ex.key === 'bench').plannedWeight, 120);
+  assert.notStrictEqual(api.buildFourMenu('legs', store.settings).exercises.find(ex => ex.key === 'squat').plannedWeight, 120);
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();
@@ -1421,6 +1573,9 @@ testCompletionCommitsCleanRecordValues();
 testRecalcKeepsSkipsAndTodayOnlyExercises();
 testFutureAccessoryEditCoversSetsRepsRpe();
 testUpdateExerciseRestSetting();
+testFourMenuPlanAndProgression();
+testFourMenuSessionSelectionAndDeadliftAlternation();
+testFourMenuLogRenderingAndOverrideScope();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();

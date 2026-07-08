@@ -9,12 +9,14 @@ const STORAGE_KEY = 'mll_strength_planner_v1';
 const APP_VERSION = '1.0.0';
 
 const DEFAULT_SETTINGS = {
+  programMode: 'fourMenu',
   maxes: {
     bench: 115,
     squat: 160,
     halfDead: 190,
     // 床引きデッドはユーザーが過去にハードにやっていない種目。技術練習・補助的位置づけのため初期値170kg固定。
     floorDead: 170,
+    shoulderPress: 77.5,
   },
   increment: 2.5,
   // 'standard' = 通常ボリューム / 'high' = 補助種目と一部メインセットを増量した高ボリュームモード
@@ -87,6 +89,11 @@ const DEFAULT_STATE = {
   rotation: 1,  // 1〜4
   day: 1,       // 1〜8
   lastTrainingDate: null,
+  nextMenuKey: 'shoulder_arm',
+  isRestSelected: false,
+  backCompletedCount: 0,
+  lastCompletedMenuKey: null,
+  lastCompletedDate: null,
 };
 
 // メニュー種別キー（manualAdjustments のキー）
@@ -120,6 +127,27 @@ const BIG3_LIFTS = {
   squat: { key: 'squat', maxKey: 'squat', name: 'スクワット' },
   halfDead: { key: 'halfDead', maxKey: 'halfDead', name: 'ハーフデッド' },
   floorDead: { key: 'floorDead', maxKey: 'floorDead', name: '床引きデッド' },
+};
+
+const FOUR_MENU_ORDER = ['shoulder_arm', 'legs', 'chest', 'back'];
+const FOUR_MENU_LABELS = {
+  shoulder_arm: '肩・腕',
+  legs: '脚',
+  chest: '胸',
+  back: '背中',
+  rest: '休み',
+};
+const FOUR_MENU_MAIN_LIFTS = {
+  shoulderPress: { key: 'shoulderPress', maxKey: 'shoulderPress', name: 'ショルダープレス', fallbackWeight: 65 },
+  squat: { key: 'squat', maxKey: 'squat', name: 'スクワット', fallbackWeight: 145 },
+  bench: { key: 'bench', maxKey: 'bench', name: 'ベンチプレス', fallbackWeight: 107.5 },
+  halfDead: { key: 'halfDead', maxKey: 'halfDead', name: 'ハーフデッド', fallbackWeight: 162.5 },
+  floorDead: { key: 'floorDead', maxKey: 'floorDead', name: '床引きデッド', fallbackWeight: 162.5 },
+};
+const FOUR_MENU_MAIN_BY_MENU = {
+  shoulder_arm: 'shoulderPress',
+  legs: 'squat',
+  chest: 'bench',
 };
 
 const BIG3_KEY_ALIASES = {
@@ -289,6 +317,30 @@ const DEFAULT_ACCESSORY_SLOTS = {
     { slotId: 'd7-back-friendly', slotName: '背中', key: 'friendly_row', name: 'ロウ系', setsText: '2', plannedSets: 2, reps: '8〜12', targetRpe: '8', categories: ['背中', 'ロウ系'], fatigueTags: ['腰に優しい', '低リスク'], weightType: 'upper_machine', restType: 'row' },
     { slotId: 'd7-chin', slotName: 'チンニング', key: 'chinning', name: 'チンニング', setsText: '2', plannedSets: 2, reps: '5〜8', targetRpe: '8', categories: ['背中', 'チンニング系'], fatigueTags: ['肘負荷', '握力負荷'], weightType: 'bodyweight', restType: 'chinning' },
     { slotId: 'd7-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', setsText: '3', plannedSets: 3, reps: '12〜20', targetRpe: '8〜9', categories: ['カーフ'], fatigueTags: ['低リスク'], weightType: 'calf', restType: 'calf' },
+  ],
+};
+
+const FOUR_MENU_ACCESSORY_SLOTS = {
+  shoulder_arm: [
+    { slotId: 'fm-shoulder-side-raise', slotName: '肩', key: 'side_raise', name: 'サイドレイズ', plannedSets: 3, setsText: '3', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 14, weightType: 'dumbbell', categories: ['肩', '横肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
+    { slotId: 'fm-shoulder-rear-delt', slotName: '肩', key: 'rear_delt_fly', name: 'リアデルトフライ', plannedSets: 3, setsText: '3', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 57, weightType: 'upper_machine', categories: ['肩', '後ろ肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
+    { slotId: 'fm-arm-curl', slotName: '腕', key: 'preacher', name: 'ワンハンドDBプリーチャーカール', plannedSets: 3, setsText: '3', reps: '10〜12', targetRpe: '8〜9', plannedWeight: 14, weightType: 'dumbbell', categories: ['腕'], fatigueTags: ['肘負荷'], restType: 'arm' },
+    { slotId: 'fm-arm-ext', slotName: '腕', key: 'lying_ext', name: 'ライイングエクステンション', plannedSets: 3, setsText: '3', reps: '10〜12', targetRpe: '8〜9', plannedWeight: 30, weightType: 'barbell', categories: ['腕'], fatigueTags: ['肘負荷'], restType: 'arm' },
+  ],
+  legs: [
+    { slotId: 'fm-leg-press', slotName: '脚', key: 'legpress', name: 'レッグプレス', plannedSets: 3, setsText: '3', reps: '10〜12', targetRpe: '8', plannedWeight: 240, weightType: 'leg_machine', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], restType: 'default' },
+    { slotId: 'fm-leg-curl', slotName: '脚', key: 'leg_curl', name: 'レッグカール', plannedSets: 3, setsText: '3', reps: '10〜15', targetRpe: '8〜9', plannedWeight: 70, weightType: 'leg_machine', categories: ['脚後側', '脚補助'], fatigueTags: ['低リスク'], restType: 'default' },
+    { slotId: 'fm-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', plannedSets: 4, setsText: '4', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 120, weightType: 'leg_machine', categories: ['カーフ', '脚補助'], fatigueTags: ['低リスク'], restType: 'calf' },
+  ],
+  chest: [
+    { slotId: 'fm-incline-db', slotName: '胸', key: 'incline_db', name: 'インクラインDBプレス', plannedSets: 3, setsText: '3', reps: '8〜10', targetRpe: '8〜9', plannedWeight: 38, weightType: 'dumbbell', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], restType: 'incline_db' },
+    { slotId: 'fm-dips', slotName: '胸・腕', key: 'dips', name: 'ディップス', plannedSets: 3, setsText: '3', reps: '6〜10', targetRpe: '8〜9', plannedWeight: 90, weightType: 'bodyweight', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'], restType: 'dips' },
+    { slotId: 'fm-pec-fly', slotName: '胸', key: 'pec_fly', name: 'ペックフライ', plannedSets: 3, setsText: '3', reps: '10〜15', targetRpe: '8〜9', plannedWeight: 70, weightType: 'upper_machine', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
+  ],
+  back: [
+    { slotId: 'fm-latpulldown', slotName: '背中', key: 'latpulldown', name: 'ラットプルダウン', plannedSets: 3, setsText: '3', reps: '8〜12', targetRpe: '8〜9', plannedWeight: 86, weightType: 'upper_machine', categories: ['背中'], fatigueTags: ['肘負荷'], restType: 'chinning' },
+    { slotId: 'fm-machine-row', slotName: '背中', key: 'machine_row', name: 'マシンロウ', plannedSets: 3, setsText: '3', reps: '8〜12', targetRpe: '8〜9', plannedWeight: 160, weightType: 'upper_machine', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], restType: 'row' },
+    { slotId: 'fm-rear-delt-back', slotName: '肩', key: 'rear_delt_fly', name: 'リアデルトフライ', plannedSets: 3, setsText: '3', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 57, weightType: 'upper_machine', categories: ['肩', '背中', '後ろ肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
   ],
 };
 
@@ -492,7 +544,7 @@ function isMaxTestBackoffMenu(menuType = '') {
 
 function isIntensityMainMenu(menuType = '') {
   const type = String(menuType || '');
-  return type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.includes('floorDead-main') || isMaxTestMenu(type);
+  return type.startsWith('four-main-') || type.includes('hi-main') || type.includes('heavy-top') || type.includes('heavy-backoff') || type.includes('floorDead-main') || isMaxTestMenu(type);
 }
 
 function hasFormIssue(note = '') {
@@ -735,9 +787,12 @@ function createEstimatedMaxEntry(log, source = 'training') {
     maxKey: lift.maxKey,
     liftName: lift.name,
     date: log.date || todayStr(),
-    block: log.block ?? store.currentState.block,
-    rotation: log.rotation ?? store.currentState.rotation,
-    day: log.day ?? store.currentState.day,
+    block: log.fourMenuRotation ? null : (log.block ?? store.currentState.block),
+    rotation: log.fourMenuRotation ? null : (log.rotation ?? store.currentState.rotation),
+    day: log.fourMenuRotation ? null : (log.day ?? store.currentState.day),
+    fourMenuRotation: !!log.fourMenuRotation,
+    performedSplitKey: log.performedSplitKey || log.selectedSplitKey || log.menuKey || null,
+    splitName: log.splitName || log.menuName || null,
     menuType: log.menuType || null,
     estimatedMax: estimate.value,
     currentMax,
@@ -2053,6 +2108,192 @@ function closeModal() {
   if (document.body?.classList) document.body.classList.remove('sheet-open');
 }
 
+// ===== 4メニュー順番ローテーション =====
+function isFourMenuMode(settings = store.settings) {
+  return (settings?.programMode || 'fourMenu') === 'fourMenu';
+}
+
+function normalizeFourMenuKey(key) {
+  return FOUR_MENU_LABELS[key] ? key : 'shoulder_arm';
+}
+
+function nextFourMenuKey(key) {
+  const idx = FOUR_MENU_ORDER.indexOf(normalizeFourMenuKey(key));
+  return FOUR_MENU_ORDER[(idx + 1) % FOUR_MENU_ORDER.length];
+}
+
+function fourMenuLabel(key) {
+  return FOUR_MENU_LABELS[key] || FOUR_MENU_LABELS.shoulder_arm;
+}
+
+function getFourMenuState() {
+  store.currentState.nextMenuKey = normalizeFourMenuKey(store.currentState.nextMenuKey);
+  store.currentState.backCompletedCount = parseInt(store.currentState.backCompletedCount, 10) || 0;
+  return store.currentState;
+}
+
+function getFourMenuBackLiftKey(state = store.currentState) {
+  return ((parseInt(state.backCompletedCount, 10) || 0) % 2 === 0) ? 'halfDead' : 'floorDead';
+}
+
+function isFourMainLiftKey(key) {
+  return !!FOUR_MENU_MAIN_LIFTS[key];
+}
+
+function fourMenuOverrideKey(menuKey, ex) {
+  if (!ex?.isBig3) return null;
+  return `Four-${normalizeFourMenuKey(menuKey)}-${ex.key}-${ex.menuType}`;
+}
+
+function getFourMenuLatestLogsForLift(liftKey, limit = 4) {
+  return [...(store.logs || [])]
+    .filter(log => log.fourMenuRotation && log.exerciseKey === liftKey && log.menuType === `four-main-${liftKey}` && !log.isExerciseRest && !log.todayOnlyDeleted)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+    .slice(0, limit);
+}
+
+function isFourMainLogComplete(log) {
+  const plannedSets = parseInt(log?.plannedSets, 10) || 3;
+  const plannedReps = parseInt(log?.plannedReps, 10) || 5;
+  const doneSets = (log?.sets || []).filter(set => set.done);
+  return doneSets.length >= plannedSets && doneSets.slice(0, plannedSets).every(set => (parseInt(set.reps, 10) || 0) >= plannedReps);
+}
+
+function getFourMenuBaseWeightFromMax(liftKey, settings = store.settings) {
+  const lift = FOUR_MENU_MAIN_LIFTS[liftKey];
+  const max = parseFloat(settings.maxes?.[lift?.maxKey]);
+  const inc = parseFloat(settings.increment) || 2.5;
+  if (Number.isFinite(max) && max > 0) return roundToIncrement(max * 0.85, inc);
+  return lift?.fallbackWeight || 0;
+}
+
+function getFourMenuMainPlan(liftKey, menuKey, settings = store.settings) {
+  const lift = FOUR_MENU_MAIN_LIFTS[liftKey];
+  const inc = parseFloat(settings.increment) || 2.5;
+  const override = settings.mainSetOverrides?.[`Four-${normalizeFourMenuKey(menuKey)}-${liftKey}-four-main-${liftKey}`];
+  if (override) {
+    return {
+      weight: roundToIncrement(parseFloat(override.plannedWeight), inc),
+      reps: parseInt(override.plannedReps, 10) || 5,
+      sets: parseInt(override.plannedSets, 10) || 3,
+      reason: '手動設定',
+      referenceDate: override.updatedAt ? fmtDateShort(new Date(override.updatedAt).toISOString().slice(0, 10)) : '記録なし',
+    };
+  }
+
+  const logs = getFourMenuLatestLogsForLift(liftKey, 3);
+  if (!logs.length) {
+    return { weight: getFourMenuBaseWeightFromMax(liftKey, settings), reps: 5, sets: 3, reason: '記録なしのため初期重量', referenceDate: '記録なし' };
+  }
+
+  const latest = logs[0];
+  const latestWeight = roundToIncrement(parseFloat(latest.plannedWeight) || maxSetWeight(latest) || getFourMenuBaseWeightFromMax(liftKey, settings), inc);
+  const latestComplete = isFourMainLogComplete(latest);
+  const sameWeightMisses = logs.filter(log => roundToIncrement(parseFloat(log.plannedWeight) || maxSetWeight(log), inc) === latestWeight && !isFourMainLogComplete(log)).length;
+
+  if (latestComplete) {
+    return { weight: roundToIncrement(latestWeight + inc, inc), reps: 5, sets: 3, reason: '前回完遂のため +2.5kg', referenceDate: fmtDateShort(latest.date) };
+  }
+  if (sameWeightMisses >= 2) {
+    return { weight: roundToIncrement(latestWeight * 0.9, inc), reps: 5, sets: 3, reason: '2回連続未達のため約10%減', referenceDate: fmtDateShort(latest.date) };
+  }
+  return { weight: latestWeight, reps: 5, sets: 3, reason: '未達のため同重量継続', referenceDate: fmtDateShort(latest.date) };
+}
+
+function maxSetWeight(log) {
+  const weights = (log?.sets || []).filter(set => set.done).map(set => parseFloat(set.weight)).filter(Number.isFinite);
+  return weights.length ? Math.max(...weights) : null;
+}
+
+function buildFourMenuMainExercise(menuKey, settings = store.settings) {
+  const liftKey = menuKey === 'back' ? getFourMenuBackLiftKey(getFourMenuState()) : FOUR_MENU_MAIN_BY_MENU[menuKey];
+  const lift = FOUR_MENU_MAIN_LIFTS[liftKey];
+  const plan = getFourMenuMainPlan(liftKey, menuKey, settings);
+  return {
+    key: lift.key,
+    name: lift.name,
+    menuType: `four-main-${lift.key}`,
+    isBig3: true,
+    isFourMenuMain: true,
+    plannedWeight: plan.weight,
+    plannedReps: plan.reps,
+    plannedSets: plan.sets,
+    targetRpe: '8〜9',
+    restSec: REST_TIME_SEC.big3_top || 300,
+    fourMenuKey: menuKey,
+    progressionReason: plan.reason,
+    progressionReferenceDate: plan.referenceDate,
+    deadliftVariant: lift.key === 'halfDead' ? 'rack' : lift.key === 'floorDead' ? 'floor' : null,
+  };
+}
+
+function fourMenuAccessoryExerciseFromSlot(menuKey, slot) {
+  const normalized = normalizeAccessorySlot(slot);
+  return {
+    key: normalized.key,
+    name: normalized.name,
+    menuType: `four-accessory-${normalized.slotId || normalized.key}`,
+    isAccessory: true,
+    fourMenuKey: menuKey,
+    slotId: normalized.slotId,
+    slotName: normalized.slotName,
+    plannedWeight: normalized.plannedWeight,
+    plannedReps: normalized.reps,
+    plannedSets: normalized.plannedSets,
+    targetRpe: normalized.targetRpe,
+    categories: normalized.categories || [],
+    fatigueTags: normalized.fatigueTags || [],
+    weightType: normalized.weightType,
+    restSec: REST_TIME_SEC.default,
+  };
+}
+
+function buildFourMenu(menuKey, settings = store.settings) {
+  const normalizedKey = menuKey === 'rest' ? 'rest' : normalizeFourMenuKey(menuKey);
+  if (normalizedKey === 'rest') {
+    return {
+      fourMenuRotation: true,
+      menuKey: 'rest',
+      name: '休み',
+      isRest: true,
+      exercises: [],
+      skippedRestExercises: [],
+      activeExerciseRests: [],
+    };
+  }
+  let exercises = [
+    buildFourMenuMainExercise(normalizedKey, settings),
+    ...(FOUR_MENU_ACCESSORY_SLOTS[normalizedKey] || []).map(slot => fourMenuAccessoryExerciseFromSlot(normalizedKey, slot)),
+  ];
+  exercises = applyMainSetOverridesToMenu(exercises, normalizedKey, settings);
+  exercises = exercises.map(ex => {
+    if (!ex.plannedWeight && ex.isAccessory) {
+      const def = settings.accessoryDefaults?.[ex.key];
+      if (def && def.weight != null) ex.plannedWeight = def.weight;
+    }
+    if (ex.plannedWeight != null) {
+      const adjKey = `Four-${normalizedKey}-${ex.key}-${ex.menuType}`;
+      const adj = store.manualAdjustments?.[adjKey] || 0;
+      if (adj) {
+        ex.plannedWeight = roundToIncrement(ex.plannedWeight + adj, settings.increment || 2.5);
+        ex.adjusted = adj;
+      }
+    }
+    return ex;
+  });
+  const restApplied = applyExerciseRestSettingsToExercises(exercises, todayStr(), settings);
+  exercises = restApplied.exercises;
+  return {
+    fourMenuRotation: true,
+    menuKey: normalizedKey,
+    name: fourMenuLabel(normalizedKey),
+    isRest: exercises.length === 0 && restApplied.skipped.length === 0,
+    exercises,
+    skippedRestExercises: restApplied.skipped,
+    activeExerciseRests: restApplied.active,
+  };
+}
+
 // ===== メニュー定義 =====
 // パーセンテージは、各ローテ/メニュー種別ごとに設定
 // 補助種目は重量計算なし（reps/sets のみ）
@@ -2373,6 +2614,7 @@ function nextDay(state) {
 
 // 今日のセッションキー
 function todaySessionKey() {
+  if (isFourMenuMode()) return `${todayStr()}-four-menu`;
   return `${todayStr()}-b${store.currentState.block}-r${store.currentState.rotation}-d${store.currentState.day}`;
 }
 
@@ -2380,13 +2622,28 @@ function todaySessionKey() {
 function getOrCreateTodaySession() {
   const key = todaySessionKey();
   if (!store.daySessions[key]) {
-    const menu = getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
+    const fourMode = isFourMenuMode();
+    const state = getFourMenuState();
+    const selectedMenuKey = fourMode
+      ? (state.isRestSelected ? 'rest' : normalizeFourMenuKey(state.nextMenuKey))
+      : null;
+    const menu = fourMode
+      ? buildFourMenu(selectedMenuKey, store.settings)
+      : getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
     store.daySessions[key] = {
       key,
       date: todayStr(),
-      day: store.currentState.day,
-      rotation: store.currentState.rotation,
-      block: store.currentState.block,
+      day: fourMode ? null : store.currentState.day,
+      rotation: fourMode ? null : store.currentState.rotation,
+      block: fourMode ? null : store.currentState.block,
+      fourMenuRotation: fourMode,
+      scheduledDate: todayStr(),
+      performedDate: todayStr(),
+      scheduledSplitKey: fourMode ? state.nextMenuKey : null,
+      selectedSplitKey: fourMode ? menu.menuKey : null,
+      performedSplitKey: fourMode && menu.menuKey !== 'rest' ? menu.menuKey : null,
+      splitName: fourMode ? menu.name : null,
+      deadliftVariant: fourMode && menu.menuKey === 'back' ? getFourMenuBackLiftKey(state) : null,
       isDeload: menu.isDeload,
       isAdjustmentRotation: menu.isAdjustmentRotation,
       r4AdjustmentMode: menu.r4AdjustmentMode,
@@ -2473,6 +2730,7 @@ function applyMainSetEdit(ex, values, options = {}) {
 
 function mainSetOverrideKey(day, ex) {
   if (!ex?.isBig3) return null;
+  if (typeof day === 'string' && FOUR_MENU_LABELS[day]) return fourMenuOverrideKey(day, ex);
   return `Day${day}-${ex.key}-${ex.menuType}`;
 }
 
@@ -2563,6 +2821,48 @@ function skipNextSet(session, exIdx) {
   return { ok: true, skippedSet: nextIdx, allDone: isExerciseComplete(ex) };
 }
 
+function selectFourMenuForToday(menuKey) {
+  if (!isFourMenuMode()) return false;
+  const key = todaySessionKey();
+  const oldSession = store.daySessions[key];
+  const selected = menuKey === 'rest' ? 'rest' : normalizeFourMenuKey(menuKey);
+  const menu = buildFourMenu(selected, store.settings);
+  const state = getFourMenuState();
+  store.daySessions[key] = {
+    ...(oldSession || {}),
+    key,
+    date: todayStr(),
+    fourMenuRotation: true,
+    scheduledDate: oldSession?.scheduledDate || todayStr(),
+    performedDate: todayStr(),
+    scheduledSplitKey: oldSession?.scheduledSplitKey || state.nextMenuKey,
+    selectedSplitKey: selected,
+    performedSplitKey: selected === 'rest' ? null : selected,
+    splitName: menu.name,
+    dayName: menu.name,
+    isRest: menu.isRest,
+    activeExerciseRests: menu.activeExerciseRests || [],
+    skippedRestExercises: menu.skippedRestExercises || [],
+    deadliftVariant: selected === 'back' ? getFourMenuBackLiftKey(state) : null,
+    exercises: menu.exercises.map(ex => ({
+      ...ex,
+      sets: Array.from({ length: typeof ex.plannedSets === 'number' ? ex.plannedSets : 3 }, () => ({
+        weight: ex.plannedWeight,
+        reps: typeof ex.plannedReps === 'number' ? ex.plannedReps : '',
+        done: false,
+      })),
+      rpe: '未入力',
+      pains: [],
+      note: '',
+      completed: false,
+    })),
+    completed: false,
+    ts: oldSession?.ts || Date.now(),
+  };
+  saveStore();
+  return true;
+}
+
 // 最後に記録（完了/スキップ）したセットを未実施に戻す
 function undoLastSetRecord(session, exIdx) {
   const ex = session?.exercises?.[exIdx];
@@ -2582,7 +2882,9 @@ function undoLastSetRecord(session, exIdx) {
 function recalculateTodaySession() {
   const key = todaySessionKey();
   const oldSession = store.daySessions[key];
-  const menu = getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
+  const menu = isFourMenuMode()
+    ? buildFourMenu(oldSession?.selectedSplitKey || (store.currentState.isRestSelected ? 'rest' : store.currentState.nextMenuKey), store.settings)
+    : getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
 
   if (!oldSession) {
     getOrCreateTodaySession();
@@ -2597,7 +2899,7 @@ function recalculateTodaySession() {
   //   - 実施済みセットは絶対に保持
   //   - 未実施セットは新メニューの予定セット数に合わせて再構築
   //   - 実施済み件数 > 新予定セット数 となる場合でも、実施済みセットは削除しない（実施件数優先）
-  if (menu.isAdjustmentRotation && getDeloadMaxTestLiftForDay(menu.day)) {
+  if (!isFourMenuMode() && menu.isAdjustmentRotation && getDeloadMaxTestLiftForDay(menu.day)) {
     const lift = getDeloadMaxTestLiftForDay(menu.day);
     if (oldSession.maxTestSkipped) {
       const nonTest = buildR4NonTestExercise(lift.key, store.settings);
@@ -2670,6 +2972,12 @@ function recalculateTodaySession() {
   );
   oldSession.exercises = [...newExercises, ...todayOnlyExtras];
   oldSession.dayName = menu.name;
+  if (isFourMenuMode()) {
+    oldSession.splitName = menu.name;
+    oldSession.selectedSplitKey = menu.menuKey;
+    oldSession.performedSplitKey = menu.menuKey === 'rest' ? null : menu.menuKey;
+    oldSession.deadliftVariant = menu.menuKey === 'back' ? getFourMenuBackLiftKey(getFourMenuState()) : null;
+  }
   oldSession.isDeload = menu.isDeload;
   oldSession.isAdjustmentRotation = menu.isAdjustmentRotation;
   oldSession.r4AdjustmentMode = menu.r4AdjustmentMode;
@@ -2995,15 +3303,17 @@ function renderCompletedExerciseCard(ex, exIdx) {
 function renderToday() {
   const session = getOrCreateTodaySession();
   const s = store.currentState;
+  const fourMenuPicker = renderFourMenuTodayPicker(session);
 
   if (session.isRest) {
     return `
       <h2 class="screen-title">今日</h2>
+      ${fourMenuPicker}
       <div class="rest-day-banner">
         <div class="big">今日は休み</div>
-        <div class="muted">Day${s.day} ・ 休息日</div>
+        <div class="muted">${session.fourMenuRotation ? '4メニュー順番ローテ' : `Day${s.day} ・ 休息日`}</div>
       </div>
-      <button class="btn-primary" id="btnFinishRest">完了して次のDayへ</button>
+      <button class="btn-primary" id="btnFinishRest">休みとして保存</button>
     `;
   }
 
@@ -3063,6 +3373,7 @@ function renderToday() {
       <h2 class="screen-title" style="margin:0;">今日</h2>
       <span class="muted">${session.dayName}</span>
     </div>
+    ${fourMenuPicker}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
@@ -3076,9 +3387,41 @@ function renderToday() {
   `;
 }
 
+function renderFourMenuTodayPicker(session) {
+  if (!session?.fourMenuRotation) return '';
+  const scheduled = session.scheduledSplitKey || store.currentState.nextMenuKey;
+  const selected = session.selectedSplitKey || (session.isRest ? 'rest' : scheduled);
+  const buttons = [...FOUR_MENU_ORDER, 'rest'].map(key => `
+    <button class="seg-opt ${selected === key ? 'on' : ''}" data-four-menu-select="${key}">
+      ${fourMenuLabel(key)}
+    </button>
+  `).join('');
+  return `
+    <div class="card flat four-menu-picker">
+      <div class="row between">
+        <div>
+          <div class="sec-label">次のメニュー</div>
+          <div class="strong">${fourMenuLabel(scheduled)}</div>
+        </div>
+        ${selected !== scheduled ? `<span class="chip chip-outline">変更中: ${fourMenuLabel(selected)}</span>` : ''}
+      </div>
+      <div class="seg mt-8">${buttons}</div>
+    </div>
+  `;
+}
+
 
 function afterToday() {
   const session = store.daySessions[todaySessionKey()];
+
+  document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
+    btn.onclick = () => {
+      const hasDone = session?.exercises?.some(ex => (ex.sets || []).some(set => set.done || set.skipped));
+      if (hasDone && !confirm('入力済みのセットがあります。今日のメニューを変更しますか？')) return;
+      selectFourMenuForToday(btn.dataset.fourMenuSelect);
+      render();
+    };
+  });
 
   // メモ入力 → 保存
   document.querySelectorAll('textarea[data-field]').forEach(el => {
@@ -3352,7 +3695,9 @@ function openAdjustModal(exIdx) {
       const diff = newW - ex.plannedWeight;
       const baseW = ex.plannedWeight - (ex.adjusted || 0);
       const totalAdj = (newW - baseW);
-      const adjKey = `Day${session.day}-${ex.key}-${ex.menuType}`;
+      const adjKey = session.fourMenuRotation
+        ? `Four-${session.performedSplitKey || session.selectedSplitKey}-${ex.key}-${ex.menuType}`
+        : `Day${session.day}-${ex.key}-${ex.menuType}`;
       store.manualAdjustments[adjKey] = totalAdj;
       ex.plannedWeight = newW;
       ex.adjusted = totalAdj;
@@ -3535,8 +3880,9 @@ function openMainSetEditModal(exIdx) {
         return;
       }
       if (applyFuture) {
-        if (!confirm('同じDay・種目・枠の今後の予定にも反映します。過去ログは変更しません。')) return;
-        saveMainSetOverride(session.day, ex);
+        const scopeLabel = session.fourMenuRotation ? '同じメニュー・種目・枠' : '同じDay・種目・枠';
+        if (!confirm(`${scopeLabel}の今後の予定にも反映します。過去ログは変更しません。`)) return;
+        saveMainSetOverride(session.fourMenuRotation ? session.performedSplitKey || session.selectedSplitKey : session.day, ex);
       }
       saveStore();
       closeModal();
@@ -3889,6 +4235,13 @@ function bindExerciseRestSettingsActions() {
 
 function findSessionExerciseLogIndex(session, ex) {
   if (!session || !ex) return -1;
+  if (session.fourMenuRotation) {
+    return (store.logs || []).findIndex(l =>
+      l.fourMenuRotation && l.date === session.date &&
+      l.exerciseKey === ex.key && l.menuType === ex.menuType &&
+      (l.performedSplitKey || l.selectedSplitKey || l.menuKey) === (session.performedSplitKey || session.selectedSplitKey)
+    );
+  }
   return (store.logs || []).findIndex(l =>
     l.date === session.date && Number(l.day) === Number(session.day) &&
     Number(l.block) === Number(session.block) && Number(l.rotation) === Number(session.rotation) &&
@@ -3897,12 +4250,26 @@ function findSessionExerciseLogIndex(session, ex) {
 }
 
 function buildExerciseLogFromSession(session, ex, existing = null) {
+  const fourMeta = session.fourMenuRotation ? {
+    fourMenuRotation: true,
+    weeklySplit: false,
+    scheduledDate: session.scheduledDate || session.date,
+    performedDate: session.performedDate || session.date,
+    scheduledSplitKey: session.scheduledSplitKey || null,
+    selectedSplitKey: session.selectedSplitKey || null,
+    performedSplitKey: session.performedSplitKey || session.selectedSplitKey || null,
+    menuKey: session.performedSplitKey || session.selectedSplitKey || null,
+    splitName: session.splitName || session.dayName || null,
+    menuName: session.splitName || session.dayName || null,
+    deadliftVariant: ex.deadliftVariant || session.deadliftVariant || null,
+  } : {};
   return {
     id: existing?.id || uid(),
     date: session.date,
-    day: session.day,
-    block: session.block,
-    rotation: session.rotation,
+    day: session.fourMenuRotation ? null : session.day,
+    block: session.fourMenuRotation ? null : session.block,
+    rotation: session.fourMenuRotation ? null : session.rotation,
+    ...fourMeta,
     isDeload: session.isDeload,
     isAdjustmentRotation: !!session.isAdjustmentRotation,
     r4AdjustmentMode: session.r4AdjustmentMode || null,
@@ -3943,10 +4310,12 @@ function upsertExerciseLogFromSession(session, ex, allowCreate = false) {
   if (existIdx >= 0) store.logs[existIdx] = log;
   else store.logs.push(log);
   const savedLog = existIdx >= 0 ? store.logs[existIdx] : store.logs[store.logs.length - 1];
-  if (isBig3Key(savedLog.exerciseKey)) {
+  if (!savedLog.fourMenuRotation && isBig3Key(savedLog.exerciseKey)) {
     const entry = upsertEstimatedMaxFromLog(savedLog);
     if (isMaxTestMenu(savedLog.menuType)) upsertMaxTestResultFromLog(savedLog, entry);
     upsertRotationProgressionFromLog(savedLog);
+  } else if (savedLog.fourMenuRotation && isBig3Key(savedLog.exerciseKey)) {
+    upsertEstimatedMaxFromLog(savedLog);
   }
   return savedLog;
 }
@@ -3966,12 +4335,24 @@ function finishTodaySession() {
   });
 
   (session.skippedRestExercises || []).forEach(ex => {
+    const fourMeta = session.fourMenuRotation ? {
+      fourMenuRotation: true,
+      scheduledDate: session.scheduledDate || session.date,
+      performedDate: session.performedDate || session.date,
+      scheduledSplitKey: session.scheduledSplitKey || null,
+      selectedSplitKey: session.selectedSplitKey || null,
+      performedSplitKey: session.performedSplitKey || session.selectedSplitKey || null,
+      menuKey: session.performedSplitKey || session.selectedSplitKey || null,
+      splitName: session.splitName || session.dayName || null,
+      menuName: session.splitName || session.dayName || null,
+    } : {};
     const log = {
       id: uid(),
       date: session.date,
-      day: session.day,
-      block: session.block,
-      rotation: session.rotation,
+      day: session.fourMenuRotation ? null : session.day,
+      block: session.fourMenuRotation ? null : session.block,
+      rotation: session.fourMenuRotation ? null : session.rotation,
+      ...fourMeta,
       isDeload: session.isDeload,
       isAdjustmentRotation: !!session.isAdjustmentRotation,
       r4AdjustmentMode: session.r4AdjustmentMode || null,
@@ -4002,20 +4383,32 @@ function finishTodaySession() {
       ts: Date.now(),
     };
     const existIdx = store.logs.findIndex(l =>
-      l.date === log.date && l.day === log.day && l.block === log.block &&
-      l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
+      l.date === log.date && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType &&
+      (!log.fourMenuRotation || (l.performedSplitKey || l.selectedSplitKey || l.menuKey) === (log.performedSplitKey || log.selectedSplitKey || log.menuKey))
     );
     if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
     else store.logs.push(log);
   });
 
   (session.deletedAccessories || []).forEach(deleted => {
+    const fourMeta = session.fourMenuRotation ? {
+      fourMenuRotation: true,
+      scheduledDate: session.scheduledDate || session.date,
+      performedDate: session.performedDate || session.date,
+      scheduledSplitKey: session.scheduledSplitKey || null,
+      selectedSplitKey: session.selectedSplitKey || null,
+      performedSplitKey: session.performedSplitKey || session.selectedSplitKey || null,
+      menuKey: session.performedSplitKey || session.selectedSplitKey || null,
+      splitName: session.splitName || session.dayName || null,
+      menuName: session.splitName || session.dayName || null,
+    } : {};
     const log = {
       id: uid(),
       date: session.date,
-      day: session.day,
-      block: session.block,
-      rotation: session.rotation,
+      day: session.fourMenuRotation ? null : session.day,
+      block: session.fourMenuRotation ? null : session.block,
+      rotation: session.fourMenuRotation ? null : session.rotation,
+      ...fourMeta,
       isDeload: session.isDeload,
       exerciseKey: deleted.exerciseKey,
       exerciseName: deleted.exerciseName,
@@ -4039,8 +4432,8 @@ function finishTodaySession() {
       ts: deleted.ts || Date.now(),
     };
     const existIdx = store.logs.findIndex(l =>
-      l.date === log.date && l.day === log.day && l.block === log.block &&
-      l.rotation === log.rotation && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType
+      l.date === log.date && l.exerciseKey === log.exerciseKey && l.menuType === log.menuType &&
+      (!log.fourMenuRotation || (l.performedSplitKey || l.selectedSplitKey || l.menuKey) === (log.performedSplitKey || log.selectedSplitKey || log.menuKey))
     );
     if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
     else store.logs.push(log);
@@ -4048,6 +4441,34 @@ function finishTodaySession() {
 
   session.completed = true;
   store.currentState.lastTrainingDate = session.date;
+  if (session.fourMenuRotation) {
+    const performed = session.performedSplitKey || session.selectedSplitKey;
+    if (performed && performed !== 'rest') {
+      store.currentState.lastCompletedMenuKey = performed;
+      store.currentState.lastCompletedDate = session.date;
+      if (performed === 'back') {
+        store.currentState.backCompletedCount = (parseInt(store.currentState.backCompletedCount, 10) || 0) + 1;
+      }
+      store.currentState.nextMenuKey = nextFourMenuKey(performed);
+      store.currentState.isRestSelected = false;
+    } else {
+      store.currentState.isRestSelected = true;
+    }
+    saveStore();
+    showToast('お疲れさま！記録を保存しました');
+    if (performed && performed !== 'rest') {
+      setTimeout(() => {
+        if (confirm(`次は「${fourMenuLabel(store.currentState.nextMenuKey)}」です。次回まで休みにしますか？`)) {
+          store.currentState.isRestSelected = true;
+          saveStore();
+        }
+        navigate('today');
+      }, 800);
+    } else {
+      navigate('today');
+    }
+    return;
+  }
   saveStore();
   showToast('お疲れさま！記録を保存しました');
 
@@ -4357,6 +4778,7 @@ function setupRestTimerLifecycleEvents() {
 
 // ===== ブロック画面 =====
 function renderBlock() {
+  if (isFourMenuMode()) return renderFourMenuPlan();
   const s = store.currentState;
   const viewRotation = blockViewRotation || s.rotation;
   const cells = [1, 2, 3, 4].map(r => {
@@ -4484,6 +4906,23 @@ function renderBlock() {
 }
 
 function afterBlock() {
+  if (isFourMenuMode()) {
+    document.querySelectorAll('[data-set-next-four-menu]').forEach(btn => {
+      btn.onclick = () => {
+        store.currentState.nextMenuKey = normalizeFourMenuKey(btn.dataset.setNextFourMenu);
+        store.currentState.isRestSelected = false;
+        saveStore();
+        render();
+      };
+    });
+    const restBtn = document.getElementById('btnSetFourMenuRest');
+    if (restBtn) restBtn.onclick = () => {
+      store.currentState.isRestSelected = true;
+      saveStore();
+      render();
+    };
+    return;
+  }
   const sug = computeNextBlockSuggestion();
   const blockComplete = isCurrentBlockComplete();
 
@@ -4552,6 +4991,50 @@ function afterBlock() {
 
   bindAccessorySlotEditorActions();
   bindEstimatedMaxActions();
+}
+
+function renderFourMenuPlan() {
+  const state = getFourMenuState();
+  const rows = FOUR_MENU_ORDER.map(menuKey => {
+    const menu = buildFourMenu(menuKey, store.settings);
+    const main = menu.exercises.find(ex => ex.isBig3);
+    const accessoryCount = menu.exercises.filter(ex => ex.isAccessory).length;
+    const selected = state.nextMenuKey === menuKey && !state.isRestSelected;
+    return `
+      <div class="card four-plan-card ${selected ? 'active-plan' : ''}">
+        <div class="row between">
+          <div>
+            <div class="strong">${fourMenuLabel(menuKey)}</div>
+            <div class="muted">${main ? `${main.name} ${fmtW(main.plannedWeight)}kg × ${main.plannedReps} × ${main.plannedSets}` : 'メインなし'}</div>
+          </div>
+          ${selected ? '<span class="status-pill status-ok">次回</span>' : `<button class="btn-secondary btn-small" data-set-next-four-menu="${menuKey}">次回に設定</button>`}
+        </div>
+        ${main ? `<div class="muted mt-8" style="font-size:12px;">${main.progressionReason} / 参照: ${main.progressionReferenceDate}</div>` : ''}
+        <details class="ui-details compact-details mt-8">
+          <summary>補助 ${accessoryCount}種目</summary>
+          ${(menu.exercises.filter(ex => ex.isAccessory).map(ex => `<div class="next-row"><span class="nx-name">${ex.name}</span><span class="nx-detail">${exercisePlanText(ex)}</span></div>`).join('')) || '<div class="muted">なし</div>'}
+        </details>
+      </div>
+    `;
+  }).join('');
+  return `
+    <h2 class="screen-title">計画</h2>
+    <div class="section">
+      <h2>4メニュー順番ローテ</h2>
+      <div class="row between">
+        <div>
+          <div class="sec-label">現在の次回</div>
+          <div class="value-big">${state.isRestSelected ? '休み' : fourMenuLabel(state.nextMenuKey)}</div>
+        </div>
+        <button class="btn-secondary btn-small" id="btnSetFourMenuRest">休みにする</button>
+      </div>
+      <div class="muted mt-8" style="font-size:12px;">肩・腕 → 脚 → 胸 → 背中 の順に進みます</div>
+    </div>
+    <div class="section">
+      <h2>メニュー一覧</h2>
+      ${rows}
+    </div>
+  `;
 }
 
 function openEditSuggestionModal(sug) {
@@ -4819,6 +5302,14 @@ function renderLogDetail(logs) {
   }).join('');
 }
 
+function logGroupHeaderMeta(first = {}) {
+  if (first.fourMenuRotation) {
+    const name = first.splitName || first.menuName || fourMenuLabel(first.performedSplitKey || first.selectedSplitKey || first.menuKey);
+    return `<span class="muted">${escapeHtml(name)}</span>`;
+  }
+  return `<span class="muted">B${first.block || '-'} / R${first.rotation || '-'} / Day${first.day || '-'}</span>`;
+}
+
 function renderDailyLogView(logMap = logsByDate()) {
   if (logMap.size === 0) return '<div class="card flat"><div class="muted text-center">記録がありません</div></div>';
   return `<div class="log-card-list">${[...logMap.entries()].map(([date, logs], cardIdx) => {
@@ -4833,7 +5324,7 @@ function renderDailyLogView(logMap = logsByDate()) {
       <details class="section ui-details log-card" ${cardIdx === 0 ? 'open' : ''}>
         <summary>
           <span>
-            <span class="log-card-title">${fmtDateShort(date)} <span class="muted">B${first.block || '-'} / R${first.rotation || '-'} / Day${first.day || '-'}</span></span>
+            <span class="log-card-title">${fmtDateShort(date)} ${logGroupHeaderMeta(first)}</span>
             <span class="muted" style="display:block;font-size:12px;">${summaryRows || summary.mainNames}</span>
           </span>
           <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}
@@ -4889,7 +5380,7 @@ function renderMonthlyLogView() {
   const selInfo = logFilter.selDate && logFilter.selDate.startsWith(month) ? dayInfo(logFilter.selDate) : null;
   const selFirst = selInfo?.logs[0];
   const selLine = selInfo && selInfo.logs.length
-    ? `<div class="muted mt-8">${fmtDateShort(logFilter.selDate)} ・ B${selFirst.block || '-'} / R${selFirst.rotation || '-'} / Day${selFirst.day || '-'} ・ ${[...new Set(selInfo.logs.map(log => log.exerciseName))].slice(0, 4).join('、')}</div>`
+    ? `<div class="muted mt-8">${fmtDateShort(logFilter.selDate)} ・ ${selFirst.fourMenuRotation ? escapeHtml(selFirst.splitName || selFirst.menuName || fourMenuLabel(selFirst.performedSplitKey || selFirst.selectedSplitKey || selFirst.menuKey)) : `B${selFirst.block || '-'} / R${selFirst.rotation || '-'} / Day${selFirst.day || '-'}`} ・ ${[...new Set(selInfo.logs.map(log => log.exerciseName))].slice(0, 4).join('、')}</div>`
     : (logFilter.selDate && logFilter.selDate.startsWith(month) ? '<div class="muted mt-8">記録なし</div>' : '');
 
   return `
@@ -5022,7 +5513,23 @@ function importData() {
       try {
         const data = JSON.parse(reader.result);
         if (!confirm('現在のデータを上書きしてインポートします。よろしいですか？')) return;
-        store = { ...defaultStore(), ...data };
+        const def = defaultStore();
+        store = {
+          ...def,
+          ...data,
+          settings: {
+            ...def.settings,
+            ...(data.settings || {}),
+            maxes: { ...def.settings.maxes, ...(data.settings?.maxes || {}) },
+            rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(data.settings?.rotationIncreaseCaps || {}) },
+            r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(data.settings?.r4AdjustmentModes || {}) },
+            mainSetOverrides: { ...def.settings.mainSetOverrides, ...(data.settings?.mainSetOverrides || {}) },
+            accessoryDefaults: { ...def.settings.accessoryDefaults, ...(data.settings?.accessoryDefaults || {}) },
+            accessorySlots: mergeAccessorySlots(data.settings?.accessorySlots, true, true),
+            exerciseRestSettings: Array.isArray(data.settings?.exerciseRestSettings) ? data.settings.exerciseRestSettings : [],
+          },
+          currentState: { ...def.currentState, ...(data.currentState || {}) },
+        };
         saveStore();
         showToast('インポート完了');
         render();
@@ -5051,6 +5558,18 @@ function summarizeMajorAccessoryLoad(settings = store.settings) {
     arm: ['腕'],
     leg: ['脚前側', '脚後側', '脚補助', 'カーフ', 'デッド・腰背部負荷'],
   };
+  if (isFourMenuMode(settings)) {
+    FOUR_MENU_ORDER.forEach(menuKey => {
+      (FOUR_MENU_ACCESSORY_SLOTS[menuKey] || []).forEach(slot => {
+        const ex = fourMenuAccessoryExerciseFromSlot(menuKey, slot);
+        const sets = parseInt(ex.plannedSets, 10) || 0;
+        Object.entries(matches).forEach(([key, cats]) => {
+          if ((ex.categories || []).some(c => cats.includes(c))) groups[key].sets += sets;
+        });
+      });
+    });
+    return groups;
+  }
   [1,2,3,4,5,6,7,8].forEach(day => {
     const isDeload = false;
     buildAccessoryExercises(day, settings, isDeload).forEach(ex => {
@@ -5462,6 +5981,7 @@ function renderSettings() {
       <label class="field"><span>スクワットMAX (kg)</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /></label>
       <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
       <label class="field"><span>床引きデッドMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
+      <label class="field"><span>ショルダープレスMAX (kg)</span><input type="number" step="0.5" id="set-shoulderPress" value="${m.shoulderPress ?? 77.5}" /></label>
       <label class="field"><span>重量刻み (kg)</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /></label>
       <details class="ui-details compact-details">
         <summary>補足</summary>
@@ -5568,9 +6088,18 @@ function renderSettings() {
 
     <div class="section">
       <h2>現在の進行</h2>
-      <label class="field"><span>ブロック</span><input type="number" id="set-block" value="${s.block}" min="1" /></label>
-      <label class="field"><span>ローテ (1-4)</span><input type="number" id="set-rotation" value="${s.rotation}" min="1" max="4" /></label>
-      <label class="field"><span>Day (1-8)</span><input type="number" id="set-day" value="${s.day}" min="1" max="8" /></label>
+      ${isFourMenuMode() ? `
+        <label class="field"><span>次回メニュー</span>
+          <select id="set-next-menu">
+            ${FOUR_MENU_ORDER.map(key => `<option value="${key}" ${normalizeFourMenuKey(s.nextMenuKey) === key ? 'selected' : ''}>${fourMenuLabel(key)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="check-row"><input type="checkbox" id="set-rest-selected" ${s.isRestSelected ? 'checked' : ''} /> 次回まで休み</label>
+      ` : `
+        <label class="field"><span>ブロック</span><input type="number" id="set-block" value="${s.block}" min="1" /></label>
+        <label class="field"><span>ローテ (1-4)</span><input type="number" id="set-rotation" value="${s.rotation}" min="1" max="4" /></label>
+        <label class="field"><span>Day (1-8)</span><input type="number" id="set-day" value="${s.day}" min="1" max="8" /></label>
+      `}
     </div>
 
     <div class="section">
@@ -5627,13 +6156,19 @@ function afterSettings() {
       squat: parseFloat(document.getElementById('set-squat').value) || 0,
       halfDead: parseFloat(document.getElementById('set-halfDead').value) || 0,
       floorDead: parseFloat(document.getElementById('set-floorDead').value) || 0,
+      shoulderPress: parseFloat(document.getElementById('set-shoulderPress').value) || 77.5,
     };
     const newInc = parseFloat(document.getElementById('set-inc').value) || 2.5;
-    const newState = {
-      block: parseInt(document.getElementById('set-block').value) || 1,
-      rotation: Math.min(4, Math.max(1, parseInt(document.getElementById('set-rotation').value) || 1)),
-      day: Math.min(8, Math.max(1, parseInt(document.getElementById('set-day').value) || 1)),
-    };
+    const newState = isFourMenuMode()
+      ? {
+          nextMenuKey: normalizeFourMenuKey(document.getElementById('set-next-menu')?.value),
+          isRestSelected: !!document.getElementById('set-rest-selected')?.checked,
+        }
+      : {
+          block: parseInt(document.getElementById('set-block').value) || 1,
+          rotation: Math.min(4, Math.max(1, parseInt(document.getElementById('set-rotation').value) || 1)),
+          day: Math.min(8, Math.max(1, parseInt(document.getElementById('set-day').value) || 1)),
+        };
     const volumeRadio = document.querySelector('input[name="volumeMode"]:checked');
     const newVolumeMode = volumeRadio ? volumeRadio.value : (store.settings.trainingVolumeMode || 'high');
     const strengthRadio = document.querySelector('input[name="strengthMode"]:checked');
@@ -5876,6 +6411,12 @@ if (typeof window !== 'undefined') {
     renderBlock,
     finishTodaySession,
     nextDay,
+    isFourMenuMode,
+    buildFourMenu,
+    selectFourMenuForToday,
+    nextFourMenuKey,
+    getFourMenuBackLiftKey,
+    getFourMenuMainPlan,
     computeNextBlockSuggestion,
     getRestState: () => ({ ...restState }),
     getStore: () => store,
