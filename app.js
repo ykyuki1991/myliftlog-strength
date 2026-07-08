@@ -381,24 +381,35 @@ function loadStore() {
     const shoulderDefaultsAlreadyAdded = parsed.settings?.accessoryShoulderDefaultsAdded === true;
     const day7BulgarianDefaultAdded = parsed.settings?.day7BulgarianDefaultAdded === true;
     const mergedAccessorySlots = mergeAccessorySlots(parsed.settings?.accessorySlots, shoulderDefaultsAlreadyAdded, day7BulgarianDefaultAdded);
+    const mergedSettings = {
+      ...def.settings,
+      ...(parsed.settings || {}),
+      // PR #31 以降の新規運用は4メニュー順番ローテを優先する。
+      // 既存localStorageに旧検証用/過去版の programMode が残っていても、旧8日ローテは履歴互換としてのみ残す。
+      programMode: 'fourMenu',
+      maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
+      rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
+      r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
+      mainSetOverrides: { ...def.settings.mainSetOverrides, ...(parsed.settings?.mainSetOverrides || {}) },
+      exerciseRestSettings: Array.isArray(parsed.settings?.exerciseRestSettings) ? parsed.settings.exerciseRestSettings : [],
+      accessoryDefaults: mergedAccDefaults,
+      accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
+      accessorySlots: mergedAccessorySlots,
+      accessoryShoulderDefaultsAdded: true,
+      day7BulgarianDefaultAdded: true,
+    };
+    const mergedState = {
+      ...def.currentState,
+      ...(parsed.currentState || {}),
+      nextMenuKey: normalizeFourMenuKey(parsed.currentState?.nextMenuKey || parsed.currentState?.selectedSplitKey || def.currentState.nextMenuKey),
+      isRestSelected: !!parsed.currentState?.isRestSelected,
+      backCompletedCount: parseInt(parsed.currentState?.backCompletedCount, 10) || 0,
+    };
     return {
       ...def,
       ...parsed,
-      settings: {
-        ...def.settings,
-        ...(parsed.settings || {}),
-        maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
-        rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
-        r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
-        mainSetOverrides: { ...def.settings.mainSetOverrides, ...(parsed.settings?.mainSetOverrides || {}) },
-        exerciseRestSettings: Array.isArray(parsed.settings?.exerciseRestSettings) ? parsed.settings.exerciseRestSettings : [],
-        accessoryDefaults: mergedAccDefaults,
-        accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
-        accessorySlots: mergedAccessorySlots,
-        accessoryShoulderDefaultsAdded: true,
-        day7BulgarianDefaultAdded: true,
-      },
-      currentState: { ...def.currentState, ...(parsed.currentState || {}) },
+      settings: mergedSettings,
+      currentState: mergedState,
       rotationProgressions: Array.isArray(parsed.rotationProgressions) ? parsed.rotationProgressions : [],
       estimatedMaxHistory: Array.isArray(parsed.estimatedMaxHistory) ? parsed.estimatedMaxHistory : [],
       maxTestResults: Array.isArray(parsed.maxTestResults) ? parsed.maxTestResults : [],
@@ -2114,7 +2125,19 @@ function isFourMenuMode(settings = store.settings) {
 }
 
 function normalizeFourMenuKey(key) {
-  return FOUR_MENU_LABELS[key] ? key : 'shoulder_arm';
+  const aliases = {
+    shoulderArms: 'shoulder_arm',
+    shoulder_arm: 'shoulder_arm',
+    shouldersArms: 'shoulder_arm',
+    shoulder: 'shoulder_arm',
+    arms: 'shoulder_arm',
+    leg: 'legs',
+    legs: 'legs',
+    chest: 'chest',
+    back: 'back',
+  };
+  const normalized = aliases[String(key || '')] || key;
+  return FOUR_MENU_LABELS[normalized] ? normalized : 'shoulder_arm';
 }
 
 function nextFourMenuKey(key) {
@@ -5520,6 +5543,7 @@ function importData() {
           settings: {
             ...def.settings,
             ...(data.settings || {}),
+            programMode: 'fourMenu',
             maxes: { ...def.settings.maxes, ...(data.settings?.maxes || {}) },
             rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(data.settings?.rotationIncreaseCaps || {}) },
             r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(data.settings?.r4AdjustmentModes || {}) },
@@ -5528,7 +5552,13 @@ function importData() {
             accessorySlots: mergeAccessorySlots(data.settings?.accessorySlots, true, true),
             exerciseRestSettings: Array.isArray(data.settings?.exerciseRestSettings) ? data.settings.exerciseRestSettings : [],
           },
-          currentState: { ...def.currentState, ...(data.currentState || {}) },
+          currentState: {
+            ...def.currentState,
+            ...(data.currentState || {}),
+            nextMenuKey: normalizeFourMenuKey(data.currentState?.nextMenuKey || data.currentState?.selectedSplitKey || def.currentState.nextMenuKey),
+            isRestSelected: !!data.currentState?.isRestSelected,
+            backCompletedCount: parseInt(data.currentState?.backCompletedCount, 10) || 0,
+          },
         };
         saveStore();
         showToast('インポート完了');
