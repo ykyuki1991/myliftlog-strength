@@ -64,6 +64,7 @@ function createHarness() {
 const h = createHarness();
 const api = h.api;
 const store = api.getStore();
+store.settings.programMode = 'legacy8';
 
 function testBig3Unaffected() {
   const day1 = api.getDayMenu(1, 1, store.settings);
