@@ -1434,6 +1434,8 @@ function testExistingStoreMigratesToFourMenuMode() {
   const store = api.getStore();
   assert.strictEqual(store.settings.programMode, 'fourMenu');
   assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
+  assert.ok(store.settings.fourMenuAccessorySlots);
+  assert.ok(store.settings.fourMenuAccessorySlots.legs.every(slot => typeof slot.reps === 'number'));
   const html = api.renderToday();
   assert.ok(html.includes('4メニュー順番ローテ') || html.includes('次のメニュー'));
   assert.ok(html.includes('肩・腕'));
@@ -1586,6 +1588,58 @@ function testFourMenuLogRenderingAndOverrideScope() {
   assert.notStrictEqual(api.buildFourMenu('legs', store.settings).exercises.find(ex => ex.key === 'squat').plannedWeight, 120);
 }
 
+function testFourMenuAccessoryTemplatesAndPlanActions() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  api.updateHeader();
+  assert.ok(isolated.elements.headerStatus.textContent.includes('4メニュー'));
+  assert.ok(!isolated.elements.headerStatus.textContent.includes('Day'));
+  const initial = api.getFourMenuAccessorySlots('legs');
+  assert.ok(initial.length >= 3);
+  assert.ok(initial.every(slot => typeof slot.reps === 'number'), 'four-menu planned reps must be numeric');
+  assert.strictEqual(initial.find(slot => slot.key === 'legpress').plannedSets, 4);
+  assert.strictEqual(initial.find(slot => slot.key === 'legpress').plannedWeight, 250);
+
+  const target = initial.find(slot => slot.key === 'leg_curl');
+  assert.ok(api.updateFourMenuAccessorySlot('legs', target.slotId, { ...target, reps: '10〜15', plannedSets: 4 }));
+  assert.ok(store.settings.fourMenuAccessorySlots.legs.length);
+  let generated = api.buildFourMenu('legs', store.settings).exercises.find(ex => ex.slotId === target.slotId);
+  assert.strictEqual(generated.plannedReps, 12);
+  assert.strictEqual(generated.plannedSets, 4);
+
+  const todayOnly = { ...generated, plannedReps: 20 };
+  assert.strictEqual(todayOnly.plannedReps, 20);
+  generated = api.buildFourMenu('legs', store.settings).exercises.find(ex => ex.slotId === target.slotId);
+  assert.strictEqual(generated.plannedReps, 12, 'today-only changes must not mutate the template');
+
+  const added = api.addFourMenuAccessorySlot('chest', {
+    slotId: 'today_chest_temp',
+    slotName: '胸',
+    key: 'custom_test',
+    name: 'テスト補助',
+    plannedSets: 2,
+    reps: '8〜12',
+    plannedWeight: 20,
+    targetRpe: '8',
+    categories: ['胸'],
+    fatigueTags: [],
+  });
+  assert.ok(!String(added.slotId).startsWith('today_'));
+  assert.strictEqual(added.reps, 10);
+  assert.ok(api.buildFourMenu('chest', store.settings).exercises.some(ex => ex.name === 'テスト補助'));
+  api.deleteFourMenuAccessorySlot('chest', added.slotId);
+  assert.ok(!api.buildFourMenu('chest', store.settings).exercises.some(ex => ex.name === 'テスト補助'));
+  assert.ok(store.settings.fourMenuAccessorySlots.legs.length);
+
+  const planHtml = api.renderBlock();
+  assert.ok(planHtml.includes('補助種目を追加'));
+  assert.ok(planHtml.includes('data-edit-four-accessory'));
+  assert.ok(!planHtml.includes('Daynull'));
+  assert.ok(!planHtml.includes('undefined'));
+  assert.ok(!planHtml.includes('NaN'));
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();
@@ -1619,6 +1673,7 @@ testExistingStoreMigratesToFourMenuMode();
 testFourMenuPlanAndProgression();
 testFourMenuSessionSelectionAndDeadliftAlternation();
 testFourMenuLogRenderingAndOverrideScope();
+testFourMenuAccessoryTemplatesAndPlanActions();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
