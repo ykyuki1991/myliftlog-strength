@@ -26,9 +26,10 @@ function makeElement(id) {
   };
 }
 
-function createHarness() {
+function createHarness(options = {}) {
   const elements = {};
   const storage = {};
+  if (options.initialStore) storage[STORAGE_KEY] = JSON.stringify(options.initialStore);
   const document = {
     getElementById(id) {
       if (!elements[id]) elements[id] = makeElement(id);
@@ -59,7 +60,7 @@ function createHarness() {
   vm.createContext(context);
   vm.runInContext(APP_JS, context);
   const api = context.window.__mllTest;
-  api.getStore().settings.programMode = 'legacy8';
+  if (options.forceLegacy !== false) api.getStore().settings.programMode = 'legacy8';
   return { api, context, storage, elements };
 }
 
@@ -1400,6 +1401,47 @@ function createFourMenuHarness() {
   return h;
 }
 
+function testExistingStoreMigratesToFourMenuMode() {
+  const saved = {
+    version: '1.0.0',
+    settings: {
+      programMode: 'legacy8',
+      maxes: { bench: 125, squat: 170, halfDead: 205, floorDead: 190 },
+    },
+    currentState: {
+      block: 3,
+      rotation: 4,
+      day: 7,
+      nextMenuKey: 'shoulderArms',
+    },
+    logs: [{
+      id: 'old-log',
+      date: '2026-06-01',
+      block: 2,
+      rotation: 3,
+      day: 5,
+      exerciseKey: 'bench',
+      exerciseName: 'ベンチプレス',
+      menuType: 'bench-volume',
+      plannedSets: 3,
+      doneSets: 3,
+      sets: [],
+      ts: 1,
+    }],
+  };
+  const isolated = createHarness({ initialStore: saved, forceLegacy: false });
+  const api = isolated.api;
+  const store = api.getStore();
+  assert.strictEqual(store.settings.programMode, 'fourMenu');
+  assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
+  const html = api.renderToday();
+  assert.ok(html.includes('4メニュー順番ローテ') || html.includes('次のメニュー'));
+  assert.ok(html.includes('肩・腕'));
+  assert.ok(!html.includes('B3 / R4 / Day7'), 'today should not prefer legacy progress metadata');
+  const logHtml = api.renderDailyLogView();
+  assert.ok(logHtml.includes('B2 / R3 / Day5'), 'legacy log view remains readable');
+}
+
 function testFourMenuPlanAndProgression() {
   const isolated = createFourMenuHarness();
   const api = isolated.api;
@@ -1573,6 +1615,7 @@ testCompletionCommitsCleanRecordValues();
 testRecalcKeepsSkipsAndTodayOnlyExercises();
 testFutureAccessoryEditCoversSetsRepsRpe();
 testUpdateExerciseRestSetting();
+testExistingStoreMigratesToFourMenuMode();
 testFourMenuPlanAndProgression();
 testFourMenuSessionSelectionAndDeadliftAlternation();
 testFourMenuLogRenderingAndOverrideScope();
