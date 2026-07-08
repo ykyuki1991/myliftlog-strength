@@ -58,6 +58,7 @@ const DEFAULT_SETTINGS = {
   // 一定期間だけ部位・種目を休止する設定。予定から外し、失敗/未完了扱いにしない。
   exerciseRestSettings: [],
   accessorySlots: null,
+  fourMenuAccessorySlots: null,
   accessoryShoulderDefaultsAdded: true,
   day7BulgarianDefaultAdded: true,
 };
@@ -322,25 +323,25 @@ const DEFAULT_ACCESSORY_SLOTS = {
 
 const FOUR_MENU_ACCESSORY_SLOTS = {
   shoulder_arm: [
-    { slotId: 'fm-shoulder-side-raise', slotName: '肩', key: 'side_raise', name: 'サイドレイズ', plannedSets: 3, setsText: '3', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 14, weightType: 'dumbbell', categories: ['肩', '横肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
-    { slotId: 'fm-shoulder-rear-delt', slotName: '肩', key: 'rear_delt_fly', name: 'リアデルトフライ', plannedSets: 3, setsText: '3', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 57, weightType: 'upper_machine', categories: ['肩', '後ろ肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
-    { slotId: 'fm-arm-curl', slotName: '腕', key: 'preacher', name: 'ワンハンドDBプリーチャーカール', plannedSets: 3, setsText: '3', reps: '10〜12', targetRpe: '8〜9', plannedWeight: 14, weightType: 'dumbbell', categories: ['腕'], fatigueTags: ['肘負荷'], restType: 'arm' },
-    { slotId: 'fm-arm-ext', slotName: '腕', key: 'lying_ext', name: 'ライイングエクステンション', plannedSets: 3, setsText: '3', reps: '10〜12', targetRpe: '8〜9', plannedWeight: 30, weightType: 'barbell', categories: ['腕'], fatigueTags: ['肘負荷'], restType: 'arm' },
+    { slotId: 'fm-shoulder-side-raise', slotName: '肩', key: 'side_raise', name: 'サイドレイズ', plannedSets: 3, setsText: '3', reps: 12, targetRpe: '8〜9', plannedWeight: 14, weightType: 'dumbbell', categories: ['肩', '横肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
+    { slotId: 'fm-shoulder-rear-delt', slotName: '肩', key: 'rear_delt_fly', name: 'リアデルトフライ', plannedSets: 3, setsText: '3', reps: 12, targetRpe: '8〜9', plannedWeight: 57, weightType: 'upper_machine', categories: ['肩', '後ろ肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
+    { slotId: 'fm-arm-curl', slotName: '腕', key: 'preacher', name: 'ワンハンドDBプリーチャーカール', plannedSets: 3, setsText: '3', reps: 10, targetRpe: '8〜9', plannedWeight: 14, weightType: 'dumbbell', categories: ['腕'], fatigueTags: ['肘負荷'], restType: 'arm' },
+    { slotId: 'fm-arm-ext', slotName: '腕', key: 'lying_ext', name: 'ライイングエクステンション', plannedSets: 3, setsText: '3', reps: 10, targetRpe: '8〜9', plannedWeight: 30, weightType: 'barbell', categories: ['腕'], fatigueTags: ['肘負荷'], restType: 'arm' },
   ],
   legs: [
-    { slotId: 'fm-leg-press', slotName: '脚', key: 'legpress', name: 'レッグプレス', plannedSets: 3, setsText: '3', reps: '10〜12', targetRpe: '8', plannedWeight: 240, weightType: 'leg_machine', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], restType: 'default' },
-    { slotId: 'fm-leg-curl', slotName: '脚', key: 'leg_curl', name: 'レッグカール', plannedSets: 3, setsText: '3', reps: '10〜15', targetRpe: '8〜9', plannedWeight: 70, weightType: 'leg_machine', categories: ['脚後側', '脚補助'], fatigueTags: ['低リスク'], restType: 'default' },
-    { slotId: 'fm-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', plannedSets: 4, setsText: '4', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 120, weightType: 'leg_machine', categories: ['カーフ', '脚補助'], fatigueTags: ['低リスク'], restType: 'calf' },
+    { slotId: 'fm-leg-press', slotName: '脚', key: 'legpress', name: 'レッグプレス', plannedSets: 4, setsText: '4', reps: 10, targetRpe: '8', plannedWeight: 250, weightType: 'leg_machine', categories: ['脚前側', '脚補助'], fatigueTags: ['膝負荷'], restType: 'default' },
+    { slotId: 'fm-leg-curl', slotName: '脚', key: 'leg_curl', name: 'レッグカール', plannedSets: 3, setsText: '3', reps: 12, targetRpe: '8〜9', plannedWeight: 70, weightType: 'leg_machine', categories: ['脚後側', '脚補助'], fatigueTags: ['低リスク'], restType: 'default' },
+    { slotId: 'fm-calf', slotName: 'カーフ', key: 'calf', name: 'カーフレイズ', plannedSets: 4, setsText: '4', reps: 12, targetRpe: '8〜9', plannedWeight: 120, weightType: 'leg_machine', categories: ['カーフ', '脚補助'], fatigueTags: ['低リスク'], restType: 'calf' },
   ],
   chest: [
-    { slotId: 'fm-incline-db', slotName: '胸', key: 'incline_db', name: 'インクラインDBプレス', plannedSets: 3, setsText: '3', reps: '8〜10', targetRpe: '8〜9', plannedWeight: 38, weightType: 'dumbbell', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], restType: 'incline_db' },
-    { slotId: 'fm-dips', slotName: '胸・腕', key: 'dips', name: 'ディップス', plannedSets: 3, setsText: '3', reps: '6〜10', targetRpe: '8〜9', plannedWeight: 90, weightType: 'bodyweight', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'], restType: 'dips' },
-    { slotId: 'fm-pec-fly', slotName: '胸', key: 'pec_fly', name: 'ペックフライ', plannedSets: 3, setsText: '3', reps: '10〜15', targetRpe: '8〜9', plannedWeight: 70, weightType: 'upper_machine', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
+    { slotId: 'fm-incline-db', slotName: '胸', key: 'incline_db', name: 'インクラインDBプレス', plannedSets: 3, setsText: '3', reps: 10, targetRpe: '8〜9', plannedWeight: 38, weightType: 'dumbbell', categories: ['胸', 'ベンチ系プレス'], fatigueTags: ['肩負荷'], restType: 'incline_db' },
+    { slotId: 'fm-dips', slotName: '胸・腕', key: 'dips', name: 'ディップス', plannedSets: 3, setsText: '3', reps: 10, targetRpe: '8〜9', plannedWeight: 90, weightType: 'bodyweight', categories: ['胸', '腕', 'ベンチ系プレス'], fatigueTags: ['肩負荷', '肘負荷'], restType: 'dips' },
+    { slotId: 'fm-pec-fly', slotName: '胸', key: 'pec_fly', name: 'ペックフライ', plannedSets: 3, setsText: '3', reps: 12, targetRpe: '8〜9', plannedWeight: 70, weightType: 'upper_machine', categories: ['胸'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
   ],
   back: [
-    { slotId: 'fm-latpulldown', slotName: '背中', key: 'latpulldown', name: 'ラットプルダウン', plannedSets: 3, setsText: '3', reps: '8〜12', targetRpe: '8〜9', plannedWeight: 86, weightType: 'upper_machine', categories: ['背中'], fatigueTags: ['肘負荷'], restType: 'chinning' },
-    { slotId: 'fm-machine-row', slotName: '背中', key: 'machine_row', name: 'マシンロウ', plannedSets: 3, setsText: '3', reps: '8〜12', targetRpe: '8〜9', plannedWeight: 160, weightType: 'upper_machine', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], restType: 'row' },
-    { slotId: 'fm-rear-delt-back', slotName: '肩', key: 'rear_delt_fly', name: 'リアデルトフライ', plannedSets: 3, setsText: '3', reps: '12〜20', targetRpe: '8〜9', plannedWeight: 57, weightType: 'upper_machine', categories: ['肩', '背中', '後ろ肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
+    { slotId: 'fm-latpulldown', slotName: '背中', key: 'latpulldown', name: 'ラットプルダウン', plannedSets: 3, setsText: '3', reps: 12, targetRpe: '8〜9', plannedWeight: 86, weightType: 'upper_machine', categories: ['背中'], fatigueTags: ['肘負荷'], restType: 'chinning' },
+    { slotId: 'fm-machine-row', slotName: '背中', key: 'machine_row', name: 'マシンロウ', plannedSets: 3, setsText: '3', reps: 12, targetRpe: '8〜9', plannedWeight: 160, weightType: 'upper_machine', categories: ['背中', 'ロウ系'], fatigueTags: ['低リスク'], restType: 'row' },
+    { slotId: 'fm-rear-delt-back', slotName: '肩', key: 'rear_delt_fly', name: 'リアデルトフライ', plannedSets: 3, setsText: '3', reps: 12, targetRpe: '8〜9', plannedWeight: 57, weightType: 'upper_machine', categories: ['肩', '背中', '後ろ肩', '肩補助'], fatigueTags: ['肩負荷', '低リスク'], restType: 'default' },
   ],
 };
 
@@ -352,7 +353,11 @@ let accessoryEditorOpenDay = null;
 function defaultStore() {
   return {
     version: APP_VERSION,
-    settings: { ...deepClone(DEFAULT_SETTINGS), accessorySlots: defaultAccessorySlots() },
+    settings: {
+      ...deepClone(DEFAULT_SETTINGS),
+      accessorySlots: defaultAccessorySlots(),
+      fourMenuAccessorySlots: defaultFourMenuAccessorySlots(),
+    },
     currentState: deepClone(DEFAULT_STATE),
     logs: [],                // {id, date, day, block, rotation, exerciseKey, exerciseName, menuType, plannedWeight, plannedReps, plannedSets, sets:[{w,r,done}], rpe, pains:[], note, manualAdjusted, ts}
     manualAdjustments: {},   // key: "Day-exerciseKey-menuType" → kg差分
@@ -395,6 +400,7 @@ function loadStore() {
       accessoryDefaults: mergedAccDefaults,
       accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
       accessorySlots: mergedAccessorySlots,
+      fourMenuAccessorySlots: mergeFourMenuAccessorySlots(parsed.settings?.fourMenuAccessorySlots),
       accessoryShoulderDefaultsAdded: true,
       day7BulgarianDefaultAdded: true,
     };
@@ -1830,6 +1836,47 @@ function normalizeAccessorySlot(slot) {
   };
 }
 
+function normalizeFourMenuAccessorySlot(slot) {
+  const normalized = normalizeAccessorySlot(slot);
+  if (!normalized) return null;
+  const range = String(normalized.reps ?? '').replace(/[～\-]/g, '〜');
+  const fixedReps = {
+    '5〜8': 8,
+    '6〜10': 10,
+    '8〜10': 10,
+    '8〜12': 10,
+    '10〜12': 10,
+    '10〜15': 12,
+    '12〜20': 12,
+  }[range] ?? parseRangeMin(normalized.reps, 8);
+  return {
+    ...normalized,
+    reps: Math.max(1, Math.round(fixedReps)),
+  };
+}
+
+function defaultFourMenuAccessorySlots() {
+  return Object.fromEntries(FOUR_MENU_ORDER.map(menuKey => [
+    menuKey,
+    (FOUR_MENU_ACCESSORY_SLOTS[menuKey] || []).map(slot => normalizeFourMenuAccessorySlot(deepClone(slot))),
+  ]));
+}
+
+function mergeFourMenuAccessorySlots(saved) {
+  const defaults = defaultFourMenuAccessorySlots();
+  if (!saved || typeof saved !== 'object') return defaults;
+  return Object.fromEntries(FOUR_MENU_ORDER.map(menuKey => {
+    const source = Array.isArray(saved[menuKey]) ? saved[menuKey] : defaults[menuKey];
+    return [menuKey, source.map(normalizeFourMenuAccessorySlot).filter(Boolean)];
+  }));
+}
+
+function getFourMenuAccessorySlots(menuKey, settings = store.settings) {
+  const key = normalizeFourMenuKey(menuKey);
+  const source = settings.fourMenuAccessorySlots || defaultFourMenuAccessorySlots();
+  return (source[key] || []).map(normalizeFourMenuAccessorySlot).filter(Boolean);
+}
+
 function inferAccessoryWeightType(slot) {
   const name = slot?.name || '';
   const cats = normalizeList(slot?.categories);
@@ -2286,7 +2333,7 @@ function buildFourMenu(menuKey, settings = store.settings) {
   }
   let exercises = [
     buildFourMenuMainExercise(normalizedKey, settings),
-    ...(FOUR_MENU_ACCESSORY_SLOTS[normalizedKey] || []).map(slot => fourMenuAccessoryExerciseFromSlot(normalizedKey, slot)),
+    ...getFourMenuAccessorySlots(normalizedKey, settings).map(slot => fourMenuAccessoryExerciseFromSlot(normalizedKey, slot)),
   ];
   exercises = applyMainSetOverridesToMenu(exercises, normalizedKey, settings);
   exercises = exercises.map(ex => {
@@ -3038,6 +3085,14 @@ function updateHeader() {
   const s = store.currentState;
   const el = document.getElementById('headerStatus');
   if (!el) return;
+  if (isFourMenuMode()) {
+    const session = store.daySessions[todaySessionKey()];
+    const currentKey = session?.isRest
+      ? 'rest'
+      : normalizeFourMenuKey(session?.performedSplitKey || session?.selectedSplitKey || s.nextMenuKey);
+    el.textContent = `4メニュー / 現在: ${fourMenuLabel(currentKey)}`;
+    return;
+  }
   el.innerHTML =
     `B${s.block} / <span class="${Number(s.rotation) === 4 ? 'pos-r4' : ''}">R${s.rotation}</span> / Day${s.day}`;
 }
@@ -3921,13 +3976,18 @@ function openAccessoryTodayModal(exIdx) {
   const session = store.daySessions[todaySessionKey()];
   const ex = session.exercises[exIdx];
   if (!ex?.isAccessory) return;
+  const fourMenuKey = session.fourMenuRotation
+    ? normalizeFourMenuKey(session.performedSplitKey || session.selectedSplitKey)
+    : null;
+  const contextLabel = fourMenuKey ? fourMenuLabel(fourMenuKey) : `Day${session.day}`;
   openModal('補助種目編集', `
-    <div class="muted mb-8">${ex.slotName || '補助スロット'} / Day${session.day}</div>
+    <div class="muted mb-8">${contextLabel} / ${ex.slotName || '補助スロット'}</div>
     ${slotFormHtml('accToday', ex)}
     <div class="btn-row">
       <button class="btn-secondary" id="acc-today-only">今日だけ変更</button>
       <button class="btn-warn" id="acc-save-future">今後にも反映</button>
       <button class="btn-danger" id="acc-delete-today">今日だけ削除</button>
+      <button class="btn-danger" id="acc-delete-future">今後も削除</button>
     </div>
   `, () => {
     bindSlotFormChips('accToday');
@@ -3941,12 +4001,18 @@ function openAccessoryTodayModal(exIdx) {
       showToast('今日だけ補助種目を変更しました');
     };
     document.getElementById('acc-save-future').onclick = () => {
-      const updated = readSlotForm('accToday', ex);
-      if (!confirmAccessoryChange('この変更を今後の同じDayにも反映しますか？', updated, session.day)) return;
+      const raw = readSlotForm('accToday', ex);
+      const updated = fourMenuKey ? normalizeFourMenuAccessorySlot(raw) : raw;
+      const target = fourMenuKey || session.day;
+      if (!confirmAccessoryChange(`この変更を今後の同じ${fourMenuKey ? 'メニュー' : 'Day'}にも反映しますか？`, updated, target)) return;
       // 既存スロットを更新。未登録（今日だけ追加した種目など）はスロットとして新規保存する
-      const persisted = updateAccessorySlot(session.day, ex.slotId, updated);
+      const persisted = fourMenuKey
+        ? updateFourMenuAccessorySlot(fourMenuKey, ex.slotId, updated)
+        : updateAccessorySlot(session.day, ex.slotId, updated);
       if (!persisted) {
-        const savedSlot = addAccessorySlot(session.day, updated.slotName, { ...updated, slotId: ex.slotId });
+        const savedSlot = fourMenuKey
+          ? addFourMenuAccessorySlot(fourMenuKey, { ...updated, slotId: ex.slotId })
+          : addAccessorySlot(session.day, updated.slotName, { ...updated, slotId: ex.slotId });
         if (savedSlot?.slotId) updated.slotId = savedSlot.slotId;
       }
       applySlotToExercise(ex, updated);
@@ -3972,19 +4038,33 @@ function openAccessoryTodayModal(exIdx) {
       render();
       showToast('今日だけ削除しました');
     };
+    document.getElementById('acc-delete-future').onclick = () => {
+      if (!confirm(`この補助種目を今日と今後の${fourMenuKey ? fourMenuLabel(fourMenuKey) : `Day${session.day}`}から削除しますか？過去ログは残ります。`)) return;
+      if (fourMenuKey) deleteFourMenuAccessorySlot(fourMenuKey, ex.slotId);
+      else deleteAccessorySlot(session.day, ex.slotId);
+      session.exercises.splice(exIdx, 1);
+      saveStore();
+      closeModal();
+      render();
+      showToast('今後も削除しました');
+    };
   });
 }
 
 function openAccessoryTodayAddModal() {
   const session = store.daySessions[todaySessionKey()];
   if (!session || session.isRest) return;
+  const fourMenuKey = session.fourMenuRotation
+    ? normalizeFourMenuKey(session.performedSplitKey || session.selectedSplitKey)
+    : null;
+  const contextLabel = fourMenuKey ? fourMenuLabel(fourMenuKey) : `Day${session.day}`;
   const base = normalizeAccessorySlot({
-    slotId: `today_${session.day}_${uid()}`,
+    slotId: `today_${fourMenuKey || session.day}_${uid()}`,
     slotName: '補助スロット',
     key: `custom_${uid()}`,
     name: '新規補助種目',
     plannedSets: 2,
-    reps: '8〜12',
+    reps: fourMenuKey ? 8 : '8〜12',
     targetRpe: '8',
     // カテゴリは自動付与しない（未分類のまま）。休止判定は明示的に選んだ部位・種目のみに適用する
     categories: [],
@@ -3993,7 +4073,7 @@ function openAccessoryTodayAddModal() {
     restType: 'default',
   });
   openModal('補助種目を追加', `
-    <div class="muted mb-8">Day${session.day} に追加します。今日だけ、または今後にも反映を選べます。</div>
+    <div class="muted mb-8">${contextLabel}に追加します。</div>
     ${slotFormHtml('accAddToday', { ...base, plannedReps: base.reps })}
     <div class="btn-row">
       <button class="btn-secondary" id="acc-add-today-only">今日だけ追加</button>
@@ -4003,8 +4083,11 @@ function openAccessoryTodayAddModal() {
     bindSlotFormChips('accAddToday');
     bindAccessoryPresetSelect('accAddToday');
     document.getElementById('acc-add-today-only').onclick = () => {
-      const updated = readSlotForm('accAddToday', base);
-      const ex = accessoryExerciseFromSlot(updated, store.settings, session.isDeload, session.day);
+      const raw = readSlotForm('accAddToday', base);
+      const updated = fourMenuKey ? normalizeFourMenuAccessorySlot(raw) : raw;
+      const ex = fourMenuKey
+        ? fourMenuAccessoryExerciseFromSlot(fourMenuKey, updated)
+        : accessoryExerciseFromSlot(updated, store.settings, session.isDeload, session.day);
       ex.sets = Array.from({ length: ex.plannedSets }, () => ({ weight: ex.plannedWeight, reps: '', done: false }));
       ex.rpe = '未入力';
       ex.pains = ['なし'];
@@ -4017,10 +4100,15 @@ function openAccessoryTodayAddModal() {
       showToast('今日だけ補助種目を追加しました');
     };
     document.getElementById('acc-add-future').onclick = () => {
-      const updated = readSlotForm('accAddToday', base);
-      if (!confirmAccessoryChange('この補助種目を今後の同じDayにも追加しますか？', updated, session.day)) return;
-      const savedSlot = addAccessorySlot(session.day, updated.slotName, updated);
-      const ex = accessoryExerciseFromSlot(savedSlot, store.settings, session.isDeload, session.day);
+      const raw = readSlotForm('accAddToday', base);
+      const updated = fourMenuKey ? normalizeFourMenuAccessorySlot(raw) : raw;
+      if (!confirmAccessoryChange(`この補助種目を今後の同じ${fourMenuKey ? 'メニュー' : 'Day'}にも追加しますか？`, updated, fourMenuKey || session.day)) return;
+      const savedSlot = fourMenuKey
+        ? addFourMenuAccessorySlot(fourMenuKey, updated)
+        : addAccessorySlot(session.day, updated.slotName, updated);
+      const ex = fourMenuKey
+        ? fourMenuAccessoryExerciseFromSlot(fourMenuKey, savedSlot)
+        : accessoryExerciseFromSlot(savedSlot, store.settings, session.isDeload, session.day);
       ex.sets = Array.from({ length: ex.plannedSets }, () => ({ weight: ex.plannedWeight, reps: '', done: false }));
       ex.rpe = '未入力';
       ex.pains = ['なし'];
@@ -4032,6 +4120,43 @@ function openAccessoryTodayAddModal() {
       showToast('今後にも反映して追加しました');
     };
   });
+}
+
+function updateFourMenuAccessorySlot(menuKey, slotId, updatedSlot) {
+  const slots = mergeFourMenuAccessorySlots(store.settings.fourMenuAccessorySlots);
+  const key = normalizeFourMenuKey(menuKey);
+  slots[key] = slots[key] || getFourMenuAccessorySlots(key);
+  const idx = slots[key].findIndex(slot => slot.slotId === slotId);
+  if (idx < 0) {
+    store.settings.fourMenuAccessorySlots = slots;
+    return false;
+  }
+  slots[key][idx] = normalizeFourMenuAccessorySlot({ ...slots[key][idx], ...updatedSlot, slotId });
+  store.settings.fourMenuAccessorySlots = slots;
+  return true;
+}
+
+function addFourMenuAccessorySlot(menuKey, slotData) {
+  const slots = mergeFourMenuAccessorySlots(store.settings.fourMenuAccessorySlots);
+  const key = normalizeFourMenuKey(menuKey);
+  slots[key] = slots[key] || getFourMenuAccessorySlots(key);
+  const normalized = normalizeFourMenuAccessorySlot({
+    ...slotData,
+    slotId: slotData?.slotId && !String(slotData.slotId).startsWith('today_')
+      ? slotData.slotId
+      : `fm-custom-${key}-${uid()}`,
+  });
+  slots[key].push(normalized);
+  store.settings.fourMenuAccessorySlots = slots;
+  return normalized;
+}
+
+function deleteFourMenuAccessorySlot(menuKey, slotId) {
+  const slots = mergeFourMenuAccessorySlots(store.settings.fourMenuAccessorySlots);
+  const key = normalizeFourMenuKey(menuKey);
+  slots[key] = slots[key] || getFourMenuAccessorySlots(key);
+  slots[key] = slots[key].filter(slot => slot.slotId !== slotId);
+  store.settings.fourMenuAccessorySlots = slots;
 }
 
 function updateAccessorySlot(day, slotId, updatedSlot) {
@@ -4944,6 +5069,16 @@ function afterBlock() {
       saveStore();
       render();
     };
+    document.querySelectorAll('[data-edit-four-accessory]').forEach(btn => {
+      btn.onclick = () => {
+        const menuKey = normalizeFourMenuKey(btn.dataset.fourMenuKey);
+        const slot = getFourMenuAccessorySlots(menuKey).find(item => item.slotId === btn.dataset.editFourAccessory);
+        if (slot) openFourMenuAccessoryPlanModal(menuKey, slot);
+      };
+    });
+    document.querySelectorAll('[data-add-four-accessory]').forEach(btn => {
+      btn.onclick = () => openFourMenuAccessoryPlanAddModal(btn.dataset.addFourAccessory);
+    });
     return;
   }
   const sug = computeNextBlockSuggestion();
@@ -5016,6 +5151,69 @@ function afterBlock() {
   bindEstimatedMaxActions();
 }
 
+function openFourMenuAccessoryPlanModal(menuKey, slot) {
+  const key = normalizeFourMenuKey(menuKey);
+  openModal('補助種目編集', `
+    <div class="muted mb-8">${fourMenuLabel(key)}</div>
+    ${slotFormHtml('fourAccPlan', { ...slot, plannedReps: slot.reps })}
+    <div class="btn-row">
+      <button class="btn-warn" id="four-acc-plan-save">保存</button>
+      <button class="btn-danger" id="four-acc-plan-delete">削除</button>
+    </div>
+  `, () => {
+    bindSlotFormChips('fourAccPlan');
+    bindAccessoryPresetSelect('fourAccPlan');
+    document.getElementById('four-acc-plan-save').onclick = () => {
+      const updated = normalizeFourMenuAccessorySlot(readSlotForm('fourAccPlan', slot));
+      updateFourMenuAccessorySlot(key, slot.slotId, updated);
+      saveStore();
+      closeModal();
+      render();
+      showToast('補助種目を更新しました');
+    };
+    document.getElementById('four-acc-plan-delete').onclick = () => {
+      if (!confirm(`今後の${fourMenuLabel(key)}から削除しますか？過去ログは残ります。`)) return;
+      deleteFourMenuAccessorySlot(key, slot.slotId);
+      saveStore();
+      closeModal();
+      render();
+      showToast('補助種目を削除しました');
+    };
+  });
+}
+
+function openFourMenuAccessoryPlanAddModal(menuKey) {
+  const key = normalizeFourMenuKey(menuKey);
+  const base = normalizeFourMenuAccessorySlot({
+    slotId: `fm-custom-${key}-${uid()}`,
+    slotName: '補助スロット',
+    key: `custom_${uid()}`,
+    name: '新規補助種目',
+    plannedSets: 2,
+    reps: 8,
+    targetRpe: '8',
+    categories: [],
+    fatigueTags: ['低リスク'],
+    weightType: 'upper_machine',
+    restType: 'default',
+  });
+  openModal('補助種目を追加', `
+    <div class="muted mb-8">${fourMenuLabel(key)}</div>
+    ${slotFormHtml('fourAccAdd', { ...base, plannedReps: base.reps })}
+    <button class="btn-primary" id="four-acc-add-save">今後に追加</button>
+  `, () => {
+    bindSlotFormChips('fourAccAdd');
+    bindAccessoryPresetSelect('fourAccAdd');
+    document.getElementById('four-acc-add-save').onclick = () => {
+      addFourMenuAccessorySlot(key, normalizeFourMenuAccessorySlot(readSlotForm('fourAccAdd', base)));
+      saveStore();
+      closeModal();
+      render();
+      showToast('補助種目を追加しました');
+    };
+  });
+}
+
 function renderFourMenuPlan() {
   const state = getFourMenuState();
   const rows = FOUR_MENU_ORDER.map(menuKey => {
@@ -5035,7 +5233,8 @@ function renderFourMenuPlan() {
         ${main ? `<div class="muted mt-8" style="font-size:12px;">${main.progressionReason} / 参照: ${main.progressionReferenceDate}</div>` : ''}
         <details class="ui-details compact-details mt-8">
           <summary>補助 ${accessoryCount}種目</summary>
-          ${(menu.exercises.filter(ex => ex.isAccessory).map(ex => `<div class="next-row"><span class="nx-name">${ex.name}</span><span class="nx-detail">${exercisePlanText(ex)}</span></div>`).join('')) || '<div class="muted">なし</div>'}
+          ${(menu.exercises.filter(ex => ex.isAccessory).map(ex => `<div class="next-row"><span class="nx-name">${ex.name}</span><span class="nx-detail">${exercisePlanText(ex)}</span><button class="btn-ghost btn-small" data-edit-four-accessory="${ex.slotId}" data-four-menu-key="${menuKey}">編集</button></div>`).join('')) || '<div class="muted">なし</div>'}
+          <button class="btn-secondary btn-small mt-8" data-add-four-accessory="${menuKey}">補助種目を追加</button>
         </details>
       </div>
     `;
@@ -5550,6 +5749,7 @@ function importData() {
             mainSetOverrides: { ...def.settings.mainSetOverrides, ...(data.settings?.mainSetOverrides || {}) },
             accessoryDefaults: { ...def.settings.accessoryDefaults, ...(data.settings?.accessoryDefaults || {}) },
             accessorySlots: mergeAccessorySlots(data.settings?.accessorySlots, true, true),
+            fourMenuAccessorySlots: mergeFourMenuAccessorySlots(data.settings?.fourMenuAccessorySlots),
             exerciseRestSettings: Array.isArray(data.settings?.exerciseRestSettings) ? data.settings.exerciseRestSettings : [],
           },
           currentState: {
@@ -6100,9 +6300,9 @@ function renderSettings() {
       </details>
     </div>
 
-    ${renderAccessorySlotEditor()}
+    ${isFourMenuMode() ? '' : renderAccessorySlotEditor()}
     ${renderExerciseRestSettings()}
-    ${renderAccessoryLoadCheck('settings')}
+    ${isFourMenuMode() ? '' : renderAccessoryLoadCheck('settings')}
 
     <div class="section">
       <h2>補助種目の初期重量・回数・セット</h2>
@@ -6427,10 +6627,16 @@ if (typeof window !== 'undefined') {
     addAccessorySlot,
     deleteAccessorySlot,
     updateAccessorySlot,
+    getFourMenuAccessorySlots,
+    addFourMenuAccessorySlot,
+    updateFourMenuAccessorySlot,
+    deleteFourMenuAccessorySlot,
+    normalizeFourMenuAccessorySlot,
     resetAccessorySlotsForDay,
     moveAccessorySlot,
     renderAccessoryLoadCheck,
     renderSettings,
+    updateHeader,
     renderToday,
     renderLog,
     renderDailyLogView,
