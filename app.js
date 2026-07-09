@@ -139,7 +139,7 @@ const FOUR_MENU_LABELS = {
   rest: '休み',
 };
 const FOUR_MENU_MAIN_LIFTS = {
-  shoulderPress: { key: 'shoulderPress', maxKey: 'shoulderPress', name: 'ショルダープレス', fallbackWeight: 65 },
+  shoulderPress: { key: 'shoulderPress', maxKey: 'shoulderPress', name: 'ミリタリープレス', fallbackWeight: 65 },
   squat: { key: 'squat', maxKey: 'squat', name: 'スクワット', fallbackWeight: 145 },
   bench: { key: 'bench', maxKey: 'bench', name: 'ベンチプレス', fallbackWeight: 107.5 },
   halfDead: { key: 'halfDead', maxKey: 'halfDead', name: 'ハーフデッド', fallbackWeight: 162.5 },
@@ -370,56 +370,67 @@ function defaultStore() {
   };
 }
 
+function migrateStoreData(parsed = {}) {
+  const def = defaultStore();
+  const mergedAccDefaults = { ...def.settings.accessoryDefaults };
+  const userAccDefaults = parsed.settings?.accessoryDefaults || {};
+  for (const key of Object.keys(userAccDefaults)) {
+    mergedAccDefaults[key] = { ...(mergedAccDefaults[key] || {}), ...userAccDefaults[key] };
+  }
+  const mergedSettings = {
+    ...def.settings,
+    ...(parsed.settings || {}),
+    programMode: 'fourMenu',
+    maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
+    rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
+    r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
+    mainSetOverrides: { ...def.settings.mainSetOverrides, ...(parsed.settings?.mainSetOverrides || {}) },
+    exerciseRestSettings: Array.isArray(parsed.settings?.exerciseRestSettings) ? parsed.settings.exerciseRestSettings : [],
+    accessoryDefaults: mergedAccDefaults,
+    accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
+    accessorySlots: mergeAccessorySlots(
+      parsed.settings?.accessorySlots,
+      parsed.settings?.accessoryShoulderDefaultsAdded === true,
+      parsed.settings?.day7BulgarianDefaultAdded === true
+    ),
+    fourMenuAccessorySlots: mergeFourMenuAccessorySlots(parsed.settings?.fourMenuAccessorySlots),
+    accessoryShoulderDefaultsAdded: true,
+    day7BulgarianDefaultAdded: true,
+  };
+  const parsedBackCount = parseInt(parsed.currentState?.backCompletedCount, 10);
+  const derivedBackCount = countCompletedFourMenuBackSessions(parsed.logs, parsed.daySessions);
+  const mergedState = {
+    ...def.currentState,
+    ...(parsed.currentState || {}),
+    nextMenuKey: normalizeFourMenuKey(
+      parsed.currentState?.nextMenuKey || parsed.currentState?.selectedSplitKey || def.currentState.nextMenuKey
+    ),
+    isRestSelected: !!parsed.currentState?.isRestSelected,
+    backCompletedCount: Number.isFinite(parsedBackCount)
+      ? Math.max(0, parsedBackCount, derivedBackCount)
+      : derivedBackCount,
+    lastCompletedMenuKey: parsed.currentState?.lastCompletedMenuKey
+      ? normalizeFourMenuKey(parsed.currentState.lastCompletedMenuKey)
+      : null,
+  };
+  return {
+    ...def,
+    ...parsed,
+    settings: mergedSettings,
+    currentState: mergedState,
+    logs: Array.isArray(parsed.logs) ? parsed.logs : [],
+    rotationProgressions: Array.isArray(parsed.rotationProgressions) ? parsed.rotationProgressions : [],
+    estimatedMaxHistory: Array.isArray(parsed.estimatedMaxHistory) ? parsed.estimatedMaxHistory : [],
+    maxTestResults: Array.isArray(parsed.maxTestResults) ? parsed.maxTestResults : [],
+    daySessions: parsed.daySessions && typeof parsed.daySessions === 'object' ? parsed.daySessions : {},
+  };
+}
+
 function loadStore() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultStore();
-    const parsed = JSON.parse(raw);
-    // マージ
-    const def = defaultStore();
-    // accessoryDefaults はキーごとに深くマージ（既存ユーザーキーは保持、新規キーは追加）
-    const mergedAccDefaults = { ...def.settings.accessoryDefaults };
-    const userAccDefaults = parsed.settings?.accessoryDefaults || {};
-    for (const k of Object.keys(userAccDefaults)) {
-      mergedAccDefaults[k] = { ...(mergedAccDefaults[k] || {}), ...userAccDefaults[k] };
-    }
-    const shoulderDefaultsAlreadyAdded = parsed.settings?.accessoryShoulderDefaultsAdded === true;
-    const day7BulgarianDefaultAdded = parsed.settings?.day7BulgarianDefaultAdded === true;
-    const mergedAccessorySlots = mergeAccessorySlots(parsed.settings?.accessorySlots, shoulderDefaultsAlreadyAdded, day7BulgarianDefaultAdded);
-    const mergedSettings = {
-      ...def.settings,
-      ...(parsed.settings || {}),
-      // PR #31 以降の新規運用は4メニュー順番ローテを優先する。
-      // 既存localStorageに旧検証用/過去版の programMode が残っていても、旧8日ローテは履歴互換としてのみ残す。
-      programMode: 'fourMenu',
-      maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
-      rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
-      r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
-      mainSetOverrides: { ...def.settings.mainSetOverrides, ...(parsed.settings?.mainSetOverrides || {}) },
-      exerciseRestSettings: Array.isArray(parsed.settings?.exerciseRestSettings) ? parsed.settings.exerciseRestSettings : [],
-      accessoryDefaults: mergedAccDefaults,
-      accessoryManagementMode: parsed.settings?.accessoryManagementMode || def.settings.accessoryManagementMode,
-      accessorySlots: mergedAccessorySlots,
-      fourMenuAccessorySlots: mergeFourMenuAccessorySlots(parsed.settings?.fourMenuAccessorySlots),
-      accessoryShoulderDefaultsAdded: true,
-      day7BulgarianDefaultAdded: true,
-    };
-    const mergedState = {
-      ...def.currentState,
-      ...(parsed.currentState || {}),
-      nextMenuKey: normalizeFourMenuKey(parsed.currentState?.nextMenuKey || parsed.currentState?.selectedSplitKey || def.currentState.nextMenuKey),
-      isRestSelected: !!parsed.currentState?.isRestSelected,
-      backCompletedCount: parseInt(parsed.currentState?.backCompletedCount, 10) || 0,
-    };
-    return {
-      ...def,
-      ...parsed,
-      settings: mergedSettings,
-      currentState: mergedState,
-      rotationProgressions: Array.isArray(parsed.rotationProgressions) ? parsed.rotationProgressions : [],
-      estimatedMaxHistory: Array.isArray(parsed.estimatedMaxHistory) ? parsed.estimatedMaxHistory : [],
-      maxTestResults: Array.isArray(parsed.maxTestResults) ? parsed.maxTestResults : [],
-    };
+    return migrateStoreData(JSON.parse(raw));
   } catch (e) {
     console.error('load error', e);
     return defaultStore();
@@ -2174,6 +2185,8 @@ function isFourMenuMode(settings = store.settings) {
 function normalizeFourMenuKey(key) {
   const aliases = {
     shoulderArms: 'shoulder_arm',
+    'shoulder-arms': 'shoulder_arm',
+    shoulder_arms: 'shoulder_arm',
     shoulder_arm: 'shoulder_arm',
     shouldersArms: 'shoulder_arm',
     shoulder: 'shoulder_arm',
@@ -2193,7 +2206,22 @@ function nextFourMenuKey(key) {
 }
 
 function fourMenuLabel(key) {
-  return FOUR_MENU_LABELS[key] || FOUR_MENU_LABELS.shoulder_arm;
+  if (key === 'rest') return FOUR_MENU_LABELS.rest;
+  return FOUR_MENU_LABELS[normalizeFourMenuKey(key)] || FOUR_MENU_LABELS.shoulder_arm;
+}
+
+function countCompletedFourMenuBackSessions(logs = [], daySessions = {}) {
+  const completedSessions = Object.values(daySessions || {}).filter(session =>
+    session?.fourMenuRotation && session.completed &&
+    normalizeFourMenuKey(session.performedSplitKey || session.selectedSplitKey) === 'back'
+  );
+  if (completedSessions.length) return completedSessions.length;
+  const dates = new Set((Array.isArray(logs) ? logs : [])
+    .filter(log => log?.fourMenuRotation && !log.isExerciseRest && !log.todayOnlyDeleted &&
+      normalizeFourMenuKey(log.performedSplitKey || log.selectedSplitKey || log.menuKey) === 'back')
+    .map(log => log.performedDate || log.date)
+    .filter(Boolean));
+  return dates.size;
 }
 
 function getFourMenuState() {
@@ -2211,7 +2239,7 @@ function isFourMainLiftKey(key) {
 }
 
 function fourMenuOverrideKey(menuKey, ex) {
-  if (!ex?.isBig3) return null;
+  if (!ex?.isBig3 && !ex?.isFourMenuMain) return null;
   return `Four-${normalizeFourMenuKey(menuKey)}-${ex.key}-${ex.menuType}`;
 }
 
@@ -2283,7 +2311,7 @@ function buildFourMenuMainExercise(menuKey, settings = store.settings) {
     key: lift.key,
     name: lift.name,
     menuType: `four-main-${lift.key}`,
-    isBig3: true,
+    isBig3: isBig3Key(lift.key),
     isFourMenuMain: true,
     plannedWeight: plan.weight,
     plannedReps: plan.reps,
@@ -2767,7 +2795,7 @@ function resizeExerciseSets(ex) {
 }
 
 function applyMainSetEdit(ex, values, options = {}) {
-  if (!ex?.isBig3) return { ok: false, reason: 'not-big3' };
+  if (!ex?.isBig3 && !ex?.isFourMenuMain) return { ok: false, reason: 'not-main' };
   const plannedWeight = parseFloat(values.plannedWeight);
   const plannedReps = parseInt(values.plannedReps, 10);
   const plannedSets = parseInt(values.plannedSets, 10);
@@ -2799,7 +2827,7 @@ function applyMainSetEdit(ex, values, options = {}) {
 }
 
 function mainSetOverrideKey(day, ex) {
-  if (!ex?.isBig3) return null;
+  if (!ex?.isBig3 && !ex?.isFourMenuMain) return null;
   if (typeof day === 'string' && FOUR_MENU_LABELS[day]) return fourMenuOverrideKey(day, ex);
   return `Day${day}-${ex.key}-${ex.menuType}`;
 }
@@ -3341,7 +3369,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         <div class="btn-row">
           <button class="btn-secondary btn-small" data-action="rest" data-ex="${exIdx}">レスト開始</button>
           <button class="btn-secondary btn-small" data-action="adjust" data-ex="${exIdx}">重量調整</button>
-          ${ex.isBig3 ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">BIG3編集</button>` : ''}
+          ${ex.isBig3 || ex.isFourMenuMain ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">メイン種目編集</button>` : ''}
           ${ex.isAccessory ? `<button class="btn-secondary btn-small" data-action="editAccessory" data-ex="${exIdx}">補助編集</button>` : ''}
           <button class="btn-secondary btn-small" data-action="editSets" data-ex="${exIdx}">セット編集</button>
           ${hasRecordedSet ? `<button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
@@ -3733,11 +3761,32 @@ function openAdjustModal(exIdx) {
       <input type="number" id="adj-weight" step="0.5" value="${currentWeight || ''}" />
     </label>
     <div class="btn-row">
+      <button class="btn-ghost btn-small" data-adjust-quick="-2.5">-2.5kg</button>
+      <button class="btn-ghost btn-small" data-adjust-quick="2.5">+2.5kg</button>
+      <button class="btn-ghost btn-small" data-adjust-percent="-5">-5%</button>
+      <button class="btn-ghost btn-small" data-adjust-percent="5">+5%</button>
+    </div>
+    <div class="btn-row">
       <button class="btn-secondary" id="adj-today">今日だけ変更</button>
       <button class="btn-warn" id="adj-future">今後にも反映</button>
     </div>
-    <div class="muted mt-8" style="font-size:12px;">「今後にも反映」の場合、同じDay×種目×メニュー種別に対し差分を保存します（次ブロックでも継続）</div>
+    <div class="muted mt-8" style="font-size:12px;">「今後にも反映」は同じ${session.fourMenuRotation ? 'メニュー' : 'Day'}・種目に保存します。</div>
   `, () => {
+    document.querySelectorAll('[data-adjust-quick]').forEach(btn => {
+      btn.onclick = () => {
+        const input = document.getElementById('adj-weight');
+        const value = (parseFloat(input.value) || currentWeight || 0) + parseFloat(btn.dataset.adjustQuick);
+        input.value = roundToIncrement(Math.max(0, value), store.settings.increment);
+      };
+    });
+    document.querySelectorAll('[data-adjust-percent]').forEach(btn => {
+      btn.onclick = () => {
+        const input = document.getElementById('adj-weight');
+        const base = parseFloat(input.value) || currentWeight || 0;
+        const value = base * (1 + parseFloat(btn.dataset.adjustPercent) / 100);
+        input.value = roundToIncrement(Math.max(0, value), store.settings.increment);
+      };
+    });
     document.getElementById('adj-today').onclick = () => {
       const v = parseFloat(document.getElementById('adj-weight').value);
       if (!v) return;
@@ -3761,7 +3810,17 @@ function openAdjustModal(exIdx) {
           sets: ex.plannedSets,
         };
         // スロットに明示重量がある場合はスロット側も更新（次回生成で確実に反映）
-        if (ex.slotId) updateAccessorySlot(session.day, ex.slotId, { plannedWeight: newW });
+        if (ex.slotId) {
+          if (session.fourMenuRotation) {
+            updateFourMenuAccessorySlot(
+              session.performedSplitKey || session.selectedSplitKey,
+              ex.slotId,
+              { plannedWeight: newW }
+            );
+          } else {
+            updateAccessorySlot(session.day, ex.slotId, { plannedWeight: newW });
+          }
+        }
         ex.plannedWeight = newW;
         ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
         saveStore();
@@ -3914,7 +3973,10 @@ function applySlotToExercise(ex, updated) {
     restSec: REST_TIME_SEC[updated.restType] || REST_TIME_SEC.default,
   });
   ex.sets.forEach(set => {
-    if (!set.done && updated.plannedWeight != null) set.weight = updated.plannedWeight;
+    if (!set.done && !set.skipped) {
+      if (updated.plannedWeight != null) set.weight = updated.plannedWeight;
+      set.reps = updated.reps;
+    }
   });
   resizeExerciseSets(ex);
 }
@@ -3922,8 +3984,8 @@ function applySlotToExercise(ex, updated) {
 function openMainSetEditModal(exIdx) {
   const session = store.daySessions[todaySessionKey()];
   const ex = session?.exercises?.[exIdx];
-  if (!ex?.isBig3) return;
-  openModal('BIG3メイン編集', `
+  if (!ex?.isBig3 && !ex?.isFourMenuMain) return;
+  openModal('メイン種目編集', `
     <div class="muted mb-8">${ex.name}</div>
     <label class="field">
       <span>予定重量(kg)</span>
@@ -4472,8 +4534,9 @@ function finishTodaySession() {
   const key = todaySessionKey();
   const session = store.daySessions[key];
   if (!session) return;
+  const wasCompleted = !!session.completed;
 
-  if (session.completed) {
+  if (wasCompleted) {
     if (!confirm('既に完了済みです。再度ログを保存しますか？')) return;
   }
 
@@ -4591,7 +4654,7 @@ function finishTodaySession() {
   store.currentState.lastTrainingDate = session.date;
   if (session.fourMenuRotation) {
     const performed = session.performedSplitKey || session.selectedSplitKey;
-    if (performed && performed !== 'rest') {
+    if (!wasCompleted && performed && performed !== 'rest') {
       store.currentState.lastCompletedMenuKey = performed;
       store.currentState.lastCompletedDate = session.date;
       if (performed === 'back') {
@@ -4599,12 +4662,12 @@ function finishTodaySession() {
       }
       store.currentState.nextMenuKey = nextFourMenuKey(performed);
       store.currentState.isRestSelected = false;
-    } else {
+    } else if (!wasCompleted) {
       store.currentState.isRestSelected = true;
     }
     saveStore();
-    showToast('お疲れさま！記録を保存しました');
-    if (performed && performed !== 'rest') {
+    showToast(wasCompleted ? '記録を更新しました' : 'お疲れさま！記録を保存しました');
+    if (!wasCompleted && performed && performed !== 'rest') {
       setTimeout(() => {
         if (confirm(`次は「${fourMenuLabel(store.currentState.nextMenuKey)}」です。次回まで休みにしますか？`)) {
           store.currentState.isRestSelected = true;
@@ -5218,7 +5281,7 @@ function renderFourMenuPlan() {
   const state = getFourMenuState();
   const rows = FOUR_MENU_ORDER.map(menuKey => {
     const menu = buildFourMenu(menuKey, store.settings);
-    const main = menu.exercises.find(ex => ex.isBig3);
+    const main = menu.exercises.find(ex => ex.isFourMenuMain || ex.isBig3);
     const accessoryCount = menu.exercises.filter(ex => ex.isAccessory).length;
     const selected = state.nextMenuKey === menuKey && !state.isRestSelected;
     return `
@@ -5735,31 +5798,7 @@ function importData() {
       try {
         const data = JSON.parse(reader.result);
         if (!confirm('現在のデータを上書きしてインポートします。よろしいですか？')) return;
-        const def = defaultStore();
-        store = {
-          ...def,
-          ...data,
-          settings: {
-            ...def.settings,
-            ...(data.settings || {}),
-            programMode: 'fourMenu',
-            maxes: { ...def.settings.maxes, ...(data.settings?.maxes || {}) },
-            rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(data.settings?.rotationIncreaseCaps || {}) },
-            r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(data.settings?.r4AdjustmentModes || {}) },
-            mainSetOverrides: { ...def.settings.mainSetOverrides, ...(data.settings?.mainSetOverrides || {}) },
-            accessoryDefaults: { ...def.settings.accessoryDefaults, ...(data.settings?.accessoryDefaults || {}) },
-            accessorySlots: mergeAccessorySlots(data.settings?.accessorySlots, true, true),
-            fourMenuAccessorySlots: mergeFourMenuAccessorySlots(data.settings?.fourMenuAccessorySlots),
-            exerciseRestSettings: Array.isArray(data.settings?.exerciseRestSettings) ? data.settings.exerciseRestSettings : [],
-          },
-          currentState: {
-            ...def.currentState,
-            ...(data.currentState || {}),
-            nextMenuKey: normalizeFourMenuKey(data.currentState?.nextMenuKey || data.currentState?.selectedSplitKey || def.currentState.nextMenuKey),
-            isRestSelected: !!data.currentState?.isRestSelected,
-            backCompletedCount: parseInt(data.currentState?.backCompletedCount, 10) || 0,
-          },
-        };
+        store = migrateStoreData(data);
         saveStore();
         showToast('インポート完了');
         render();
@@ -6211,15 +6250,15 @@ function renderSettings() {
       <label class="field"><span>スクワットMAX (kg)</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /></label>
       <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
       <label class="field"><span>床引きデッドMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
-      <label class="field"><span>ショルダープレスMAX (kg)</span><input type="number" step="0.5" id="set-shoulderPress" value="${m.shoulderPress ?? 77.5}" /></label>
+      <label class="field"><span>ミリタリープレス基準 (kg)</span><input type="number" step="0.5" id="set-shoulderPress" value="${m.shoulderPress ?? 77.5}" /></label>
       <label class="field"><span>重量刻み (kg)</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /></label>
       <details class="ui-details compact-details">
         <summary>補足</summary>
-        <div class="muted" style="font-size:12px;">床引きデッドは補助扱いのため、高強度モードでも強化対象外です。</div>
+        <div class="muted" style="font-size:12px;">4メニューでは各メイン種目の初期重量計算に使用します。MAX値は自動更新しません。</div>
       </details>
     </div>
 
-    <div class="section">
+    <div class="section ${isFourMenuMode() ? 'hidden' : ''}">
       <h2>強度モード</h2>
       <div class="volume-mode-group">
         <label class="volume-mode-option ${strengthMode === 'standard' ? 'active' : ''}">
@@ -6248,7 +6287,7 @@ function renderSettings() {
       </details>
     </div>
 
-    <div class="section">
+    <div class="section ${isFourMenuMode() ? 'hidden' : ''}">
       <h2>トレーニングボリューム</h2>
       <div class="volume-mode-group">
         <label class="volume-mode-option ${volumeMode === 'standard' ? 'active' : ''}">
@@ -6291,7 +6330,7 @@ function renderSettings() {
       </div>
     </div>
 
-    <div class="section">
+    <div class="section ${isFourMenuMode() ? 'hidden' : ''}">
       <h2>デロード時MAX測定</h2>
       <div class="status-row"><span class="status-pill status-ok">1RM</span></div>
       <details class="ui-details compact-details">
@@ -6304,7 +6343,7 @@ function renderSettings() {
     ${renderExerciseRestSettings()}
     ${isFourMenuMode() ? '' : renderAccessoryLoadCheck('settings')}
 
-    <div class="section">
+    <div class="section ${isFourMenuMode() ? 'hidden' : ''}">
       <h2>補助種目の初期重量・回数・セット</h2>
       <details class="ui-details compact-details">
         <summary>補足</summary>
@@ -6558,6 +6597,7 @@ if (typeof window !== 'undefined') {
     accessoryPresetOptionsHtml,
     fillSlotFormFromPreset,
     normalizeBig3Key,
+    migrateStoreData,
     estimateMaxFromSet,
     bestEstimatedMaxFromLog,
     classifyEstimatedMaxUse,
