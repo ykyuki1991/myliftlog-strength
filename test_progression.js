@@ -1640,6 +1640,116 @@ function testFourMenuAccessoryTemplatesAndPlanActions() {
   assert.ok(!planHtml.includes('NaN'));
 }
 
+function testFourMenuMainIdentityAndCompletionIdempotency() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+
+  const shoulderMenu = api.buildFourMenu('shoulder-arms', store.settings);
+  const military = shoulderMenu.exercises.find(ex => ex.isFourMenuMain);
+  assert.ok(military);
+  assert.strictEqual(military.name, 'ミリタリープレス');
+  assert.strictEqual(military.isBig3, false, 'military press must not enter BIG3/MAX logic');
+  military.sets = Array.from({ length: military.plannedSets }, () => ({
+    weight: military.plannedWeight,
+    reps: military.plannedReps,
+    done: false,
+  }));
+  assert.strictEqual(api.applyMainSetEdit(military, { plannedWeight: 67.5, plannedReps: 5, plannedSets: 3 }).ok, true);
+  assert.strictEqual(api.saveMainSetOverride('shoulder_arm', military), true);
+  assert.strictEqual(api.buildFourMenu('shoulder_arm', store.settings).exercises.find(ex => ex.isFourMenuMain).plannedWeight, 67.5);
+
+  store.currentState.nextMenuKey = 'back';
+  store.currentState.isRestSelected = false;
+  api.renderToday();
+  const session = Object.values(store.daySessions).find(item => item.fourMenuRotation);
+  assert.strictEqual(session.selectedSplitKey, 'back');
+  session.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; }));
+  api.finishTodaySession();
+  assert.strictEqual(store.currentState.backCompletedCount, 1);
+  assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
+  const savedBackLogs = store.logs.filter(log => log.fourMenuRotation);
+  assert.ok(savedBackLogs.length);
+  assert.ok(savedBackLogs.every(log => log.block == null && log.rotation == null && log.day == null));
+
+  api.finishTodaySession();
+  assert.strictEqual(store.currentState.backCompletedCount, 1, 're-saving a completed session must not advance deadlift alternation');
+  assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
+}
+
+function testFourMenuStateMigrationAliasesAndBackCount() {
+  const saved = {
+    settings: { programMode: 'legacy8' },
+    currentState: {
+      nextMenuKey: 'shoulder-arms',
+      lastCompletedMenuKey: 'shoulderArms',
+      backCompletedCount: 0,
+    },
+    logs: [{
+      id: 'back-1-main',
+      date: '2026-07-01',
+      fourMenuRotation: true,
+      performedSplitKey: 'back',
+      exerciseKey: 'halfDead',
+      exerciseName: 'ハーフデッド',
+      menuType: 'four-main-halfDead',
+      plannedSets: 3,
+      doneSets: 3,
+      sets: [],
+      ts: 1,
+    }, {
+      id: 'back-1-accessory',
+      date: '2026-07-01',
+      fourMenuRotation: true,
+      performedSplitKey: 'back',
+      exerciseKey: 'latpulldown',
+      exerciseName: 'ラットプルダウン',
+      menuType: 'four-accessory-lat',
+      plannedSets: 3,
+      doneSets: 3,
+      sets: [],
+      ts: 2,
+    }],
+  };
+  const isolated = createHarness({ initialStore: saved, forceLegacy: false });
+  const store = isolated.api.getStore();
+  assert.strictEqual(store.settings.programMode, 'fourMenu');
+  assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
+  assert.strictEqual(store.currentState.lastCompletedMenuKey, 'shoulder_arm');
+  assert.strictEqual(store.currentState.backCompletedCount, 1, 'one back session must count once, not once per exercise log');
+  assert.strictEqual(isolated.api.getFourMenuBackLiftKey(store.currentState), 'floorDead');
+}
+
+function testImportMigrationPreservesLegacyAndMaxData() {
+  const isolated = createFourMenuHarness();
+  const legacyLog = {
+    id: 'legacy-preserved',
+    date: '2026-01-01',
+    block: 2,
+    rotation: 3,
+    day: 7,
+    exerciseKey: 'floorDead',
+    exerciseName: '床引きデッド',
+    sets: [{ weight: 160, reps: 5, done: true }],
+  };
+  const estimated = { id: 'emax-preserved', liftKey: 'floorDead', estimatedMax: 190 };
+  const maxTest = { id: 'max-preserved', liftKey: 'bench', measuredMax: 120 };
+  const migrated = isolated.api.migrateStoreData({
+    settings: { programMode: 'legacy8' },
+    currentState: { nextMenuKey: 'shoulder_arms' },
+    logs: [legacyLog],
+    estimatedMaxHistory: [estimated],
+    maxTestResults: [maxTest],
+  });
+  assert.strictEqual(migrated.settings.programMode, 'fourMenu');
+  assert.strictEqual(migrated.currentState.nextMenuKey, 'shoulder_arm');
+  assert.strictEqual(JSON.stringify(migrated.logs[0]), JSON.stringify(legacyLog));
+  assert.strictEqual(JSON.stringify(migrated.estimatedMaxHistory[0]), JSON.stringify(estimated));
+  assert.strictEqual(JSON.stringify(migrated.maxTestResults[0]), JSON.stringify(maxTest));
+  assert.ok(migrated.settings.fourMenuAccessorySlots.chest.length);
+  assert.ok(migrated.settings.fourMenuAccessorySlots.chest.every(slot => typeof slot.reps === 'number'));
+}
+
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();
@@ -1674,6 +1784,9 @@ testFourMenuPlanAndProgression();
 testFourMenuSessionSelectionAndDeadliftAlternation();
 testFourMenuLogRenderingAndOverrideScope();
 testFourMenuAccessoryTemplatesAndPlanActions();
+testFourMenuMainIdentityAndCompletionIdempotency();
+testFourMenuStateMigrationAliasesAndBackCount();
+testImportMigrationPreservesLegacyAndMaxData();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
