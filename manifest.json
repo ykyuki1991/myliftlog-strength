@@ -1,7 +1,7 @@
 {
   "name": "MyLiftLog Strength Planner",
   "short_name": "MyLiftLog",
-  "description": "BIG3強化向け 8日ローテのトレーニング管理アプリ",
+  "description": "4メニュー順番ローテーションのトレーニング記録・進行管理アプリ",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
