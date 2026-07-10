@@ -30,6 +30,7 @@ function createHarness(options = {}) {
   const elements = {};
   const storage = {};
   if (options.initialStore) storage[STORAGE_KEY] = JSON.stringify(options.initialStore);
+  if (Object.prototype.hasOwnProperty.call(options, 'rawStore')) storage[STORAGE_KEY] = options.rawStore;
   const document = {
     getElementById(id) {
       if (!elements[id]) elements[id] = makeElement(id);
@@ -49,7 +50,7 @@ function createHarness(options = {}) {
       setItem(key, value) { storage[key] = String(value); },
       removeItem(key) { delete storage[key]; },
     },
-    confirm: () => true,
+    confirm: options.confirm || (() => true),
     setInterval: () => 1,
     clearInterval: () => {},
     setTimeout: () => 1,
@@ -1456,7 +1457,7 @@ function testFourMenuPlanAndProgression() {
   assert.strictEqual(bench.plannedSets, 3);
   assert.strictEqual(bench.plannedReps, 5);
   assert.strictEqual(bench.plannedWeight, 107.5);
-  assert.strictEqual(bench.progressionReason, '記録なしのため初期重量');
+  assert.strictEqual(bench.progressionReason, '初回設定');
 
   store.logs.push({
     id: 'four-bench-complete',
@@ -1508,8 +1509,108 @@ function testFourMenuPlanAndProgression() {
     ts: 2,
   });
   const reduced = api.getFourMenuMainPlan('bench', 'chest', store.settings);
-  assert.strictEqual(reduced.weight, 100);
-  assert.strictEqual(reduced.reason, '2回連続未達のため約10%減');
+  assert.strictEqual(reduced.weight, 110);
+  assert.strictEqual(reduced.reductionCandidateWeight, 105);
+  assert.strictEqual(reduced.reasonCode, 'consecutive_miss_reduction_candidate');
+}
+
+function testDataProtectionAndProgressionImprovements() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  const originalSlots = JSON.stringify(store.settings.fourMenuAccessorySlots);
+  store.settings.exerciseRestSettings = [{ id: 'rest-1', name: '胸' }];
+  store.settings.mainSetOverrides = { test: { plannedWeight: 99 } };
+  store.logs = [{ id: 'keep-log' }];
+  store.estimatedMaxHistory = [{ id: 'keep-emax' }];
+  store.maxTestResults = [{ id: 'keep-max' }];
+  api.resetMaxSettings();
+  assert.strictEqual(JSON.stringify(store.settings.fourMenuAccessorySlots), originalSlots);
+  assert.strictEqual(store.settings.exerciseRestSettings.length, 1);
+  assert.ok(store.settings.mainSetOverrides.test);
+  assert.strictEqual(store.logs.length, 1);
+  assert.strictEqual(store.estimatedMaxHistory.length, 1);
+  assert.strictEqual(store.maxTestResults.length, 1);
+
+  store.settings.mainProgressionSettings.militaryPress = undefined;
+  assert.strictEqual(api.getMainProgressionIncrement('shoulderPress', store.settings), 1.25);
+  store.settings.mainProgressionSettings.shoulderPress.increment = 1.25;
+  assert.strictEqual(api.getMainProgressionIncrement('shoulderPress', store.settings), 1.25);
+
+  const make = (id, ts, complete, weight = 100) => ({
+    id, ts, date: `2026-07-0${ts}`, fourMenuRotation: true, exerciseKey: 'bench', menuType: 'four-main-bench',
+    plannedWeight: weight, plannedReps: 5, plannedSets: 3,
+    sets: complete
+      ? [{ reps: 5, done: true }, { reps: 5, done: true }, { reps: 5, done: true }]
+      : [{ reps: 5, done: true }, { reps: 4, done: true }, { reps: 0, done: false }],
+  });
+  store.logs = [make('miss-new', 3, false), make('complete-middle', 2, true), make('miss-old', 1, false)];
+  const nonConsecutive = api.getFourMenuMainPlan('bench', 'chest', store.settings);
+  assert.strictEqual(nonConsecutive.reasonCode, 'miss_hold');
+  store.logs = [make('miss-new', 3, false), make('miss-old', 2, false)];
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'consecutive_miss_reduction_candidate');
+  store.logs = [make('miss-new', 3, false, 100), make('miss-old', 2, false, 97.5)];
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'miss_hold');
+  store.logs = [
+    make('miss-new', 4, false),
+    { ...make('skipped', 3, false), sets: [{ skipped: true }, { skipped: true }, { skipped: true }] },
+    make('complete-old', 2, true),
+  ];
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'miss_hold');
+  store.logs = [{ ...make('complete-rpe', 3, true), rpe: '10', pains: ['痛み'] }];
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'completed_increment');
+}
+
+function testRecoveryAndSessionIdentity() {
+  const broken = createHarness({ rawStore: '{not-json', forceLegacy: false, confirm: () => true });
+  assert.strictEqual(broken.api.getStorageRecovery().active, true);
+  const backupKeys = Object.keys(broken.storage).filter(key => key.startsWith(`${STORAGE_KEY}_recovery_`));
+  assert.strictEqual(backupKeys.length, 1);
+  assert.strictEqual(broken.storage[STORAGE_KEY], '{not-json');
+  broken.api.saveStore();
+  assert.strictEqual(broken.storage[STORAGE_KEY], '{not-json');
+  assert.strictEqual(broken.api.initializeAfterStorageRecovery(), true);
+  assert.notStrictEqual(broken.storage[STORAGE_KEY], '{not-json');
+
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  const ex = {
+    key: 'bench', name: 'ベンチプレス', menuType: 'four-main-bench', plannedWeight: 100, plannedReps: 5, plannedSets: 1,
+    sets: [{ weight: 100, reps: 5, done: true }], rpe: '8', pains: [], isFourMenuMain: true,
+  };
+  const base = { date: '2026-07-11', fourMenuRotation: true, performedSplitKey: 'chest', selectedSplitKey: 'chest', exercises: [ex] };
+  api.upsertExerciseLogFromSession({ ...base, sessionId: 'session-a' }, ex, true);
+  api.upsertExerciseLogFromSession({ ...base, sessionId: 'session-b' }, ex, true);
+  assert.strictEqual(store.logs.filter(log => log.exerciseKey === 'bench').length, 2);
+  api.upsertExerciseLogFromSession({ ...base, sessionId: 'session-a' }, { ...ex, note: 'updated' }, true);
+  assert.strictEqual(store.logs.filter(log => log.exerciseKey === 'bench').length, 2);
+  assert.strictEqual(store.logs.find(log => log.sessionId === 'session-a').note, 'updated');
+}
+
+function testPreviousSummaryAccessoryCandidateAndAnalytics() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.logs = [{
+    id: 'prev', sessionId: 'old-session', fourMenuRotation: true, performedSplitKey: 'chest', date: '2026-07-01', performedDate: '2026-07-01', ts: 1,
+    exerciseKey: 'bench', exerciseName: 'ベンチプレス', menuType: 'four-main-bench', plannedWeight: 100, plannedSets: 3, plannedReps: 5,
+    sets: [{ reps: 5, done: true }, { reps: 5, done: true }, { reps: 5, done: true }], rpe: '9',
+  }];
+  const summary = api.previousMainSummary({ key: 'bench', menuType: 'four-main-bench' }, { sessionId: 'new', date: '2026-07-09' });
+  assert.ok(summary.text.includes('100.0kg 5/5/5'));
+  assert.strictEqual(summary.days, 8);
+
+  const accessory = {
+    isAccessory: true, slotId: 'fm-test', key: 'test', weightType: 'cable', plannedWeight: 50, plannedSets: 3, plannedReps: 10,
+    sets: [{ reps: 10, done: true }, { reps: 11, done: true }, { reps: 10, done: true }],
+  };
+  assert.strictEqual(api.getAccessoryProgressionCandidate(accessory).candidateWeight, 55);
+  assert.strictEqual(api.getAccessoryProgressionCandidate({ ...accessory, sets: accessory.sets.slice(0, 2) }), null);
+  assert.strictEqual(api.getAccessoryProgressionCandidate({ ...accessory, weightType: 'bodyweight' }), null);
+
+  store.logs[0].categories = ['胸'];
+  assert.strictEqual(api.summarizeDirectSets({ days: 30 }).胸, 3);
 }
 
 function testFourMenuSessionSelectionAndDeadliftAlternation() {
@@ -1781,6 +1882,9 @@ testFutureAccessoryEditCoversSetsRepsRpe();
 testUpdateExerciseRestSetting();
 testExistingStoreMigratesToFourMenuMode();
 testFourMenuPlanAndProgression();
+testDataProtectionAndProgressionImprovements();
+testRecoveryAndSessionIdentity();
+testPreviousSummaryAccessoryCandidateAndAnalytics();
 testFourMenuSessionSelectionAndDeadliftAlternation();
 testFourMenuLogRenderingAndOverrideScope();
 testFourMenuAccessoryTemplatesAndPlanActions();
