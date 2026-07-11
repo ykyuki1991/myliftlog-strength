@@ -238,10 +238,27 @@ function testControlsStayConsistent() {
   assert.strictEqual(h.elements.restTimer.classList.contains('hidden'), true);
 }
 
+function testDesignSystemAndAccessibilityContracts() {
+  const css = fs.readFileSync('styles.css', 'utf8');
+  const html = fs.readFileSync('index.html', 'utf8');
+  const sw = fs.readFileSync('service-worker.js', 'utf8');
+  assert.ok(css.includes('--ease-out: cubic-bezier(0.23, 1, 0.32, 1)'));
+  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'));
+  assert.ok(css.includes('@media (hover: hover) and (pointer: fine)'));
+  assert.ok(!css.includes('transition: all'));
+  assert.ok(css.includes('min-height: 44px'));
+  assert.ok(html.includes('role="dialog"'));
+  assert.ok(html.includes('aria-modal="true"'));
+  assert.ok(html.includes('aria-live="polite"'));
+  assert.ok(html.includes('20260711-design-polish'));
+  assert.ok(sw.includes("mll-strength-v18"));
+}
+
 testStartPersistsState();
 testRestoreBeforeEnd();
 testRestoreAfterEnd();
 testLifecycleEventsRecalculate();
 testControlsStayConsistent();
+testDesignSystemAndAccessibilityContracts();
 
 console.log('test_dom.js: all tests passed');

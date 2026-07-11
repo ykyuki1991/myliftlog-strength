@@ -2242,6 +2242,7 @@ function escapeHtml(value) {
 }
 
 let nowProvider = () => Date.now();
+let modalReturnFocus = null;
 
 function nowMs() {
   return nowProvider();
@@ -2256,16 +2257,42 @@ function showToast(msg, ms = 2000) {
 }
 
 function openModal(title, bodyHtml, onMount) {
+  modalReturnFocus = document.activeElement || null;
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = bodyHtml;
   document.getElementById('modal').classList.remove('hidden');
   if (document.body?.classList) document.body.classList.add('sheet-open');
   if (onMount) onMount();
+  const closeButton = document.getElementById('modalClose');
+  if (closeButton && typeof closeButton.focus === 'function') closeButton.focus({ preventScroll: true });
 }
 
 function closeModal() {
   document.getElementById('modal').classList.add('hidden');
   if (document.body?.classList) document.body.classList.remove('sheet-open');
+  if (modalReturnFocus && typeof modalReturnFocus.focus === 'function') modalReturnFocus.focus({ preventScroll: true });
+  modalReturnFocus = null;
+}
+
+function handleModalKeydown(event) {
+  const modal = document.getElementById('modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (event.key === 'Escape') {
+    closeModal();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = [...modal.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 // ===== 4メニュー順番ローテーション =====
@@ -3530,7 +3557,7 @@ function renderActiveExerciseCard(ex, exIdx) {
   `).join('');
 
   return `
-    <div class="card card-ex active" data-ex="${exIdx}">
+    <div class="card card-ex active ${ex.isFourMenuMain || ex.isBig3 ? 'card-main' : 'card-accessory'}" data-ex="${exIdx}">
       <div class="ex-head">
         <div class="ex-title">${ex.name}</div>
         <div class="ex-chips">${exerciseRoleChipHtml(ex)}</div>
@@ -4996,6 +5023,7 @@ function setRestTimerVisibility(visible) {
   const timer = document.getElementById('restTimer');
   if (!timer) return;
   timer.classList.toggle('hidden', !visible);
+  if (document.body?.classList) document.body.classList.toggle('timer-visible', !!visible);
 }
 
 function setRestTimerAlarm(alarm) {
@@ -5745,7 +5773,7 @@ function renderLog() {
     ${logFilter.type === 'daily' ? `${renderTrainingSummary()}<div class="section log-filters">
       <select id="log-menu-filter"><option value="all">全メニュー</option>${FOUR_MENU_ORDER.map(key => `<option value="${key}" ${logFilter.menu === key ? 'selected' : ''}>${fourMenuLabel(key)}</option>`).join('')}<option value="legacy" ${logFilter.menu === 'legacy' ? 'selected' : ''}>旧8日ログ</option></select>
       <select id="log-role-filter"><option value="all">メイン・補助</option><option value="main" ${logFilter.role === 'main' ? 'selected' : ''}>メイン</option><option value="accessory" ${logFilter.role === 'accessory' ? 'selected' : ''}>補助</option></select>
-      <input id="log-query-filter" value="${escapeHtml(logFilter.query)}" placeholder="種目を検索" />
+      <input type="search" id="log-query-filter" value="${escapeHtml(logFilter.query)}" placeholder="種目を検索" aria-label="種目を検索" />
     </div>` : ''}
     ${body}
     <div class="section">
@@ -6923,6 +6951,7 @@ function init() {
     b.addEventListener('click', () => navigate(b.dataset.screen));
   });
   document.getElementById('modalClose').onclick = closeModal;
+  document.addEventListener('keydown', handleModalKeydown);
   document.getElementById('modal').addEventListener('click', (e) => {
     if (e.target.id === 'modal') closeModal();
   });
