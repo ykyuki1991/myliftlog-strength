@@ -1438,9 +1438,17 @@ function testExistingStoreMigratesToFourMenuMode() {
   assert.ok(store.settings.fourMenuAccessorySlots);
   assert.ok(store.settings.fourMenuAccessorySlots.legs.every(slot => typeof slot.reps === 'number'));
   const html = api.renderToday();
-  assert.ok(html.includes('4メニュー順番ローテ') || html.includes('次のメニュー'));
   assert.ok(html.includes('肩・腕'));
+  assert.strictEqual((html.match(/data-four-menu-select=/g) || []).length, 5);
+  assert.ok(!html.includes('次のメニュー'));
+  assert.ok(!html.includes('<h2 class="screen-title">今日</h2>'));
+  assert.ok(!html.includes('変更中:'));
   assert.ok(!html.includes('B3 / R4 / Day7'), 'today should not prefer legacy progress metadata');
+  assert.ok(!api.renderLog().includes('<h2 class="screen-title">ログ</h2>'));
+  assert.ok(!api.renderBlock().includes('<h2 class="screen-title">計画</h2>'));
+  assert.ok(!api.renderSettings().includes('<h2 class="screen-title">設定</h2>'));
+  api.updateHeader();
+  assert.strictEqual(isolated.elements.headerStatus.textContent, '');
   const logHtml = api.renderDailyLogView();
   assert.ok(logHtml.includes('B2 / R3 / Day5'), 'legacy log view remains readable');
 }
@@ -1694,8 +1702,7 @@ function testFourMenuAccessoryTemplatesAndPlanActions() {
   const api = isolated.api;
   const store = api.getStore();
   api.updateHeader();
-  assert.ok(isolated.elements.headerStatus.textContent.includes('4メニュー'));
-  assert.ok(!isolated.elements.headerStatus.textContent.includes('Day'));
+  assert.strictEqual(isolated.elements.headerStatus.textContent, '');
   const initial = api.getFourMenuAccessorySlots('legs');
   assert.ok(initial.length >= 3);
   assert.ok(initial.every(slot => typeof slot.reps === 'number'), 'four-menu planned reps must be numeric');

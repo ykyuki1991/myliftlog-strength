@@ -250,8 +250,12 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(html.includes('role="dialog"'));
   assert.ok(html.includes('aria-modal="true"'));
   assert.ok(html.includes('aria-live="polite"'));
-  assert.ok(html.includes('20260711-design-polish'));
-  assert.ok(sw.includes("mll-strength-v18"));
+  assert.ok(!html.includes('class="app-header"'));
+  assert.ok(!html.includes('class="app-title"'));
+  assert.ok(css.includes('top: env(safe-area-inset-top)'));
+  assert.ok(css.includes('padding: calc(12px + env(safe-area-inset-top)) 16px 22px'));
+  assert.ok(html.includes('20260711-today-menu'));
+  assert.ok(sw.includes("mll-strength-v19"));
 }
 
 testStartPersistsState();
