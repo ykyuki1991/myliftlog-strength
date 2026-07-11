@@ -845,7 +845,7 @@ function testBestMeasuredAndEstimatedSelection() {
   assert.strictEqual(bestMeasured.id, 't1', 'best measured 1RM should win over the latest one');
   assert.strictEqual(isolatedApi.bestMeasuredMaxForLift('squat'), null);
 
-  // 推定MAX: 条件に合う記録（採用候補/採用済み）の中の最大値を表示する
+  // 推定MAX: 候補・参考を含む有効な記録の中から過去最高を表示する
   isolatedStore.estimatedMaxHistory = [
     { id: 'e1', liftKey: 'bench', estimatedMax: 118, maxUseKind: 'candidate', useForMaxUpdate: true, adopted: false, date: '2026-05-02', sourceWeight: 100, sourceReps: 5, rpe: '8', ts: 1 },
     { id: 'e2', liftKey: 'bench', estimatedMax: 121, maxUseKind: 'candidate', useForMaxUpdate: true, adopted: false, date: '2026-05-10', sourceWeight: 105, sourceReps: 4, rpe: '8.5', ts: 2 },
@@ -853,11 +853,76 @@ function testBestMeasuredAndEstimatedSelection() {
     { id: 'e4', liftKey: 'bench', estimatedMax: 140, maxUseKind: 'excluded', useForMaxUpdate: false, adopted: false, date: '2026-06-05', sourceWeight: 80, sourceReps: 12, rpe: '10', ts: 4 },
   ];
   const bestEmax = isolatedApi.bestEstimatedMaxEntryForLift('bench');
-  assert.strictEqual(bestEmax.id, 'e2', 'main display should be the max among qualified entries, not the latest');
+  assert.strictEqual(bestEmax.id, 'e3', 'best display should include a valid reference entry');
 
   // 候補が無い場合は参考の最大値へフォールバック
   isolatedStore.estimatedMaxHistory = isolatedStore.estimatedMaxHistory.filter(e => e.maxUseKind !== 'candidate');
   assert.strictEqual(isolatedApi.bestEstimatedMaxEntryForLift('bench').id, 'e3');
+}
+
+function testEstimatedMaxOrderingAndConsistency() {
+  const isolated = createHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.estimatedMaxHistory = [
+    { id: 'old-adopted', sourceLogId: 'log-old', liftKey: 'floorDead', estimatedMax: 189.5, maxUseKind: 'candidate', adopted: true, date: '2026-05-29', performedAt: '2026-05-29T20:00:00+09:00', sourceWeight: 160, sourceReps: 5, rpe: '9.5' },
+    { id: 'new-candidate', sourceLogId: 'log-new', liftKey: 'floorDead', estimatedMax: 189.5, maxUseKind: 'candidate', adopted: false, date: '2026-06-16', performedAt: '2026-06-16T19:00:00+09:00', sourceWeight: 160, sourceReps: 5, rpe: '9.5' },
+    { id: 'newest-reference', sourceLogId: 'log-ref', liftKey: 'floorDead', estimatedMax: 188, maxUseKind: 'reference', adopted: false, date: '2026-06-20', performedAt: '2026-06-20T18:00:00+09:00', sourceWeight: 155, sourceReps: 7, rpe: '7.5' },
+    { id: 'excluded-newest', sourceLogId: 'log-excluded', liftKey: 'floorDead', estimatedMax: 230, maxUseKind: 'excluded', adopted: false, date: '2026-06-22', performedAt: '2026-06-22T18:00:00+09:00', sourceWeight: 170, sourceReps: 12, rpe: '10' },
+  ];
+
+  assert.strictEqual(api.latestEstimatedMaxEntryForLift('floorDead').id, 'newest-reference', 'latest valid reference should beat an older adopted row');
+  assert.strictEqual(api.adoptedEstimatedMaxEntryForLift('floorDead').id, 'old-adopted');
+  assert.strictEqual(api.bestEstimatedMaxEntryForLift('floorDead').id, 'new-candidate', 'equal best values prefer the newer performed time');
+  assert.strictEqual(
+    Array.from(api.collectEstimatedMaxEntries('floorDead'), entry => entry.id).join(','),
+    'excluded-newest,newest-reference,new-candidate,old-adopted',
+    'history should be performed-time descending regardless of status'
+  );
+
+  store.estimatedMaxHistory = [
+    { id: 'same-day-old', liftKey: 'bench', estimatedMax: 120, maxUseKind: 'candidate', date: '2026-06-01', timestamp: '2026-06-01T10:00:00+09:00' },
+    { id: 'same-day-new', liftKey: 'bench', estimatedMax: 121, maxUseKind: 'candidate', date: '2026-06-01', timestamp: '2026-06-01T20:00:00+09:00' },
+  ];
+  assert.strictEqual(api.latestEstimatedMaxEntryForLift('bench').id, 'same-day-new', 'same-day entries should use the newer timestamp');
+  const emaxHtml = api.renderEmaxLogTab();
+  assert.ok(emaxHtml.includes('最新推定MAX'));
+  assert.ok((emaxHtml.match(/121\.0/g) || []).length >= 2, 'latest card and matching history row must use the same estimate');
+
+  store.maxTestResults = [{ id: 'measured-only', liftKey: 'bench', measuredMaxWeight: 200, challengeSucceeded: true }];
+  assert.strictEqual(api.latestEstimatedMaxEntryForLift('bench').id, 'same-day-new', 'measured 1RM records must stay separate from estimated max');
+
+  store.estimatedMaxHistory = [
+    { id: 'tie-b', liftKey: 'squat', estimatedMax: 150, maxUseKind: 'candidate', date: '2026-06-01', ts: 100 },
+    { id: 'tie-a', liftKey: 'squat', estimatedMax: 150, maxUseKind: 'candidate', date: '2026-06-01', ts: 100 },
+  ];
+  assert.strictEqual(api.bestEstimatedMaxEntryForLift('squat').id, 'tie-a', 'identical values and timestamps should use a stable id tie-break');
+
+  store.estimatedMaxHistory = [
+    { id: 'session-a', sessionId: 'session-a', liftKey: 'halfDead', menuType: 'halfDead-hi-main', date: '2026-06-02', estimatedMax: 200, maxUseKind: 'candidate' },
+    { id: 'session-b', sessionId: 'session-b', liftKey: 'halfDead', menuType: 'halfDead-hi-main', date: '2026-06-02', estimatedMax: 200, maxUseKind: 'candidate' },
+    { id: 'duplicate-old', sourceLogId: 'same-log', liftKey: 'halfDead', estimatedMax: 201, maxUseKind: 'candidate', date: '2026-06-03' },
+    { id: 'duplicate-new', sourceLogId: 'same-log', liftKey: 'halfDead', estimatedMax: 202, maxUseKind: 'candidate', date: '2026-06-03' },
+  ];
+  const deduped = api.collectEstimatedMaxEntries('halfDead');
+  assert.strictEqual(deduped.filter(entry => entry.sessionId).length, 2, 'different sessions with equal values must remain separate');
+  assert.strictEqual(deduped.filter(entry => entry.sourceLogId === 'same-log').length, 1, 'the same source log must be de-duplicated');
+
+  assert.strictEqual(api.estimateMaxFromSet(-100, 5, '9').value, null);
+  assert.strictEqual(api.estimateMaxFromSet(100, 0, '9').value, null);
+  assert.strictEqual(api.estimateMaxFromSet(100, 5, '').value, null, 'missing RPE must not be guessed');
+  assert.strictEqual(api.estimateMaxFromSet(100, 5, '9').value, 120, 'RPE-aware Epley/RIR calculation remains the canonical formula');
+
+  const oldJson = {
+    settings: {},
+    estimatedMaxHistory: [{ id: 'legacy-emax', liftKey: 'bench', estimatedMax: 110, maxUseKind: 'reference', date: '2025-01-02' }],
+  };
+  const once = api.migrateStoreData(oldJson);
+  const twice = api.migrateStoreData(once);
+  assert.strictEqual(once.estimatedMaxHistory.length, 1);
+  assert.strictEqual(twice.estimatedMaxHistory.length, 1, 'repeated migration must not grow estimated-max history');
+  store.estimatedMaxHistory = once.estimatedMaxHistory;
+  assert.strictEqual(api.latestEstimatedMaxEntryForLift('bench').estimatedMax, 110, 'legacy rows without source inputs should fall back to their saved estimate');
 }
 
 function testMoveExerciseToActive() {
@@ -1873,6 +1938,7 @@ testSkippedSetsBehavior();
 testEscapeHtml();
 testMixedOneRmAttemptKeepsSuccessAndFailure();
 testBestMeasuredAndEstimatedSelection();
+testEstimatedMaxOrderingAndConsistency();
 testMoveExerciseToActive();
 testMaxTabRestoresFromExistingLogs();
 testFutureAccessoryEditWinsNextGeneration();

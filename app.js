@@ -788,7 +788,7 @@ function estimateMaxFromSet(weight, reps, rpe, increment = 0.5) {
   const w = parseFloat(weight);
   const r = parseFloat(reps);
   const rpeValue = parseRpeValue(rpe);
-  if (!w || !r || rpeValue == null) {
+  if (!Number.isFinite(w) || w <= 0 || !Number.isFinite(r) || r <= 0 || rpeValue == null) {
     return { value: null, rir: null, confidence: '低', reason: 'RPE未入力のため参考外' };
   }
   if (r === 1) {
@@ -805,6 +805,59 @@ function estimateMaxFromSet(weight, reps, rpe, increment = 0.5) {
   if (r >= 2 && r <= 5 && rpeValue >= 8 && rpeValue <= 10) confidence = '高';
   else if (r >= 6 && r <= 8 && rpeValue >= 7 && rpeValue <= 10) confidence = '中';
   return { value, rir, confidence, reason: `${w}kg×${r}回@RPE${rpeValue}` };
+}
+
+// 推定MAXの日時比較は表示文字列を再解析せず、実施timestampを優先する。
+// 日付しかない旧データはローカル日付の00:00へ落とし、UTC変換による日付ずれを避ける。
+function localDateStartMs(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const time = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function normalizeEventTimestamp(value) {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric >= 1e9 && numeric < 1e11 ? numeric * 1000 : numeric;
+  }
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return localDateStartMs(text);
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function estimatedMaxEntryTime(entry) {
+  const explicit = [entry?.performedAt, entry?.timestamp, entry?.performedTimestamp]
+    .map(normalizeEventTimestamp)
+    .find(value => value != null);
+  if (explicit != null) return explicit;
+  const day = localDateStartMs(entry?.performedDate || entry?.date);
+  const ts = normalizeEventTimestamp(entry?.ts);
+  if (ts != null) {
+    // 古いテスト/データの小さな連番timestampは同日内の安定した順序として扱う。
+    if (ts < 1e9 && day != null) return day + ts;
+    return ts;
+  }
+  return day ?? 0;
+}
+
+function estimatedMaxStableId(entry) {
+  return String(entry?.sourceLogId || entry?.logId || entry?.sessionId || entry?.id || estimatedMaxEntryKey(entry));
+}
+
+function compareEstimatedMaxEntriesDesc(a, b) {
+  const timeDiff = estimatedMaxEntryTime(b) - estimatedMaxEntryTime(a);
+  if (timeDiff) return timeDiff;
+  return estimatedMaxStableId(a).localeCompare(estimatedMaxStableId(b));
+}
+
+function isValidEstimatedMaxEntry(entry) {
+  const value = Number(entry?.estimatedMax);
+  if (!Number.isFinite(value) || value <= 0) return false;
+  if (entry.adopted) return true;
+  return entry.maxUseKind === 'candidate' || entry.maxUseKind === 'reference';
 }
 
 function bestEstimatedMaxFromLog(log) {
@@ -867,10 +920,14 @@ function createEstimatedMaxEntry(log, source = 'training') {
     id: `emax_${uid()}`,
     source,
     logId: log.id || null,
+    sourceLogId: log.sourceLogId || log.id || null,
+    sessionId: log.sessionId || null,
     liftKey: lift.key,
     maxKey: lift.maxKey,
     liftName: lift.name,
-    date: log.date || todayStr(),
+    date: log.performedDate || log.date || todayStr(),
+    performedDate: log.performedDate || log.date || null,
+    performedAt: log.performedAt || log.timestamp || log.ts || null,
     block: log.fourMenuRotation ? null : (log.block ?? store.currentState.block),
     rotation: log.fourMenuRotation ? null : (log.rotation ?? store.currentState.rotation),
     day: log.fourMenuRotation ? null : (log.day ?? store.currentState.day),
@@ -891,7 +948,8 @@ function createEstimatedMaxEntry(log, source = 'training') {
     maxUseReason: estimate.status?.reason || '',
     useForMaxUpdate: estimate.status?.kind === 'candidate',
     adopted: false,
-    ts: Date.now(),
+    ts: estimatedMaxEntryTime(log),
+    createdAt: Date.now(),
   };
 }
 
@@ -926,13 +984,16 @@ function upsertEstimatedMaxFromLog(log, source = 'training') {
 function recentEstimatedMaxes(liftKey, limit = 2) {
   return collectEstimatedMaxEntries(liftKey)
     .filter(e => e.liftKey === liftKey && e.useForMaxUpdate)
-    .sort((a, b) => b.ts - a.ts)
+    .sort(compareEstimatedMaxEntriesDesc)
     .slice(0, limit);
 }
 
 function sameEstimatedMaxEntry(a, b) {
   if (!a || !b || a.liftKey !== b.liftKey) return false;
-  if (a.logId && b.logId && a.logId === b.logId) return true;
+  const aSource = a.sourceLogId || a.logId;
+  const bSource = b.sourceLogId || b.logId;
+  if (aSource && bSource && aSource === bSource) return true;
+  if (a.sessionId && b.sessionId && a.sessionId !== b.sessionId) return false;
   return String(a.date || '') === String(b.date || '') &&
     Number(a.block) === Number(b.block) &&
     Number(a.rotation) === Number(b.rotation) &&
@@ -949,7 +1010,9 @@ function sameEstimatedMaxResult(a, b) {
 }
 
 function estimatedMaxEntryKey(entry) {
-  if (entry.logId) return `log:${entry.logId}:${entry.liftKey}`;
+  const sourceId = entry.sourceLogId || entry.logId;
+  if (sourceId) return `log:${sourceId}:${entry.liftKey}`;
+  if (entry.sessionId) return `session:${entry.sessionId}:${entry.liftKey}:${entry.menuType || ''}`;
   return [
     'slot',
     entry.date || '',
@@ -976,6 +1039,7 @@ function collectEstimatedMaxEntries(liftKey = null) {
         ...entry,
         id: existing?.id || `derived_${entry.logId || `${entry.date}_${entry.liftKey}_${entry.menuType || ''}`}`,
         logId: existing?.logId || entry.logId,
+        sourceLogId: existing?.sourceLogId || existing?.logId || entry.sourceLogId || entry.logId,
         adopted: keepAdoption && !!existing?.adopted,
         adoptedAt: keepAdoption ? existing?.adoptedAt : null,
         adoptedMax: keepAdoption ? existing?.adoptedMax : null,
@@ -988,7 +1052,7 @@ function collectEstimatedMaxEntries(liftKey = null) {
   derived.forEach(entry => merged.set(estimatedMaxEntryKey(entry), entry));
   return [...merged.values()]
     .filter(e => !liftKey || e.liftKey === liftKey)
-    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    .sort(compareEstimatedMaxEntriesDesc);
 }
 
 function normalizeExerciseRestSetting(setting) {
@@ -1383,19 +1447,29 @@ function bestMeasuredMaxForLift(liftKey) {
   );
 }
 
-// 推定MAXのメイン表示: 条件に合う記録（採用候補/採用済み）の中の最大値。
-// 候補が無い場合は参考の最大値、それも無ければ最新を返す
+function latestEstimatedMaxEntryForLift(liftKey) {
+  return collectEstimatedMaxEntries(liftKey).find(isValidEstimatedMaxEntry) || null;
+}
+
+function adoptedEstimatedMaxEntryForLift(liftKey) {
+  return collectEstimatedMaxEntries(liftKey)
+    .filter(entry => entry.adopted && Number(entry.estimatedMax) > 0)
+    .sort(compareEstimatedMaxEntriesDesc)[0] || null;
+}
+
+// 過去最高推定MAX: 有効な候補/参考/採用済みだけを対象にし、同値なら
+// 実施日時、新しい採用済み、安定IDの順で必ず同じ結果を返す。
 function bestEstimatedMaxEntryForLift(liftKey) {
-  const entries = collectEstimatedMaxEntries(liftKey);
+  const entries = collectEstimatedMaxEntries(liftKey).filter(isValidEstimatedMaxEntry);
   if (!entries.length) return null;
-  const maxBy = list => list.reduce((best, e) =>
-    parseFloat(e.estimatedMax) > parseFloat(best.estimatedMax) ? e : best
-  );
-  const candidates = entries.filter(e => e.adopted || e.useForMaxUpdate || e.maxUseKind === 'candidate');
-  if (candidates.length) return maxBy(candidates);
-  const references = entries.filter(e => e.maxUseKind === 'reference');
-  if (references.length) return maxBy(references);
-  return [...entries].sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+  return [...entries].sort((a, b) => {
+    const valueDiff = Number(b.estimatedMax) - Number(a.estimatedMax);
+    if (valueDiff) return valueDiff;
+    const timeDiff = estimatedMaxEntryTime(b) - estimatedMaxEntryTime(a);
+    if (timeDiff) return timeDiff;
+    if (!!a.adopted !== !!b.adopted) return a.adopted ? -1 : 1;
+    return estimatedMaxStableId(a).localeCompare(estimatedMaxStableId(b));
+  })[0];
 }
 
 function upsertMaxTestResultFromLog(log, entry = null) {
@@ -5805,8 +5879,8 @@ function renderMaxLogTab() {
 function renderEmaxLogTab() {
   const liftKey = BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench';
   const entries = collectEstimatedMaxEntries(liftKey);
-  const eligible = entries.filter(entry => entry.adopted || entry.maxUseKind === 'candidate');
-  const latest = [...eligible].sort((a, b) => (b.ts || 0) - (a.ts || 0))[0] || null;
+  const latest = latestEstimatedMaxEntryForLift(liftKey);
+  const adopted = adoptedEstimatedMaxEntryForLift(liftKey);
   const best = bestEstimatedMaxEntryForLift(liftKey);
   const currentCard = latest
     ? `<div class="summary-grid">
@@ -5814,6 +5888,7 @@ function renderEmaxLogTab() {
         <div class="mc-label">最新推定MAX</div>
         <div class="max-current-val">${fmtW(latest.estimatedMax)}<span class="u">kg</span></div>
         <div class="mc-sub">${fmtDateShort(latest.date)} ・ ${fmtW(latest.sourceWeight)}×${latest.sourceReps} @${latest.rpe || '-'}</div>
+        ${adopted ? `<div class="mc-sub">現在採用中: ${fmtW(adopted.estimatedMax)}kg (${fmtDateShort(adopted.date)})</div>` : ''}
       </div>
       <div class="card max-current">
         <div class="mc-label">過去最高推定MAX</div>
@@ -7041,7 +7116,12 @@ if (typeof window !== 'undefined') {
     parseRangeMin,
     collectMaxTestRecords,
     bestMeasuredMaxForLift,
+    estimatedMaxEntryTime,
+    compareEstimatedMaxEntriesDesc,
+    latestEstimatedMaxEntryForLift,
+    adoptedEstimatedMaxEntryForLift,
     bestEstimatedMaxEntryForLift,
+    renderEmaxLogTab,
     upsertExerciseLogFromSession,
     updateExerciseRestSetting,
     defaultAccessorySlots,
