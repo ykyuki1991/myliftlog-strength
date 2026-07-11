@@ -39,6 +39,8 @@
   --space-5: 20px;
   --space-6: 24px;
   --control-height: 46px;
+  --page-top-space: 12px;
+  --rest-bar-offset: 54px;
   --duration-press: 120ms;
   --duration-fast: 160ms;
   --duration-normal: 220ms;
@@ -82,7 +84,6 @@ html, body {
 
 body {
   padding-bottom: calc(var(--nav-height) + 18px + env(safe-area-inset-bottom));
-  padding-top: env(safe-area-inset-top);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -187,7 +188,7 @@ input, textarea, select {
 
 /* ==== メイン ==== */
 #main {
-  padding: calc(12px + env(safe-area-inset-top)) 16px 22px;
+  padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px;
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
@@ -195,7 +196,7 @@ input, textarea, select {
 }
 
 body.timer-visible #main {
-  padding-top: calc(12px + env(safe-area-inset-top) + 54px);
+  padding-top: calc(var(--page-top-space) + env(safe-area-inset-top) + var(--rest-bar-offset));
 }
 
 .sec-label {
@@ -1880,8 +1881,8 @@ body.sheet-open .bottom-nav { display: none; }
 
 /* ==== レスポンシブ ==== */
 @media (min-width: 768px) {
-  #main { padding: 22px 24px; }
-  body.timer-visible #main { padding-top: calc(22px + 54px); }
+  #main { padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 24px 22px; }
+  body.timer-visible #main { padding-top: calc(var(--page-top-space) + env(safe-area-inset-top) + var(--rest-bar-offset)); }
 }
 
 @media (max-width: 430px) {

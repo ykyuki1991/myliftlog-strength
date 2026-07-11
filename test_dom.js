@@ -49,6 +49,7 @@ function createHarness(initialStore = null) {
   if (initialStore) storage[STORAGE_KEY] = JSON.stringify(initialStore);
 
   const document = {
+    body: makeElement('body'),
     getElementById(id) {
       if (!elements[id]) elements[id] = makeElement(id);
       return elements[id];
@@ -208,6 +209,7 @@ function testControlsStayConsistent() {
   const h = createHarness();
   h.api.setNowProvider(() => 3_000_000);
   h.api.startRestTimer(60, '補助');
+  assert.strictEqual(h.document.body.classList.contains('timer-visible'), true);
 
   h.elements.restPlus30.onclick();
   assert.strictEqual(h.api.getRestState().remaining, 90);
@@ -236,6 +238,7 @@ function testControlsStayConsistent() {
   assert.strictEqual(h.api.getStore().restTimerState, null);
   assert.strictEqual(savedStore(h).restTimerState, null);
   assert.strictEqual(h.elements.restTimer.classList.contains('hidden'), true);
+  assert.strictEqual(h.document.body.classList.contains('timer-visible'), false);
 }
 
 function testDesignSystemAndAccessibilityContracts() {
@@ -253,9 +256,13 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(!html.includes('class="app-header"'));
   assert.ok(!html.includes('class="app-title"'));
   assert.ok(css.includes('top: env(safe-area-inset-top)'));
-  assert.ok(css.includes('padding: calc(12px + env(safe-area-inset-top)) 16px 22px'));
-  assert.ok(html.includes('20260711-today-menu'));
-  assert.ok(sw.includes("mll-strength-v19"));
+  const bodyRule = css.match(/body\s*\{[^}]*\}/)?.[0] || '';
+  assert.ok(!bodyRule.includes('safe-area-inset-top'), 'body must not add top safe area');
+  assert.ok(css.includes('padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px'));
+  assert.ok(css.includes('body.timer-visible #main'));
+  assert.ok(css.includes('var(--rest-bar-offset)'));
+  assert.ok(html.includes('20260711-emax-ordering'));
+  assert.ok(sw.includes("mll-strength-v20"));
 }
 
 testStartPersistsState();
