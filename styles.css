@@ -11,15 +11,16 @@
 
 :root {
   --bg: #07090d;
-  --surface: #10141b;
-  --surface-2: #181e28;
-  --surface-3: #222a37;
-  --line: #232b38;
-  --line-soft: #1a212c;
-  --text: #f2f5f9;
-  --text-2: #93a0b4;
-  --text-3: #576375;
-  --accent: #3e8bff;
+  --surface: #10151d;
+  --surface-2: #171e28;
+  --surface-3: #202936;
+  --surface-elevated: #1b222d;
+  --line: #2b3543;
+  --line-soft: rgba(151, 166, 187, 0.14);
+  --text: #f5f7fa;
+  --text-2: #aab5c5;
+  --text-3: #7d899a;
+  --accent: #4b92ff;
   --ok: #2ed787;
   --max: #f2b43b;
   --pause: #66707f;
@@ -27,10 +28,23 @@
   --ok-soft: rgba(46, 215, 135, 0.13);
   --max-soft: rgba(242, 180, 59, 0.14);
   --pause-soft: rgba(102, 112, 127, 0.18);
-  --radius-card: 16px;
-  --radius-btn: 12px;
-  --radius-nest: 10px;
+  --radius-card: 8px;
+  --radius-btn: 8px;
+  --radius-nest: 6px;
   --nav-height: 72px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --control-height: 46px;
+  --duration-press: 120ms;
+  --duration-fast: 160ms;
+  --duration-normal: 220ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --font-num: ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   /* 旧画面互換トークン（計画/設定画面の既存クラス用） */
   --surface-raised: var(--surface-2);
@@ -46,8 +60,8 @@
   --danger-soft: rgba(217, 119, 119, 0.14);
   --rest: var(--accent);
   --rest-yellow: var(--max);
-  --shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
-  --shadow-soft: none;
+  --shadow: 0 18px 52px rgba(0, 0, 0, 0.52);
+  --shadow-soft: 0 6px 22px rgba(0, 0, 0, 0.2);
   --radius: var(--radius-card);
   --radius-sm: var(--radius-btn);
 }
@@ -136,12 +150,19 @@ input, textarea, select {
 
 /* ==== レストタイマーバー ==== */
 .rest-bar {
-  position: sticky;
-  top: calc(44px + env(safe-area-inset-top));
+  position: fixed;
+  top: calc(51px + env(safe-area-inset-top));
+  left: 0;
+  right: 0;
   z-index: 49;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line-soft);
+  background: rgba(16, 21, 29, 0.96);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-right: 0;
   padding: 8px 14px 10px;
+  box-shadow: var(--shadow-soft);
 }
 
 .rest-bar.hidden { display: none; }
@@ -215,6 +236,10 @@ input, textarea, select {
   overflow-x: hidden;
 }
 
+body.timer-visible #main {
+  padding-top: calc(14px + 54px);
+}
+
 .screen-title {
   font-size: 22px;
   margin: 2px 0 12px;
@@ -237,14 +262,15 @@ input, textarea, select {
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-card);
-  padding: 14px;
-  margin-bottom: 10px;
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
   max-width: 100%;
 }
 
 .card.active {
-  border-color: rgba(62, 139, 255, 0.55);
-  background: linear-gradient(180deg, rgba(62, 139, 255, 0.06), rgba(16, 20, 27, 0) 60%), var(--surface);
+  border-color: rgba(75, 146, 255, 0.56);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-soft);
 }
 
 .card.flat {
@@ -306,7 +332,7 @@ button {
   padding: 10px 14px;
   font-size: 15px;
   font-weight: 800;
-  transition: opacity 0.15s, transform 0.06s, background 0.15s;
+  transition: transform var(--duration-press) var(--ease-out), background-color var(--duration-fast) ease, border-color var(--duration-fast) ease, color var(--duration-fast) ease, opacity var(--duration-fast) ease;
   touch-action: manipulation;
   white-space: nowrap;
 }
@@ -319,7 +345,8 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
-button:active { transform: scale(0.96); }
+button:active { transform: scale(0.975); }
+button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--surface); border-color: var(--line-soft); }
 
 .btn-primary {
   background: var(--accent);
@@ -328,7 +355,7 @@ button:active { transform: scale(0.96); }
   min-height: 58px;
   padding: 14px;
   font-size: 17px;
-  box-shadow: 0 8px 22px rgba(62, 139, 255, 0.3);
+  box-shadow: 0 6px 18px rgba(62, 139, 255, 0.22);
 }
 
 .btn-ok {
@@ -628,8 +655,8 @@ button:active { transform: scale(0.96); }
 
 /* ==== アクティブセットブロック ==== */
 .active-set {
-  background: var(--bg);
-  border: 1.5px solid rgba(62, 139, 255, 0.55);
+  background: rgba(7, 9, 13, 0.72);
+  border: 1px solid rgba(75, 146, 255, 0.52);
   border-radius: var(--radius-nest);
   padding: 12px;
   margin: 8px 0;
@@ -663,7 +690,7 @@ button:active { transform: scale(0.96); }
 }
 
 .vbox {
-  border: 1.5px dashed var(--line);
+  border: 1px solid var(--line);
   border-radius: var(--radius-nest);
   background: var(--surface);
   padding: 9px 6px 8px;
@@ -697,8 +724,9 @@ button:active { transform: scale(0.96); }
 }
 
 .vbox.selected {
-  border: 1.5px solid var(--accent);
+  border: 1px solid var(--accent);
   background: var(--bg);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .vbox.disabled { opacity: 0.55; cursor: default; }
@@ -801,6 +829,41 @@ button:active { transform: scale(0.96); }
   font-variant-numeric: tabular-nums;
 }
 
+.card-main {
+  padding: var(--space-4);
+  border-color: rgba(75, 146, 255, 0.5);
+}
+
+.card-main .ex-title {
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.card-main .vbox-row {
+  grid-template-columns: 1.4fr 1fr 1fr;
+}
+
+.card-main .vbox:first-child {
+  background: rgba(75, 146, 255, 0.08);
+  border-color: rgba(75, 146, 255, 0.42);
+}
+
+.card-main .vbox:first-child .vb-val {
+  font-size: 34px;
+  color: var(--text);
+}
+
+.card-main .previous-performance {
+  color: var(--text-2);
+  margin-top: 6px;
+}
+
+.card-accessory {
+  background: var(--surface);
+  border-color: var(--line-soft);
+  box-shadow: none;
+}
+
 /* 次の種目 / リスト行 */
 .next-row {
   display: flex;
@@ -832,6 +895,11 @@ button:active { transform: scale(0.96); }
 .next-row.pause-row .nx-name { color: var(--text-3); }
 
 .next-row[data-make-active] { cursor: pointer; }
+.next-row[data-make-active] {
+  border-radius: var(--radius-nest);
+  transition: background-color var(--duration-fast) ease, transform var(--duration-press) var(--ease-out);
+}
+.next-row[data-make-active]:active { transform: scale(0.99); background: var(--surface-2); }
 
 .next-row .nx-go {
   flex: 0 0 auto;
@@ -877,11 +945,12 @@ button:active { transform: scale(0.96); }
 /* ==== 入力 ==== */
 input[type="number"],
 input[type="text"],
+input[type="search"],
 input[type="date"],
 select,
 textarea {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--control-height);
   padding: 11px 12px;
   font-size: 16px;
   background: var(--bg);
@@ -921,7 +990,7 @@ label.field > span {
   left: 0;
   right: 0;
   display: flex;
-  background: rgba(7, 9, 13, 0.94);
+  background: rgba(7, 9, 13, 0.9);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border-top: 1px solid var(--line-soft);
@@ -946,9 +1015,21 @@ body.sheet-open .bottom-nav { display: none; }
   font-size: 11px;
   color: var(--text-3);
   font-weight: 800;
+  position: relative;
 }
 
-.nav-btn.active { color: var(--accent); }
+.nav-btn.active { color: var(--accent); background: var(--accent-soft); }
+.nav-btn.active::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 22px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translateX(-50%);
+}
 
 .nav-btn .nav-icon svg {
   display: block;
@@ -981,6 +1062,26 @@ body.sheet-open .bottom-nav { display: none; }
   font-size: 12px;
   color: var(--text-2);
   font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.four-plan-card {
+  padding: var(--space-3);
+  background: transparent;
+  box-shadow: none;
+}
+
+.four-plan-card.active-plan {
+  background: var(--accent-soft);
+  border-color: rgba(75, 146, 255, 0.48);
+}
+
+.four-plan-card .strong {
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.four-plan-card .muted {
   font-variant-numeric: tabular-nums;
 }
 
@@ -1501,7 +1602,7 @@ body.sheet-open .bottom-nav { display: none; }
   border-right: 1.5px solid var(--text-3);
   border-bottom: 1.5px solid var(--text-3);
   transform: rotate(45deg);
-  transition: transform 0.15s;
+  transition: transform var(--duration-fast) var(--ease-out), border-color var(--duration-fast) ease;
   margin-right: 2px;
 }
 
@@ -1683,18 +1784,24 @@ body.sheet-open .bottom-nav { display: none; }
   align-items: flex-end;
   justify-content: center;
   padding: 0;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--duration-fast) ease;
 }
 
 .modal.hidden { display: none; }
 
 .modal-inner {
-  background: var(--surface);
-  border-radius: 18px 18px 0 0;
+  background: var(--surface-elevated);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   width: 100%;
   max-width: 560px;
   max-height: 85vh;
   overflow-y: auto;
   padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  box-shadow: var(--shadow);
+  transform: translateY(0);
+  transition: transform var(--duration-normal) var(--ease-drawer), opacity var(--duration-fast) ease;
 }
 
 .modal-inner::before {
@@ -1710,7 +1817,7 @@ body.sheet-open .bottom-nav { display: none; }
 .modal-header {
   position: sticky;
   top: 0;
-  background: var(--surface);
+  background: rgba(27, 34, 45, 0.96);
   padding: 10px 16px;
   display: flex;
   justify-content: space-between;
@@ -1726,11 +1833,17 @@ body.sheet-open .bottom-nav { display: none; }
   font-size: 22px;
   padding: 0 8px;
   font-weight: 800;
-  min-height: 36px;
+  min-height: 44px;
+  min-width: 44px;
   color: var(--text-3);
 }
 
 .modal-body { padding: 14px 16px; }
+.modal-body > .btn-primary:last-child {
+  position: sticky;
+  bottom: calc(4px + env(safe-area-inset-bottom));
+  z-index: 2;
+}
 
 .sheet-chips {
   display: flex;
@@ -1756,12 +1869,41 @@ body.sheet-open .bottom-nav { display: none; }
   font-weight: 700;
   max-width: 90%;
   text-align: center;
+  opacity: 1;
+  visibility: visible;
+  transition: transform var(--duration-fast) var(--ease-out), opacity var(--duration-fast) ease, visibility 0s linear;
 }
 
 .toast.hidden { display: none; }
 
+#btnFullReset {
+  grid-column: 1 / -1;
+  margin-top: var(--space-2);
+}
+
+#btnRecalcToday,
+#btnReset {
+  grid-column: 1 / -1;
+}
+
 /* ==== ユーティリティ ==== */
 .hidden { display: none !important; }
+.modal.hidden {
+  display: flex !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition-duration: 120ms;
+}
+.modal.hidden .modal-inner { transform: translateY(100%); opacity: 0.98; }
+.toast.hidden {
+  display: block !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition-duration: 120ms;
+}
 .text-center { text-align: center; }
 .text-success { color: var(--ok); }
 .text-warn { color: var(--max); }
@@ -1776,6 +1918,7 @@ body.sheet-open .bottom-nav { display: none; }
 /* ==== レスポンシブ ==== */
 @media (min-width: 768px) {
   #main { padding: 22px 24px; }
+  body.timer-visible #main { padding-top: calc(22px + 54px); }
 }
 
 @media (max-width: 430px) {
@@ -1784,8 +1927,13 @@ body.sheet-open .bottom-nav { display: none; }
   .card, .section { padding: 13px 12px; }
   .card-ex .ex-title { font-size: 19px; }
   .vbox .vb-val { font-size: 24px; }
-  .rest-bar-time { font-size: 24px; min-width: 66px; }
-  .rest-bar button { min-width: 36px; padding: 6px 7px; }
+  .rest-bar { padding: 7px 10px; }
+  .rest-bar-row { display: flex; gap: 6px; }
+  .rest-bar-time { font-size: 22px; min-width: 62px; }
+  .rest-bar-track { min-width: 18px; }
+  .rest-bar button { min-width: 42px; padding: 6px 7px; }
+  .rest-bar #restMinus30,
+  .rest-bar #restReset { display: none; }
   .acc-edit-header,
   .acc-edit-row {
     grid-template-columns: minmax(0, 1fr) 70px 70px 56px;
@@ -1800,4 +1948,31 @@ body.sheet-open .bottom-nav { display: none; }
   .nav-label { font-size: 10.5px; }
   .vbox-row { gap: 6px; }
   .vb-editor .stepper { flex-basis: 50px; width: 50px; }
+  #btnExport,
+  #btnImport { grid-column: 1 / -1; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-secondary:hover,
+  .btn-sec:hover,
+  .btn-ghost:hover,
+  .next-row[data-make-active]:hover { background-color: var(--surface-3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  button,
+  .next-row,
+  .modal,
+  .modal-inner,
+  .toast,
+  .ui-details > summary::after {
+    transition-duration: 0.01ms !important;
+  }
+  button:active,
+  .next-row[data-make-active]:active { transform: none; }
 }
