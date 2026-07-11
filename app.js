@@ -3320,11 +3320,7 @@ function updateHeader() {
   const el = document.getElementById('headerStatus');
   if (!el) return;
   if (isFourMenuMode()) {
-    const session = store.daySessions[todaySessionKey()];
-    const currentKey = session?.isRest
-      ? 'rest'
-      : normalizeFourMenuKey(session?.performedSplitKey || session?.selectedSplitKey || s.nextMenuKey);
-    el.textContent = `4メニュー / 現在: ${fourMenuLabel(currentKey)}`;
+    el.textContent = '';
     return;
   }
   el.innerHTML =
@@ -3627,7 +3623,6 @@ function renderToday() {
 
   if (session.isRest) {
     return `
-      <h2 class="screen-title">今日</h2>
       ${fourMenuPicker}
       <div class="rest-day-banner">
         <div class="big">今日は休み</div>
@@ -3689,10 +3684,6 @@ function renderToday() {
     : '';
 
   return `
-    <div class="row between" style="margin:2px 0 12px;">
-      <h2 class="screen-title" style="margin:0;">今日</h2>
-      <span class="muted">${session.dayName}</span>
-    </div>
     ${fourMenuPicker}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
@@ -3718,15 +3709,8 @@ function renderFourMenuTodayPicker(session) {
     </button>
   `).join('');
   return `
-    <div class="card flat four-menu-picker">
-      <div class="row between">
-        <div>
-          <div class="sec-label">次のメニュー</div>
-          <div class="strong">${fourMenuLabel(scheduled)}</div>
-        </div>
-        ${selected !== scheduled ? `<span class="chip chip-outline">変更中: ${fourMenuLabel(selected)}</span>` : ''}
-      </div>
-      <div class="seg mt-8">${buttons}</div>
+    <div class="four-menu-picker" aria-label="今日のメニュー">
+      <div class="seg">${buttons}</div>
     </div>
   `;
 }
@@ -5320,7 +5304,6 @@ function renderBlock() {
   const blockAccessoryEditor = renderAccessorySlotEditor('block');
 
   return `
-    <h2 class="screen-title">ブロック管理</h2>
     <div class="section">
       <h2>現在の進捗</h2>
       <div class="row between">
@@ -5555,7 +5538,6 @@ function renderFourMenuPlan() {
     `;
   }).join('');
   return `
-    <h2 class="screen-title">計画</h2>
     <div class="section">
       <h2>4メニュー順番ローテ</h2>
       <div class="row between">
@@ -5768,7 +5750,6 @@ function renderLog() {
         : renderDailyLogView();
 
   return `
-    <h2 class="screen-title">ログ</h2>
     ${tabs}
     ${logFilter.type === 'daily' ? `${renderTrainingSummary()}<div class="section log-filters">
       <select id="log-menu-filter"><option value="all">全メニュー</option>${FOUR_MENU_ORDER.map(key => `<option value="${key}" ${logFilter.menu === key ? 'selected' : ''}>${fourMenuLabel(key)}</option>`).join('')}<option value="legacy" ${logFilter.menu === 'legacy' ? 'selected' : ''}>旧8日ログ</option></select>
@@ -6610,8 +6591,6 @@ function renderSettings() {
   }).join('');
 
   return `
-    <h2 class="screen-title">設定</h2>
-
     ${storageRecovery.active ? `
       <div class="section card status-danger">
         <h2>データ復旧モード</h2>

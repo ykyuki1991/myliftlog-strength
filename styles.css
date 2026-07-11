@@ -106,52 +106,10 @@ input, textarea, select {
 }
 
 /* ==== ヘッダー ==== */
-.app-header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: rgba(7, 9, 13, 0.92);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  padding: 10px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line-soft);
-  padding-top: calc(10px + env(safe-area-inset-top));
-}
-
-.app-title {
-  font-size: 15px;
-  margin: 0;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  color: var(--text-2);
-}
-
-/* 現在地チップ（B / R / Day。R4中はRだけ金） */
-.app-status {
-  font-size: 12.5px;
-  color: var(--text);
-  font-weight: 800;
-  font-family: var(--font-num);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  padding: 5px 12px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.app-status .pos-r4 {
-  color: var(--max);
-}
-
 /* ==== レストタイマーバー ==== */
 .rest-bar {
   position: fixed;
-  top: calc(51px + env(safe-area-inset-top));
+  top: env(safe-area-inset-top);
   left: 0;
   right: 0;
   z-index: 49;
@@ -229,7 +187,7 @@ input, textarea, select {
 
 /* ==== メイン ==== */
 #main {
-  padding: 14px 16px 22px;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 22px;
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
@@ -237,15 +195,7 @@ input, textarea, select {
 }
 
 body.timer-visible #main {
-  padding-top: calc(14px + 54px);
-}
-
-.screen-title {
-  font-size: 22px;
-  margin: 2px 0 12px;
-  font-weight: 900;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
+  padding-top: calc(12px + env(safe-area-inset-top) + 54px);
 }
 
 .sec-label {
@@ -586,6 +536,19 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
   font-size: 11.5px;
   color: var(--text-3);
   padding: 5px 4px 0;
+}
+
+.four-menu-picker {
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.four-menu-picker .seg { margin: 0; }
+
+.four-menu-picker .seg-opt {
+  min-height: 44px;
+  padding-inline: 2px;
 }
 
 /* ==== セット行 ==== */
@@ -1922,7 +1885,6 @@ body.sheet-open .bottom-nav { display: none; }
 }
 
 @media (max-width: 430px) {
-  .app-header { padding-left: 14px; padding-right: 14px; }
   #main { padding-left: 12px; padding-right: 12px; }
   .card, .section { padding: 13px 12px; }
   .card-ex .ex-title { font-size: 19px; }
@@ -1946,6 +1908,7 @@ body.sheet-open .bottom-nav { display: none; }
 
 @media (max-width: 360px) {
   .nav-label { font-size: 10.5px; }
+  .four-menu-picker .seg-opt { font-size: 12.5px; }
   .vbox-row { gap: 6px; }
   .vb-editor .stepper { flex-basis: 50px; width: 50px; }
   #btnExport,
