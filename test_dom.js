@@ -261,8 +261,8 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(css.includes('padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px'));
   assert.ok(css.includes('body.timer-visible #main'));
   assert.ok(css.includes('var(--rest-bar-offset)'));
-  assert.ok(html.includes('20260711-emax-ordering'));
-  assert.ok(sw.includes("mll-strength-v20"));
+  assert.ok(html.includes('20260726-draft-four-menu'));
+  assert.ok(sw.includes("mll-strength-v21"));
 }
 
 testStartPersistsState();
