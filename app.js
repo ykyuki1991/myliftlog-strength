@@ -419,10 +419,11 @@ function migrateStoreData(parsed = {}) {
   const mergedState = {
     ...def.currentState,
     ...(parsed.currentState || {}),
-    nextMenuKey: normalizeFourMenuKey(
+    nextMenuKey: normalizeActiveFourMenuKey(
       parsed.currentState?.nextMenuKey || parsed.currentState?.selectedSplitKey || def.currentState.nextMenuKey
     ),
-    isRestSelected: !!parsed.currentState?.isRestSelected,
+    // 旧JSONの休み選択は履歴として保持するが、新規ローテーション状態には引き継がない。
+    isRestSelected: false,
     backCompletedCount: Number.isFinite(parsedBackCount)
       ? Math.max(0, parsedBackCount, derivedBackCount)
       : derivedBackCount,
@@ -2392,6 +2393,11 @@ function normalizeFourMenuKey(key) {
   return FOUR_MENU_LABELS[normalized] ? normalized : 'shoulder_arm';
 }
 
+function normalizeActiveFourMenuKey(key, fallback = 'shoulder_arm') {
+  const normalized = normalizeFourMenuKey(key);
+  return FOUR_MENU_ORDER.includes(normalized) ? normalized : fallback;
+}
+
 function nextFourMenuKey(key) {
   const idx = FOUR_MENU_ORDER.indexOf(normalizeFourMenuKey(key));
   return FOUR_MENU_ORDER[(idx + 1) % FOUR_MENU_ORDER.length];
@@ -2417,7 +2423,8 @@ function countCompletedFourMenuBackSessions(logs = [], daySessions = {}) {
 }
 
 function getFourMenuState() {
-  store.currentState.nextMenuKey = normalizeFourMenuKey(store.currentState.nextMenuKey);
+  store.currentState.nextMenuKey = normalizeActiveFourMenuKey(store.currentState.nextMenuKey);
+  store.currentState.isRestSelected = false;
   store.currentState.backCompletedCount = parseInt(store.currentState.backCompletedCount, 10) || 0;
   return store.currentState;
 }
@@ -2974,32 +2981,59 @@ function nextDay(state) {
   return { day, rotation, block };
 }
 
-// 今日のセッションキー
+let previewTodaySession = null;
+
+function isIncompleteWorkoutSession(session) {
+  return !!session && !session.completed && !session.isRest &&
+    (session.fourMenuRotation || !isFourMenuMode());
+}
+
+function latestIncompleteSessionKey() {
+  return Object.entries(store.daySessions || {})
+    .filter(([, session]) => isIncompleteWorkoutSession(session) && session.status !== 'pristine')
+    .sort(([, a], [, b]) => (Number(b.updatedAt || b.ts) || 0) - (Number(a.updatedAt || a.ts) || 0))[0]?.[0] || null;
+}
+
+// 今日のセッションキー。前日以前でも未完了の明示的な作業セッションを優先する。
 function todaySessionKey() {
   if (isFourMenuMode()) {
+    if (previewTodaySession && previewTodaySession.date === todayStr()) return previewTodaySession.key;
+    if (previewTodaySession && previewTodaySession.date !== todayStr()) previewTodaySession = null;
     const activeKey = store.currentState?.activeSessionKey;
-    if (activeKey && store.daySessions?.[activeKey]?.date === todayStr()) return activeKey;
+    const activeSession = activeKey ? store.daySessions?.[activeKey] : null;
+    if (activeKey && isIncompleteWorkoutSession(activeSession)) return activeKey;
+    if (activeKey && activeSession?.completed && activeSession.date === todayStr()) return activeKey;
+    const incompleteKey = latestIncompleteSessionKey();
+    if (incompleteKey) return incompleteKey;
     return `${todayStr()}-four-menu`;
   }
   return `${todayStr()}-b${store.currentState.block}-r${store.currentState.rotation}-d${store.currentState.day}`;
 }
 
 // 今日のセッション取得 or 作成
-function getOrCreateTodaySession() {
+function getOrCreateTodaySession(options = {}) {
   const key = todaySessionKey();
+  if (previewTodaySession?.key === key) return previewTodaySession;
   if (!store.daySessions[key]) {
     const fourMode = isFourMenuMode();
     const state = getFourMenuState();
     const selectedMenuKey = fourMode
-      ? (state.isRestSelected ? 'rest' : normalizeFourMenuKey(state.nextMenuKey))
+      ? normalizeActiveFourMenuKey(state.nextMenuKey)
       : null;
     const menu = fourMode
       ? buildFourMenu(selectedMenuKey, store.settings)
       : getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
-    store.daySessions[key] = {
+    const createdAt = Date.now();
+    const session = {
       key,
       sessionId: uid(),
       date: todayStr(),
+      workoutDate: todayStr(),
+      workoutType: fourMode ? menu.menuKey : null,
+      status: fourMode ? 'pristine' : 'inProgress',
+      createdAt,
+      updatedAt: createdAt,
+      completedAt: null,
       day: fourMode ? null : store.currentState.day,
       rotation: fourMode ? null : store.currentState.rotation,
       block: fourMode ? null : store.currentState.block,
@@ -3031,19 +3065,61 @@ function getOrCreateTodaySession() {
         completed: false,
       })),
       completed: false,
-      ts: Date.now(),
+      ts: createdAt,
     };
+    markAppliedRotationProgressions(session);
+    if (fourMode && options.persist === false) {
+      previewTodaySession = session;
+      return previewTodaySession;
+    }
+    store.daySessions[key] = session;
     if (fourMode) store.currentState.activeSessionKey = key;
-    markAppliedRotationProgressions(store.daySessions[key]);
     saveStore();
   }
-  if (!store.daySessions[key].sessionId) store.daySessions[key].sessionId = `legacy-session-${key}`;
-  return store.daySessions[key];
+  const session = store.daySessions[key];
+  if (!session.sessionId) session.sessionId = `legacy-session-${key}`;
+  if (!session.workoutDate) session.workoutDate = session.date;
+  if (!session.status) session.status = session.completed ? 'completed' : 'inProgress';
+  return session;
+}
+
+function persistTodaySession(session) {
+  if (!session || session.completed) return false;
+  session.status = 'inProgress';
+  session.workoutDate = session.workoutDate || session.date;
+  session.createdAt = session.createdAt || session.ts || Date.now();
+  session.updatedAt = Date.now();
+  store.daySessions[session.key] = session;
+  if (session.fourMenuRotation) store.currentState.activeSessionKey = session.key;
+  if (previewTodaySession?.key === session.key) previewTodaySession = null;
+  return saveStore();
+}
+
+function persistActiveWorkoutDraft() {
+  const activeKey = store.currentState?.activeSessionKey;
+  const session = activeKey ? store.daySessions?.[activeKey] : null;
+  if (!isIncompleteWorkoutSession(session) || session.status !== 'inProgress') return true;
+  session.updatedAt = Date.now();
+  return saveStore();
+}
+
+function discardIncompleteTodaySession() {
+  const key = todaySessionKey();
+  const session = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
+  if (!session || session.completed) return false;
+  if (!confirm(`${fmtDateShort(session.date)}の未完了トレーニングを破棄しますか？記録は作成されません。`)) return false;
+  delete store.daySessions[key];
+  if (store.currentState.activeSessionKey === key) store.currentState.activeSessionKey = null;
+  if (previewTodaySession?.key === key) previewTodaySession = null;
+  saveStore();
+  showToast('未完了トレーニングを破棄しました');
+  render();
+  return true;
 }
 
 function startNewTodaySession() {
   const previous = getOrCreateTodaySession();
-  if (previous && !previous.completed && !confirm('未完了のセッションがあります。新しいセッションを開始しますか？')) return null;
+  if (previous && previous.status === 'inProgress' && !previous.completed && !confirm('未完了のセッションがあります。新しいセッションを開始しますか？')) return null;
   store.currentState.activeSessionKey = `${todayStr()}-four-menu-${uid()}`;
   const session = getOrCreateTodaySession();
   saveStore();
@@ -3201,21 +3277,31 @@ function skipNextSet(session, exIdx) {
 
 function selectFourMenuForToday(menuKey) {
   if (!isFourMenuMode()) return false;
+  if (!FOUR_MENU_ORDER.includes(normalizeFourMenuKey(menuKey))) return false;
   const key = todaySessionKey();
-  const oldSession = store.daySessions[key];
-  const selected = menuKey === 'rest' ? 'rest' : normalizeFourMenuKey(menuKey);
+  const oldSession = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
+  const selected = normalizeActiveFourMenuKey(menuKey);
   const menu = buildFourMenu(selected, store.settings);
   const state = getFourMenuState();
+  const sessionDate = oldSession?.date || todayStr();
+  const now = Date.now();
   store.daySessions[key] = {
     ...(oldSession || {}),
     key,
-    date: todayStr(),
+    sessionId: oldSession?.sessionId || uid(),
+    date: sessionDate,
+    workoutDate: oldSession?.workoutDate || sessionDate,
+    workoutType: selected,
+    status: 'inProgress',
+    createdAt: oldSession?.createdAt || oldSession?.ts || now,
+    updatedAt: now,
+    completedAt: null,
     fourMenuRotation: true,
-    scheduledDate: oldSession?.scheduledDate || todayStr(),
-    performedDate: todayStr(),
+    scheduledDate: oldSession?.scheduledDate || sessionDate,
+    performedDate: oldSession?.performedDate || sessionDate,
     scheduledSplitKey: oldSession?.scheduledSplitKey || state.nextMenuKey,
     selectedSplitKey: selected,
-    performedSplitKey: selected === 'rest' ? null : selected,
+    performedSplitKey: selected,
     splitName: menu.name,
     dayName: menu.name,
     isRest: menu.isRest,
@@ -3235,8 +3321,10 @@ function selectFourMenuForToday(menuKey) {
       completed: false,
     })),
     completed: false,
-    ts: oldSession?.ts || Date.now(),
+    ts: oldSession?.ts || now,
   };
+  previewTodaySession = null;
+  store.currentState.activeSessionKey = key;
   saveStore();
   return true;
 }
@@ -3259,13 +3347,13 @@ function undoLastSetRecord(session, exIdx) {
 // 今日のセッションを再計算（メニューを最新に更新、未実施部分のみ）
 function recalculateTodaySession() {
   const key = todaySessionKey();
-  const oldSession = store.daySessions[key];
+  const oldSession = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
   const menu = isFourMenuMode()
-    ? buildFourMenu(oldSession?.selectedSplitKey || (store.currentState.isRestSelected ? 'rest' : store.currentState.nextMenuKey), store.settings)
+    ? buildFourMenu(oldSession?.selectedSplitKey || normalizeActiveFourMenuKey(store.currentState.nextMenuKey), store.settings)
     : getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
 
   if (!oldSession) {
-    getOrCreateTodaySession();
+    getOrCreateTodaySession({ persist: false });
     return;
   }
 
@@ -3363,7 +3451,7 @@ function recalculateTodaySession() {
   oldSession.isRest = menu.isRest;
   oldSession.activeExerciseRests = menu.activeExerciseRests || [];
   oldSession.skippedRestExercises = menu.skippedRestExercises || [];
-  saveStore();
+  persistTodaySession(oldSession);
   return hasDoneSet;
 }
 
@@ -3371,6 +3459,7 @@ function recalculateTodaySession() {
 let currentScreen = 'today';
 
 function navigate(screen) {
+  persistActiveWorkoutDraft();
   currentScreen = screen;
   document.querySelectorAll('.nav-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.screen === screen);
@@ -3691,13 +3780,25 @@ function renderCompletedExerciseCard(ex, exIdx) {
 }
 
 function renderToday() {
-  const session = getOrCreateTodaySession();
+  const session = getOrCreateTodaySession({ persist: false });
   const s = store.currentState;
   const fourMenuPicker = renderFourMenuTodayPicker(session);
+  const restoredDraft = session.status === 'inProgress' && !session.completed && session.date < todayStr();
+  const draftBanner = restoredDraft ? `
+    <div class="card flat incomplete-session-banner">
+      <div class="strong">${fmtDateShort(session.date)}の未完了トレーニングを復元しています</div>
+      <div class="btn-row mt-8">
+        <button class="btn-secondary btn-small" id="btnContinueDraft">続きを入力</button>
+        <button class="btn-primary btn-small" id="btnFinishDraft">トレーニング完了</button>
+        <button class="btn-danger btn-small" id="btnDiscardDraft">破棄</button>
+      </div>
+    </div>
+  ` : '';
 
   if (session.isRest) {
     return `
       ${fourMenuPicker}
+      ${draftBanner}
       <div class="rest-day-banner">
         <div class="big">今日は休み</div>
         <div class="muted">${session.fourMenuRotation ? '4メニュー順番ローテ' : `Day${s.day} ・ 休息日`}</div>
@@ -3759,6 +3860,7 @@ function renderToday() {
 
   return `
     ${fourMenuPicker}
+    ${draftBanner}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
@@ -3776,8 +3878,8 @@ function renderToday() {
 function renderFourMenuTodayPicker(session) {
   if (!session?.fourMenuRotation) return '';
   const scheduled = session.scheduledSplitKey || store.currentState.nextMenuKey;
-  const selected = session.selectedSplitKey || (session.isRest ? 'rest' : scheduled);
-  const buttons = [...FOUR_MENU_ORDER, 'rest'].map(key => `
+  const selected = normalizeActiveFourMenuKey(session.selectedSplitKey || scheduled);
+  const buttons = FOUR_MENU_ORDER.map(key => `
     <button class="seg-opt ${selected === key ? 'on' : ''}" data-four-menu-select="${key}">
       ${fourMenuLabel(key)}
     </button>
@@ -3791,7 +3893,7 @@ function renderFourMenuTodayPicker(session) {
 
 
 function afterToday() {
-  const session = store.daySessions[todaySessionKey()];
+  const session = getOrCreateTodaySession({ persist: false });
 
   document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
     btn.onclick = () => {
@@ -3802,15 +3904,24 @@ function afterToday() {
     };
   });
 
+  const continueDraft = document.getElementById('btnContinueDraft');
+  if (continueDraft) continueDraft.onclick = () => showToast('未完了トレーニングを継続します');
+  const finishDraft = document.getElementById('btnFinishDraft');
+  if (finishDraft) finishDraft.onclick = finishTodaySession;
+  const discardDraft = document.getElementById('btnDiscardDraft');
+  if (discardDraft) discardDraft.onclick = discardIncompleteTodaySession;
+
   // メモ入力 → 保存
   document.querySelectorAll('textarea[data-field]').forEach(el => {
-    el.addEventListener('change', () => {
+    const saveNote = () => {
       const exIdx = parseInt(el.dataset.ex);
       const ex = session.exercises[exIdx];
       if (!ex) return;
       if (el.dataset.field === 'note') ex.note = el.value;
-      saveStore();
-    });
+      persistTodaySession(session);
+    };
+    el.addEventListener('input', saveNote);
+    el.addEventListener('change', saveNote);
   });
 
   // 値ボックス（タップで選択→エディタ開閉）
@@ -3851,7 +3962,7 @@ function afterToday() {
         const base = Number.isFinite(parsed) ? parsed : parseRangeMax(ex.plannedReps, 0);
         set.reps = Math.max(0, base + dir);
       }
-      saveStore();
+      persistTodaySession(session);
       render();
     });
   });
@@ -3859,7 +3970,7 @@ function afterToday() {
   // 直接入力（kg=小数可 / 回=整数）。不正値は保存しない
   document.querySelectorAll('input[data-direct-field]').forEach(input => {
     input.addEventListener('click', e => e.stopPropagation());
-    input.addEventListener('change', () => {
+    const saveDirectInput = (rerender = false) => {
       const exIdx = parseInt(input.dataset.ex);
       const field = input.dataset.directField;
       const ex = session.exercises[exIdx];
@@ -3870,21 +3981,23 @@ function afterToday() {
       if (field === 'kg') {
         const value = parseFloat(input.value);
         if (!Number.isFinite(value) || value < 0) {
-          render();
+          if (rerender) render();
           return;
         }
         set.weight = Math.round(value * 100) / 100;
       } else if (field === 'reps') {
         const value = parseInt(input.value, 10);
         if (!Number.isFinite(value) || value < 0) {
-          render();
+          if (rerender) render();
           return;
         }
         set.reps = value;
       }
-      saveStore();
-      render();
-    });
+      persistTodaySession(session);
+      if (rerender) render();
+    };
+    input.addEventListener('input', () => saveDirectInput(false));
+    input.addEventListener('change', () => saveDirectInput(true));
   });
 
   // RPE（アクティブセットのエディタ内チップ・再タップで解除）
@@ -3896,7 +4009,7 @@ function afterToday() {
       if (!ex) return;
       ex.rpe = ex.rpe === c.dataset.rpeEdit ? '未入力' : c.dataset.rpeEdit;
       todayEdit = null; // タップで確定して閉じる
-      saveStore();
+      persistTodaySession(session);
       render();
     });
   });
@@ -3917,7 +4030,7 @@ function afterToday() {
           ex.pains.push(pain);
         }
       }
-      saveStore();
+      persistTodaySession(session);
       render();
     });
   });
@@ -3952,7 +4065,7 @@ function afterToday() {
       if (!ex) return;
       if (action === 'adoptAccessoryCandidate') {
         if (applyAccessoryProgressionCandidate(session, ex)) {
-          saveStore();
+          persistTodaySession(session);
           showToast('補助の次回重量へ反映しました');
           render();
         }
@@ -3964,18 +4077,19 @@ function afterToday() {
         ex.progressionReason = '5%減を手動採用';
         ex.progressionReasonCode = 'manual_reduction_adopted';
         saveMainSetOverride(session.performedSplitKey || session.selectedSplitKey, ex);
-        saveStore();
+        persistTodaySession(session);
         showToast('5%減候補を今後へ反映しました');
         render();
         return;
       }
       if (action === 'rest') {
+        persistTodaySession(session);
         startRestTimer(ex.restSec, ex.name);
       } else if (action === 'completeSet') {
         const result = toggleNextSetCompletion(session, exIdx);
         if (result.ok) {
           todayEdit = null;
-          saveStore();
+          persistTodaySession(session);
           if (!result.reverted) startRestTimer(ex.restSec, ex.name);
           else showToast('1セット戻しました');
           render();
@@ -3985,24 +4099,28 @@ function afterToday() {
         const result = skipNextSet(session, exIdx);
         if (result.ok) {
           todayEdit = null;
-          saveStore();
+          persistTodaySession(session);
           render();
         }
       } else if (action === 'undoSet') {
         const result = undoLastSetRecord(session, exIdx);
         if (result.ok) {
           todayEdit = null;
-          saveStore();
+          persistTodaySession(session);
           showToast('1セット戻しました');
           render();
         }
       } else if (action === 'adjust') {
+        persistTodaySession(session);
         openAdjustModal(exIdx);
       } else if (action === 'editMainSet') {
+        persistTodaySession(session);
         openMainSetEditModal(exIdx);
       } else if (action === 'editAccessory') {
+        persistTodaySession(session);
         openAccessoryTodayModal(exIdx);
       } else if (action === 'editSets') {
+        persistTodaySession(session);
         openSetEditSheet(exIdx);
       }
     });
@@ -4014,7 +4132,7 @@ function afterToday() {
       const result = moveExerciseToActive(session, parseInt(row.dataset.makeActive, 10));
       if (result.ok && result.moved) {
         todayEdit = null;
-        saveStore();
+        persistTodaySession(session);
         render();
       }
     });
@@ -4023,6 +4141,7 @@ function afterToday() {
   // 記録済みセット行をタップ → セット編集シート
   document.querySelectorAll('.set-row[data-edit-ex]').forEach(row => {
     row.addEventListener('click', () => {
+      persistTodaySession(session);
       openSetEditSheet(parseInt(row.dataset.editEx, 10));
     });
   });
@@ -4035,7 +4154,10 @@ function afterToday() {
   };
 
   const addTodayAccessoryBtn = document.getElementById('btnAddTodayAccessory');
-  if (addTodayAccessoryBtn) addTodayAccessoryBtn.onclick = openAccessoryTodayAddModal;
+  if (addTodayAccessoryBtn) addTodayAccessoryBtn.onclick = () => {
+    persistTodaySession(session);
+    openAccessoryTodayAddModal();
+  };
 
   const normalDeloadBtn = document.getElementById('btnNormalDeload');
   if (normalDeloadBtn) normalDeloadBtn.onclick = () => showToast('通常デロードとして進めます');
@@ -4837,13 +4959,18 @@ function upsertExerciseLogFromSession(session, ex, allowCreate = false) {
 
 function finishTodaySession() {
   const key = todaySessionKey();
-  const session = store.daySessions[key];
+  const session = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
   if (!session) return;
   const wasCompleted = !!session.completed;
 
   if (wasCompleted) {
     if (!confirm('既に完了済みです。再度ログを保存しますか？')) return;
+  } else if (!persistTodaySession(session)) {
+    showToast('保存できなかったため完了していません');
+    return;
   }
+
+  const beforeCompletion = JSON.stringify(store);
 
   // 各種目をログ化
   session.exercises.forEach(ex => {
@@ -4960,10 +5087,13 @@ function finishTodaySession() {
   });
 
   session.completed = true;
+  session.status = 'completed';
+  session.completedAt = Date.now();
+  session.updatedAt = session.completedAt;
   store.currentState.lastTrainingDate = session.date;
   if (session.fourMenuRotation) {
     const performed = session.performedSplitKey || session.selectedSplitKey;
-    if (!wasCompleted && performed && performed !== 'rest') {
+    if (!wasCompleted && FOUR_MENU_ORDER.includes(performed)) {
       store.currentState.lastCompletedMenuKey = performed;
       store.currentState.lastCompletedDate = session.date;
       if (performed === 'back') {
@@ -4971,25 +5101,24 @@ function finishTodaySession() {
       }
       store.currentState.nextMenuKey = nextFourMenuKey(performed);
       store.currentState.isRestSelected = false;
-    } else if (!wasCompleted) {
-      store.currentState.isRestSelected = true;
     }
-    saveStore();
+    if (!saveStore()) {
+      store = migrateStoreData(JSON.parse(beforeCompletion));
+      previewTodaySession = null;
+      showToast('保存できなかったため完了していません');
+      render();
+      return;
+    }
     showToast(wasCompleted ? '記録を更新しました' : 'お疲れさま！記録を保存しました');
-    if (!wasCompleted && performed && performed !== 'rest') {
-      setTimeout(() => {
-        if (confirm(`次は「${fourMenuLabel(store.currentState.nextMenuKey)}」です。次回まで休みにしますか？`)) {
-          store.currentState.isRestSelected = true;
-          saveStore();
-        }
-        navigate('today');
-      }, 800);
-    } else {
-      navigate('today');
-    }
+    navigate('today');
     return;
   }
-  saveStore();
+  if (!saveStore()) {
+    store = migrateStoreData(JSON.parse(beforeCompletion));
+    showToast('保存できなかったため完了していません');
+    render();
+    return;
+  }
   showToast('お疲れさま！記録を保存しました');
 
   // 4ローテD8（最後／休み）終了時のみ、次ブロック提案を表示
@@ -5287,6 +5416,7 @@ function restoreRestTimer() {
 }
 
 function handleRestTimerLifecycleEvent(event) {
+  persistActiveWorkoutDraft();
   syncRestTimer({ persist: true, alert: event.type !== 'pagehide' });
 }
 
@@ -5435,12 +5565,6 @@ function afterBlock() {
         render();
       };
     });
-    const restBtn = document.getElementById('btnSetFourMenuRest');
-    if (restBtn) restBtn.onclick = () => {
-      store.currentState.isRestSelected = true;
-      saveStore();
-      render();
-    };
     document.querySelectorAll('[data-edit-four-accessory]').forEach(btn => {
       btn.onclick = () => {
         const menuKey = normalizeFourMenuKey(btn.dataset.fourMenuKey);
@@ -5592,7 +5716,7 @@ function renderFourMenuPlan() {
     const menu = buildFourMenu(menuKey, store.settings);
     const main = menu.exercises.find(ex => ex.isFourMenuMain || ex.isBig3);
     const accessoryCount = menu.exercises.filter(ex => ex.isAccessory).length;
-    const selected = state.nextMenuKey === menuKey && !state.isRestSelected;
+    const selected = state.nextMenuKey === menuKey;
     return `
       <div class="card four-plan-card ${selected ? 'active-plan' : ''}">
         <div class="row between">
@@ -5617,9 +5741,8 @@ function renderFourMenuPlan() {
       <div class="row between">
         <div>
           <div class="sec-label">現在の次回</div>
-          <div class="value-big">${state.isRestSelected ? '休み' : fourMenuLabel(state.nextMenuKey)}</div>
+          <div class="value-big">${fourMenuLabel(state.nextMenuKey)}</div>
         </div>
-        <button class="btn-secondary btn-small" id="btnSetFourMenuRest">休みにする</button>
       </div>
       <div class="muted mt-8" style="font-size:12px;">肩・腕 → 脚 → 胸 → 背中 の順に進みます</div>
     </div>
@@ -6800,7 +6923,6 @@ function renderSettings() {
             ${FOUR_MENU_ORDER.map(key => `<option value="${key}" ${normalizeFourMenuKey(s.nextMenuKey) === key ? 'selected' : ''}>${fourMenuLabel(key)}</option>`).join('')}
           </select>
         </label>
-        <label class="check-row"><input type="checkbox" id="set-rest-selected" ${s.isRestSelected ? 'checked' : ''} /> 次回まで休み</label>
       ` : `
         <label class="field"><span>ブロック</span><input type="number" id="set-block" value="${s.block}" min="1" /></label>
         <label class="field"><span>ローテ (1-4)</span><input type="number" id="set-rotation" value="${s.rotation}" min="1" max="4" /></label>
@@ -6869,8 +6991,8 @@ function afterSettings() {
     const newInc = parseFloat(document.getElementById('set-inc').value) || 2.5;
     const newState = isFourMenuMode()
       ? {
-          nextMenuKey: normalizeFourMenuKey(document.getElementById('set-next-menu')?.value),
-          isRestSelected: !!document.getElementById('set-rest-selected')?.checked,
+          nextMenuKey: normalizeActiveFourMenuKey(document.getElementById('set-next-menu')?.value),
+          isRestSelected: false,
         }
       : {
           block: parseInt(document.getElementById('set-block').value) || 1,
@@ -7154,10 +7276,16 @@ if (typeof window !== 'undefined') {
     escapeHtml,
     renderBlock,
     finishTodaySession,
+    todaySessionKey,
+    getOrCreateTodaySession,
+    persistTodaySession,
+    persistActiveWorkoutDraft,
+    discardIncompleteTodaySession,
     nextDay,
     isFourMenuMode,
     buildFourMenu,
     selectFourMenuForToday,
+    normalizeActiveFourMenuKey,
     nextFourMenuKey,
     getFourMenuBackLiftKey,
     getFourMenuMainPlan,

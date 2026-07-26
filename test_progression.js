@@ -29,6 +29,9 @@ function makeElement(id) {
 function createHarness(options = {}) {
   const elements = {};
   const storage = {};
+  const documentListeners = {};
+  const windowListeners = {};
+  let storageFailure = false;
   if (options.initialStore) storage[STORAGE_KEY] = JSON.stringify(options.initialStore);
   if (Object.prototype.hasOwnProperty.call(options, 'rawStore')) storage[STORAGE_KEY] = options.rawStore;
   const document = {
@@ -38,16 +41,19 @@ function createHarness(options = {}) {
     },
     querySelectorAll() { return []; },
     querySelector() { return null; },
-    addEventListener() {},
+    addEventListener(type, handler) { documentListeners[type] = handler; },
   };
   const context = {
     console,
     document,
-    window: { addEventListener() {} },
+    window: { addEventListener(type, handler) { windowListeners[type] = handler; } },
     navigator: {},
     localStorage: {
       getItem(key) { return storage[key] || null; },
-      setItem(key, value) { storage[key] = String(value); },
+      setItem(key, value) {
+        if (storageFailure) throw new Error('simulated storage failure');
+        storage[key] = String(value);
+      },
       removeItem(key) { delete storage[key]; },
     },
     confirm: options.confirm || (() => true),
@@ -62,7 +68,15 @@ function createHarness(options = {}) {
   vm.runInContext(APP_JS, context);
   const api = context.window.__mllTest;
   if (options.forceLegacy !== false) api.getStore().settings.programMode = 'legacy8';
-  return { api, context, storage, elements };
+  return {
+    api,
+    context,
+    storage,
+    elements,
+    documentListeners,
+    windowListeners,
+    setStorageFailure: value => { storageFailure = !!value; },
+  };
 }
 
 function big3Log(overrides = {}) {
@@ -1504,7 +1518,8 @@ function testExistingStoreMigratesToFourMenuMode() {
   assert.ok(store.settings.fourMenuAccessorySlots.legs.every(slot => typeof slot.reps === 'number'));
   const html = api.renderToday();
   assert.ok(html.includes('肩・腕'));
-  assert.strictEqual((html.match(/data-four-menu-select=/g) || []).length, 5);
+  assert.strictEqual((html.match(/data-four-menu-select=/g) || []).length, 4);
+  assert.ok(!html.includes('data-four-menu-select="rest"'));
   assert.ok(!html.includes('次のメニュー'));
   assert.ok(!html.includes('<h2 class="screen-title">今日</h2>'));
   assert.ok(!html.includes('変更中:'));
@@ -1694,14 +1709,21 @@ function testFourMenuSessionSelectionAndDeadliftAlternation() {
   store.currentState.isRestSelected = false;
   store.currentState.backCompletedCount = 0;
 
-  api.renderToday();
+  const initialHtml = api.renderToday();
+  assert.strictEqual(Object.keys(store.daySessions).length, 0, 'opening today must not create an empty session');
+  assert.strictEqual(store.logs.length, 0, 'opening today must not create a workout or rest log');
+  assert.strictEqual((initialHtml.match(/data-four-menu-select=/g) || []).length, 4);
+  assert.ok(api.selectFourMenuForToday('shoulder_arm'));
   let session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
   assert.ok(session);
   assert.strictEqual(session.selectedSplitKey, 'shoulder_arm');
-  assert.ok(api.selectFourMenuForToday('rest'));
-  session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
-  assert.strictEqual(session.selectedSplitKey, 'rest');
-  assert.strictEqual(session.isRest, true);
+  assert.strictEqual(api.selectFourMenuForToday('rest'), false, 'rest is not a new four-menu selection');
+  assert.strictEqual(session.selectedSplitKey, 'shoulder_arm');
+  assert.strictEqual(session.isRest, false);
+  assert.strictEqual(api.nextFourMenuKey('shoulder_arm'), 'legs');
+  assert.strictEqual(api.nextFourMenuKey('legs'), 'chest');
+  assert.strictEqual(api.nextFourMenuKey('chest'), 'back');
+  assert.strictEqual(api.nextFourMenuKey('back'), 'shoulder_arm');
 
   assert.ok(api.selectFourMenuForToday('chest'));
   session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
@@ -1835,10 +1857,13 @@ function testFourMenuMainIdentityAndCompletionIdempotency() {
   store.currentState.nextMenuKey = 'back';
   store.currentState.isRestSelected = false;
   api.renderToday();
+  api.selectFourMenuForToday('back');
   const session = Object.values(store.daySessions).find(item => item.fourMenuRotation);
   assert.strictEqual(session.selectedSplitKey, 'back');
   session.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; }));
   api.finishTodaySession();
+  assert.strictEqual(session.status, 'completed');
+  assert.ok(session.completedAt);
   assert.strictEqual(store.currentState.backCompletedCount, 1);
   assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
   const savedBackLogs = store.logs.filter(log => log.fourMenuRotation);
@@ -1848,6 +1873,79 @@ function testFourMenuMainIdentityAndCompletionIdempotency() {
   api.finishTodaySession();
   assert.strictEqual(store.currentState.backCompletedCount, 1, 're-saving a completed session must not advance deadlift alternation');
   assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
+}
+
+function testIncompleteWorkoutDraftPersistence() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+
+  api.renderToday();
+  assert.strictEqual(Object.keys(store.daySessions).length, 0, 'rendering alone must not persist an empty workout');
+  assert.ok(api.selectFourMenuForToday('chest'));
+  const session = Object.values(store.daySessions)[0];
+  assert.ok(session.sessionId);
+  assert.strictEqual(session.status, 'inProgress');
+  assert.strictEqual(session.workoutType, 'chest');
+  assert.strictEqual(session.workoutDate, session.date);
+
+  const bench = session.exercises.find(ex => ex.key === 'bench');
+  bench.sets[0] = { ...bench.sets[0], weight: 101.25, reps: 4, done: true };
+  bench.rpe = '9';
+  bench.note = '途中保存';
+  assert.strictEqual(api.persistTodaySession(session), true);
+
+  bench.note = 'pagehide保存';
+  api.setupRestTimerLifecycleEvents();
+  isolated.windowListeners.pagehide({ type: 'pagehide' });
+  const pagehideSaved = JSON.parse(isolated.storage[STORAGE_KEY]);
+  assert.strictEqual(pagehideSaved.daySessions[session.key].exercises.find(ex => ex.key === 'bench').note, 'pagehide保存');
+  bench.note = '途中保存';
+  api.persistTodaySession(session);
+
+  const persisted = JSON.parse(isolated.storage[STORAGE_KEY]);
+  const restoredHarness = createHarness({ initialStore: persisted, forceLegacy: false });
+  const restoredApi = restoredHarness.api;
+  const restoredStore = restoredApi.getStore();
+  const restored = restoredStore.daySessions[session.key];
+  assert.strictEqual(restored.sessionId, session.sessionId);
+  assert.strictEqual(restored.exercises.find(ex => ex.key === 'bench').sets[0].weight, 101.25);
+  assert.strictEqual(restored.exercises.find(ex => ex.key === 'bench').sets[0].reps, 4);
+  assert.strictEqual(restored.exercises.find(ex => ex.key === 'bench').rpe, '9');
+  assert.strictEqual(restored.exercises.find(ex => ex.key === 'bench').note, '途中保存');
+
+  restored.date = '2026-07-01';
+  restored.workoutDate = '2026-07-01';
+  restored.performedDate = '2026-07-01';
+  restored.updatedAt = Date.now();
+  restoredApi.persistTodaySession(restored);
+  assert.strictEqual(restoredApi.todaySessionKey(), session.key, 'an incomplete prior-date session must remain active');
+  assert.ok(restoredApi.renderToday().includes('未完了トレーニングを復元しています'));
+
+  const nextMenuBeforeDiscard = restoredStore.currentState.nextMenuKey;
+  const logsBeforeDiscard = restoredStore.logs.length;
+  assert.strictEqual(restoredApi.discardIncompleteTodaySession(), true);
+  assert.strictEqual(restoredStore.daySessions[session.key], undefined);
+  assert.strictEqual(restoredStore.logs.length, logsBeforeDiscard);
+  assert.strictEqual(restoredStore.currentState.nextMenuKey, nextMenuBeforeDiscard);
+
+  const cancelled = createHarness({ initialStore: persisted, forceLegacy: false, confirm: () => false });
+  const cancelledSession = cancelled.api.getStore().daySessions[session.key];
+  cancelledSession.date = '2026-07-01';
+  cancelledSession.status = 'inProgress';
+  cancelled.api.getStore().currentState.activeSessionKey = session.key;
+  assert.strictEqual(cancelled.api.discardIncompleteTodaySession(), false);
+  assert.ok(cancelled.api.getStore().daySessions[session.key], 'cancelling discard must preserve the draft');
+
+  const failing = createHarness({ initialStore: persisted, forceLegacy: false });
+  const failingStore = failing.api.getStore();
+  const failingSession = failingStore.daySessions[session.key];
+  failingStore.currentState.activeSessionKey = session.key;
+  const logCountBeforeFailure = failingStore.logs.length;
+  failing.setStorageFailure(true);
+  failing.api.finishTodaySession();
+  assert.strictEqual(failingSession.completed, false, 'failed persistence must not complete the draft');
+  assert.strictEqual(failingStore.logs.length, logCountBeforeFailure, 'failed persistence must not create formal logs');
 }
 
 function testFourMenuStateMigrationAliasesAndBackCount() {
@@ -1907,20 +2005,26 @@ function testImportMigrationPreservesLegacyAndMaxData() {
   };
   const estimated = { id: 'emax-preserved', liftKey: 'floorDead', estimatedMax: 190 };
   const maxTest = { id: 'max-preserved', liftKey: 'bench', measuredMax: 120 };
+  const legacyRestLog = { id: 'legacy-rest-preserved', date: '2026-01-02', menuType: 'rest', isRest: true };
   const migrated = isolated.api.migrateStoreData({
     settings: { programMode: 'legacy8' },
-    currentState: { nextMenuKey: 'shoulder_arms' },
-    logs: [legacyLog],
+    currentState: { nextMenuKey: 'rest', isRestSelected: true },
+    logs: [legacyLog, legacyRestLog],
     estimatedMaxHistory: [estimated],
     maxTestResults: [maxTest],
   });
   assert.strictEqual(migrated.settings.programMode, 'fourMenu');
   assert.strictEqual(migrated.currentState.nextMenuKey, 'shoulder_arm');
+  assert.strictEqual(migrated.currentState.isRestSelected, false);
   assert.strictEqual(JSON.stringify(migrated.logs[0]), JSON.stringify(legacyLog));
+  assert.strictEqual(JSON.stringify(migrated.logs[1]), JSON.stringify(legacyRestLog));
   assert.strictEqual(JSON.stringify(migrated.estimatedMaxHistory[0]), JSON.stringify(estimated));
   assert.strictEqual(JSON.stringify(migrated.maxTestResults[0]), JSON.stringify(maxTest));
   assert.ok(migrated.settings.fourMenuAccessorySlots.chest.length);
   assert.ok(migrated.settings.fourMenuAccessorySlots.chest.every(slot => typeof slot.reps === 'number'));
+  const migratedAgain = isolated.api.migrateStoreData(migrated);
+  assert.strictEqual(migratedAgain.currentState.nextMenuKey, 'shoulder_arm');
+  assert.strictEqual(migratedAgain.logs.filter(log => log.id === legacyRestLog.id).length, 1);
 }
 
 testBig3FormulaUnaffected();
@@ -1962,6 +2066,7 @@ testFourMenuSessionSelectionAndDeadliftAlternation();
 testFourMenuLogRenderingAndOverrideScope();
 testFourMenuAccessoryTemplatesAndPlanActions();
 testFourMenuMainIdentityAndCompletionIdempotency();
+testIncompleteWorkoutDraftPersistence();
 testFourMenuStateMigrationAliasesAndBackCount();
 testImportMigrationPreservesLegacyAndMaxData();
 testMaxUpdateAndRotationProgressionAreCapped();
