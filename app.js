@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
     bench: 115,
     squat: 160,
     halfDead: 190,
-    // 床引きデッドはユーザーが過去にハードにやっていない種目。技術練習・補助的位置づけのため初期値170kg固定。
+    // デッドリフトはユーザーが過去にハードにやっていない種目。技術練習・補助的位置づけのため初期値170kg固定。
     floorDead: 170,
     shoulderPress: 77.5,
   },
@@ -103,6 +103,7 @@ const DEFAULT_STATE = {
   nextMenuKey: 'shoulder_arm',
   isRestSelected: false,
   backCompletedCount: 0,
+  lastCompletedBackLiftKey: null,
   lastCompletedMenuKey: null,
   lastCompletedDate: null,
   activeSessionKey: null,
@@ -138,7 +139,7 @@ const BIG3_LIFTS = {
   bench: { key: 'bench', maxKey: 'bench', name: 'ベンチプレス' },
   squat: { key: 'squat', maxKey: 'squat', name: 'スクワット' },
   halfDead: { key: 'halfDead', maxKey: 'halfDead', name: 'ハーフデッド' },
-  floorDead: { key: 'floorDead', maxKey: 'floorDead', name: '床引きデッド' },
+  floorDead: { key: 'floorDead', maxKey: 'floorDead', name: 'デッドリフト' },
 };
 
 const FOUR_MENU_ORDER = ['shoulder_arm', 'legs', 'chest', 'back'];
@@ -154,7 +155,7 @@ const FOUR_MENU_MAIN_LIFTS = {
   squat: { key: 'squat', maxKey: 'squat', name: 'スクワット', fallbackWeight: 145 },
   bench: { key: 'bench', maxKey: 'bench', name: 'ベンチプレス', fallbackWeight: 107.5 },
   halfDead: { key: 'halfDead', maxKey: 'halfDead', name: 'ハーフデッド', fallbackWeight: 162.5 },
-  floorDead: { key: 'floorDead', maxKey: 'floorDead', name: '床引きデッド', fallbackWeight: 162.5 },
+  floorDead: { key: 'floorDead', maxKey: 'floorDead', name: 'デッドリフト', fallbackWeight: 162.5 },
 };
 const FOUR_MENU_MAIN_BY_MENU = {
   shoulder_arm: 'shoulderPress',
@@ -168,6 +169,7 @@ const BIG3_KEY_ALIASES = {
   floor_deadlift: 'floorDead',
   'floor deadlift': 'floorDead',
   '床引きデッド': 'floorDead',
+  'デッドリフト': 'floorDead',
 };
 
 const DELOAD_MAX_TEST_MODES = {
@@ -416,6 +418,7 @@ function migrateStoreData(parsed = {}) {
   };
   const parsedBackCount = parseInt(parsed.currentState?.backCompletedCount, 10);
   const derivedBackCount = countCompletedFourMenuBackSessions(parsed.logs, parsed.daySessions);
+  const derivedLastBackLiftKey = deriveLastCompletedBackLiftKey(parsed.logs, parsed.daySessions, parsedBackCount);
   const mergedState = {
     ...def.currentState,
     ...(parsed.currentState || {}),
@@ -427,6 +430,7 @@ function migrateStoreData(parsed = {}) {
     backCompletedCount: Number.isFinite(parsedBackCount)
       ? Math.max(0, parsedBackCount, derivedBackCount)
       : derivedBackCount,
+    lastCompletedBackLiftKey: normalizeBackLiftKey(parsed.currentState?.lastCompletedBackLiftKey) || derivedLastBackLiftKey,
     lastCompletedMenuKey: parsed.currentState?.lastCompletedMenuKey
       ? normalizeFourMenuKey(parsed.currentState.lastCompletedMenuKey)
       : null,
@@ -604,6 +608,18 @@ function applyAccessoryPresetToSlot(base = {}, presetKey = 'custom') {
 function normalizeBig3Key(key) {
   const raw = String(key || '');
   return BIG3_KEY_ALIASES[raw] || raw;
+}
+
+function normalizeBackLiftKey(value) {
+  const normalized = normalizeBig3Key(value);
+  if (normalized === 'halfDead' || value === 'rack') return 'halfDead';
+  if (normalized === 'floorDead' || value === 'floor') return 'floorDead';
+  return null;
+}
+
+function displayExerciseName(exerciseKey, storedName = '') {
+  if (normalizeBig3Key(exerciseKey) === 'floorDead' || storedName === '床引きデッド') return 'デッドリフト';
+  return storedName || BIG3_LIFTS[normalizeBig3Key(exerciseKey)]?.name || String(exerciseKey || '');
 }
 
 function isBig3Key(key) {
@@ -1111,7 +1127,7 @@ function exerciseRestTokensForExercise(ex) {
     ...(ex?.key === 'bench' ? ['ベンチプレス', 'benchpress'] : []),
     ...(ex?.key === 'squat' ? ['スクワット', 'squat'] : []),
     ...(ex?.key === 'halfDead' ? ['ハーフデッド', 'halfdead'] : []),
-    ...(ex?.key === 'floorDead' ? ['床引きデッド', 'floordead', 'floor_dead'] : []),
+    ...(ex?.key === 'floorDead' ? ['デッドリフト', '床引きデッド', 'floordead', 'floor_dead'] : []),
     ...(ex?.key === 'machine_chest_press' ? ['チェストプレス', 'chestpress'] : []),
   ].map(normalizeSearchText).filter(Boolean);
 }
@@ -1598,7 +1614,7 @@ function renderEstimatedMaxHistory(limit = 6) {
     return `
       <div class="suggestion-row emax-row">
         <div>
-          <div class="name">${entry.liftName}推定MAX: ${entry.estimatedMax}kg <span class="status-pill ${statusKind === 'candidate' ? 'status-ok' : statusKind === 'reference' ? 'status-caution' : 'status-low'}">${statusLabel}</span></div>
+          <div class="name">${displayExerciseName(entry.liftKey, entry.liftName)}推定MAX: ${entry.estimatedMax}kg <span class="status-pill ${statusKind === 'candidate' ? 'status-ok' : statusKind === 'reference' ? 'status-caution' : 'status-low'}">${statusLabel}</span></div>
           <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.maxUseReason || '判定'} / 現MAX差 ${entry.diff > 0 ? '+' : ''}${entry.diff}kg / ${entry.date}</div>
           <div class="muted" style="font-size:12px;">MAX更新候補: ${candidate ? `${candidate.candidate}kg (${candidate.diff > 0 ? '+' : ''}${candidate.diff}kg)` : 'なし・様子見'}</div>
           ${entry.trendWarning ? `<div class="load-warning load-warning-caution"><span>注意</span>${entry.trendWarning}</div>` : ''}
@@ -1620,7 +1636,7 @@ function renderMaxTestHistory(limit = 10, liftKey = null) {
       <div class="hist-row">
         <span class="h-date">${fmtDateShort(test.date)}</span>
         <span class="h-val">${fmtW(weight)}<span class="u">kg</span> ×1
-          ${!liftKey ? `<span class="h-src">${test.liftName}</span>` : ''}
+          ${!liftKey ? `<span class="h-src">${displayExerciseName(test.liftKey, test.liftName)}</span>` : ''}
         </span>
         ${test.adopted ? '<span class="chip chip-max-fill">採用中</span>' : ''}
         ${success && test.failedAttemptWeight ? `<span class="chip chip-pause">✗ ${fmtW(test.failedAttemptWeight)}</span>` : ''}
@@ -1635,7 +1651,7 @@ function renderEstimatedMaxSummary() {
     { key: 'bench', name: 'ベンチ' },
     { key: 'squat', name: 'スクワット' },
     { key: 'halfDead', name: 'ハーフデッド' },
-    { key: 'floorDead', name: '床引きデッド' },
+    { key: 'floorDead', name: 'デッドリフト' },
   ];
   const rows = lifts.map(lift => {
     const entry = bestEstimatedMaxEntryForLift(lift.key);
@@ -2422,14 +2438,53 @@ function countCompletedFourMenuBackSessions(logs = [], daySessions = {}) {
   return dates.size;
 }
 
+function getSessionBackLiftKey(session) {
+  if (!session) return null;
+  return normalizeBackLiftKey(session.selectedBackLiftKey) ||
+    normalizeBackLiftKey((session.exercises || []).find(ex => ex.isFourMenuMain && normalizeBackLiftKey(ex.key))?.key) ||
+    normalizeBackLiftKey(session.deadliftVariant);
+}
+
+function deriveLastCompletedBackLiftKey(logs = [], daySessions = {}, backCompletedCount = 0) {
+  const candidates = [];
+  Object.values(daySessions || {}).forEach(session => {
+    if (!session?.fourMenuRotation || !session.completed || normalizeFourMenuKey(session.performedSplitKey || session.selectedSplitKey) !== 'back') return;
+    const liftKey = getSessionBackLiftKey(session);
+    if (liftKey) candidates.push({ liftKey, time: estimatedMaxEntryTime(session) });
+  });
+  const seenSessions = new Set();
+  (Array.isArray(logs) ? logs : []).forEach(log => {
+    const hasRecordedAttempt = (parseInt(log?.doneSets, 10) || 0) > 0 ||
+      (log?.sets || []).some(set => set.done && (parseInt(set.reps, 10) || 0) > 0);
+    if (!log?.fourMenuRotation || log.isExerciseRest || log.todayOnlyDeleted ||
+      normalizeFourMenuKey(log.performedSplitKey || log.selectedSplitKey || log.menuKey) !== 'back' ||
+      !String(log.menuType || '').startsWith('four-main-') || !hasRecordedAttempt || isNonAttemptMainLog(log)) return;
+    const liftKey = normalizeBackLiftKey(log.exerciseKey);
+    if (!liftKey) return;
+    const identity = log.sessionId || `${log.performedDate || log.date}:${liftKey}`;
+    if (seenSessions.has(identity)) return;
+    seenSessions.add(identity);
+    candidates.push({ liftKey, time: estimatedMaxEntryTime(log) });
+  });
+  candidates.sort((a, b) => b.time - a.time);
+  if (candidates[0]) return candidates[0].liftKey;
+  const count = parseInt(backCompletedCount, 10) || 0;
+  if (count <= 0) return null;
+  return count % 2 === 1 ? 'halfDead' : 'floorDead';
+}
+
 function getFourMenuState() {
   store.currentState.nextMenuKey = normalizeActiveFourMenuKey(store.currentState.nextMenuKey);
   store.currentState.isRestSelected = false;
   store.currentState.backCompletedCount = parseInt(store.currentState.backCompletedCount, 10) || 0;
+  store.currentState.lastCompletedBackLiftKey = normalizeBackLiftKey(store.currentState.lastCompletedBackLiftKey) ||
+    deriveLastCompletedBackLiftKey(store.logs, store.daySessions, store.currentState.backCompletedCount);
   return store.currentState;
 }
 
 function getFourMenuBackLiftKey(state = store.currentState) {
+  const lastCompleted = normalizeBackLiftKey(state.lastCompletedBackLiftKey);
+  if (lastCompleted) return lastCompleted === 'halfDead' ? 'floorDead' : 'halfDead';
   return ((parseInt(state.backCompletedCount, 10) || 0) % 2 === 0) ? 'halfDead' : 'floorDead';
 }
 
@@ -2572,8 +2627,10 @@ function getMainPrFacts(ex) {
   return facts;
 }
 
-function buildFourMenuMainExercise(menuKey, settings = store.settings) {
-  const liftKey = menuKey === 'back' ? getFourMenuBackLiftKey(getFourMenuState()) : FOUR_MENU_MAIN_BY_MENU[menuKey];
+function buildFourMenuMainExercise(menuKey, settings = store.settings, selectedBackLiftKey = null) {
+  const liftKey = menuKey === 'back'
+    ? (normalizeBackLiftKey(selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState()))
+    : FOUR_MENU_MAIN_BY_MENU[menuKey];
   const lift = FOUR_MENU_MAIN_LIFTS[liftKey];
   const plan = getFourMenuMainPlan(liftKey, menuKey, settings);
   return {
@@ -2617,7 +2674,7 @@ function fourMenuAccessoryExerciseFromSlot(menuKey, slot) {
   };
 }
 
-function buildFourMenu(menuKey, settings = store.settings) {
+function buildFourMenu(menuKey, settings = store.settings, options = {}) {
   const normalizedKey = menuKey === 'rest' ? 'rest' : normalizeFourMenuKey(menuKey);
   if (normalizedKey === 'rest') {
     return {
@@ -2631,7 +2688,7 @@ function buildFourMenu(menuKey, settings = store.settings) {
     };
   }
   let exercises = [
-    buildFourMenuMainExercise(normalizedKey, settings),
+    buildFourMenuMainExercise(normalizedKey, settings, options.backLiftKey),
     ...getFourMenuAccessorySlots(normalizedKey, settings).map(slot => fourMenuAccessoryExerciseFromSlot(normalizedKey, slot)),
   ];
   exercises = applyMainSetOverridesToMenu(exercises, normalizedKey, settings);
@@ -2906,10 +2963,10 @@ function getDayMenu(day, rotation, settings) {
       break;
     }
     case 7: {
-      dayName = 'Day7: 床引きデッド / 脚補助';
-      // 床引きデッドはハーフデッド強化の補助・フォーム維持目的のため、
+      dayName = 'Day7: デッドリフト / 脚補助';
+      // デッドリフトはハーフデッド強化の補助・フォーム維持目的のため、
       // 高強度モードでも軽〜中重量を維持。強化対象にしない。
-      exercises.push(benchByPct('floorDead', '床引きデッド', M.floorDead,
+      exercises.push(benchByPct('floorDead', 'デッドリフト', M.floorDead,
         [70.6, 73.5, 76.5], [3, 3, 3], [5, 5, 4], 'floorDead-main', 'squat_dead_volume'));
       if (isHighIntensity) {
         // 高強度モード補助: ラットプルダウン / マシンロー / シーテッドロー / プリーチャー
@@ -2994,6 +3051,69 @@ function latestIncompleteSessionKey() {
     .sort(([, a], [, b]) => (Number(b.updatedAt || b.ts) || 0) - (Number(a.updatedAt || a.ts) || 0))[0]?.[0] || null;
 }
 
+function cloneWorkoutExercise(exercise) {
+  return exercise ? JSON.parse(JSON.stringify(exercise)) : null;
+}
+
+function materializeSessionExercise(exercise) {
+  if (!exercise) return null;
+  return {
+    ...exercise,
+    sets: Array.from({ length: typeof exercise.plannedSets === 'number' ? exercise.plannedSets : 3 }, () => ({
+      weight: exercise.plannedWeight,
+      reps: typeof exercise.plannedReps === 'number' ? exercise.plannedReps : '',
+      done: false,
+    })),
+    rpe: '未入力',
+    pains: [],
+    note: '',
+    completed: false,
+  };
+}
+
+function normalizeBackSessionState(session) {
+  if (!session?.fourMenuRotation || normalizeFourMenuKey(session.selectedSplitKey || session.performedSplitKey) !== 'back') return session;
+  session.backVariantDrafts = session.backVariantDrafts && typeof session.backVariantDrafts === 'object'
+    ? session.backVariantDrafts
+    : {};
+  const mainIndex = (session.exercises || []).findIndex(ex => ex.isFourMenuMain && normalizeBackLiftKey(ex.key));
+  const currentMain = mainIndex >= 0 ? session.exercises[mainIndex] : null;
+  const selected = normalizeBackLiftKey(session.selectedBackLiftKey) ||
+    normalizeBackLiftKey(currentMain?.key) ||
+    normalizeBackLiftKey(session.deadliftVariant) ||
+    getFourMenuBackLiftKey(getFourMenuState());
+  const currentKey = normalizeBackLiftKey(currentMain?.key);
+  if (currentMain && currentKey && currentKey !== selected) {
+    session.backVariantDrafts[currentKey] = cloneWorkoutExercise(currentMain);
+    const selectedDraft = cloneWorkoutExercise(session.backVariantDrafts[selected]);
+    const generated = buildFourMenu('back', store.settings, { backLiftKey: selected }).exercises.find(ex => ex.isFourMenuMain && ex.key === selected);
+    if (mainIndex >= 0 && (selectedDraft || generated)) session.exercises[mainIndex] = selectedDraft || materializeSessionExercise(generated);
+  }
+  session.selectedBackLiftKey = selected;
+  session.deadliftVariant = selected === 'halfDead' ? 'rack' : 'floor';
+  return session;
+}
+
+function switchBackLiftVariant(session, nextLiftKey) {
+  const selected = normalizeBackLiftKey(nextLiftKey);
+  if (!session || session.completed || normalizeFourMenuKey(session.selectedSplitKey || session.performedSplitKey) !== 'back' || !selected) return false;
+  normalizeBackSessionState(session);
+  const mainIndex = session.exercises.findIndex(ex => ex.isFourMenuMain && normalizeBackLiftKey(ex.key));
+  if (mainIndex < 0) return false;
+  const currentMain = session.exercises[mainIndex];
+  const currentKey = normalizeBackLiftKey(currentMain.key);
+  if (currentKey === selected) return true;
+  session.backVariantDrafts[currentKey] = cloneWorkoutExercise(currentMain);
+  const generated = buildFourMenu('back', store.settings, { backLiftKey: selected }).exercises.find(ex => ex.isFourMenuMain && ex.key === selected);
+  const replacement = cloneWorkoutExercise(session.backVariantDrafts[selected]) || materializeSessionExercise(generated);
+  if (!replacement) return false;
+  session.exercises[mainIndex] = replacement;
+  session.selectedBackLiftKey = selected;
+  session.deadliftVariant = selected === 'halfDead' ? 'rack' : 'floor';
+  session.updatedAt = Date.now();
+  return persistTodaySession(session);
+}
+
 // 今日のセッションキー。前日以前でも未完了の明示的な作業セッションを優先する。
 function todaySessionKey() {
   if (isFourMenuMode()) {
@@ -3013,7 +3133,7 @@ function todaySessionKey() {
 // 今日のセッション取得 or 作成
 function getOrCreateTodaySession(options = {}) {
   const key = todaySessionKey();
-  if (previewTodaySession?.key === key) return previewTodaySession;
+  if (previewTodaySession?.key === key) return normalizeBackSessionState(previewTodaySession);
   if (!store.daySessions[key]) {
     const fourMode = isFourMenuMode();
     const state = getFourMenuState();
@@ -3044,7 +3164,13 @@ function getOrCreateTodaySession(options = {}) {
       selectedSplitKey: fourMode ? menu.menuKey : null,
       performedSplitKey: fourMode && menu.menuKey !== 'rest' ? menu.menuKey : null,
       splitName: fourMode ? menu.name : null,
-      deadliftVariant: fourMode && menu.menuKey === 'back' ? getFourMenuBackLiftKey(state) : null,
+      selectedBackLiftKey: fourMode && menu.menuKey === 'back'
+        ? normalizeBackLiftKey(menu.exercises.find(ex => ex.isFourMenuMain)?.key) || getFourMenuBackLiftKey(state)
+        : null,
+      deadliftVariant: fourMode && menu.menuKey === 'back'
+        ? (normalizeBackLiftKey(menu.exercises.find(ex => ex.isFourMenuMain)?.key) === 'floorDead' ? 'floor' : 'rack')
+        : null,
+      backVariantDrafts: fourMode && menu.menuKey === 'back' ? {} : null,
       isDeload: menu.isDeload,
       isAdjustmentRotation: menu.isAdjustmentRotation,
       r4AdjustmentMode: menu.r4AdjustmentMode,
@@ -3052,22 +3178,12 @@ function getOrCreateTodaySession(options = {}) {
       dayName: menu.name,
       activeExerciseRests: menu.activeExerciseRests || [],
       skippedRestExercises: menu.skippedRestExercises || [],
-      exercises: menu.exercises.map(ex => ({
-        ...ex,
-        sets: Array.from({ length: typeof ex.plannedSets === 'number' ? ex.plannedSets : 3 }, () => ({
-          weight: ex.plannedWeight,
-          reps: typeof ex.plannedReps === 'number' ? ex.plannedReps : '',
-          done: false,
-        })),
-        rpe: '未入力',
-        pains: [],
-        note: '',
-        completed: false,
-      })),
+      exercises: menu.exercises.map(materializeSessionExercise),
       completed: false,
       ts: createdAt,
     };
     markAppliedRotationProgressions(session);
+    normalizeBackSessionState(session);
     if (fourMode && options.persist === false) {
       previewTodaySession = session;
       return previewTodaySession;
@@ -3080,6 +3196,7 @@ function getOrCreateTodaySession(options = {}) {
   if (!session.sessionId) session.sessionId = `legacy-session-${key}`;
   if (!session.workoutDate) session.workoutDate = session.date;
   if (!session.status) session.status = session.completed ? 'completed' : 'inProgress';
+  normalizeBackSessionState(session);
   return session;
 }
 
@@ -3281,7 +3398,19 @@ function selectFourMenuForToday(menuKey) {
   const key = todaySessionKey();
   const oldSession = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
   const selected = normalizeActiveFourMenuKey(menuKey);
-  const menu = buildFourMenu(selected, store.settings);
+  if (oldSession && normalizeFourMenuKey(oldSession.selectedSplitKey) === selected && !oldSession.completed) {
+    normalizeBackSessionState(oldSession);
+    return persistTodaySession(oldSession);
+  }
+  if (oldSession && normalizeFourMenuKey(oldSession.selectedSplitKey) === 'back') {
+    normalizeBackSessionState(oldSession);
+    const currentBackMain = oldSession.exercises.find(ex => ex.isFourMenuMain && normalizeBackLiftKey(ex.key));
+    if (currentBackMain) oldSession.backVariantDrafts[normalizeBackLiftKey(currentBackMain.key)] = cloneWorkoutExercise(currentBackMain);
+  }
+  const selectedBackLiftKey = selected === 'back'
+    ? (normalizeBackLiftKey(oldSession?.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState()))
+    : null;
+  const menu = buildFourMenu(selected, store.settings, { backLiftKey: selectedBackLiftKey });
   const state = getFourMenuState();
   const sessionDate = oldSession?.date || todayStr();
   const now = Date.now();
@@ -3307,19 +3436,17 @@ function selectFourMenuForToday(menuKey) {
     isRest: menu.isRest,
     activeExerciseRests: menu.activeExerciseRests || [],
     skippedRestExercises: menu.skippedRestExercises || [],
-    deadliftVariant: selected === 'back' ? getFourMenuBackLiftKey(state) : null,
-    exercises: menu.exercises.map(ex => ({
-      ...ex,
-      sets: Array.from({ length: typeof ex.plannedSets === 'number' ? ex.plannedSets : 3 }, () => ({
-        weight: ex.plannedWeight,
-        reps: typeof ex.plannedReps === 'number' ? ex.plannedReps : '',
-        done: false,
-      })),
-      rpe: '未入力',
-      pains: [],
-      note: '',
-      completed: false,
-    })),
+    selectedBackLiftKey: selectedBackLiftKey || normalizeBackLiftKey(oldSession?.selectedBackLiftKey),
+    deadliftVariant: (selectedBackLiftKey || normalizeBackLiftKey(oldSession?.selectedBackLiftKey)) === 'halfDead'
+      ? 'rack'
+      : (selectedBackLiftKey || normalizeBackLiftKey(oldSession?.selectedBackLiftKey)) === 'floorDead' ? 'floor' : null,
+    backVariantDrafts: oldSession?.backVariantDrafts || (selected === 'back' ? {} : null),
+    exercises: menu.exercises.map(ex => {
+      if (selected === 'back' && ex.isFourMenuMain && oldSession?.backVariantDrafts?.[ex.key]) {
+        return cloneWorkoutExercise(oldSession.backVariantDrafts[ex.key]);
+      }
+      return materializeSessionExercise(ex);
+    }),
     completed: false,
     ts: oldSession?.ts || now,
   };
@@ -3348,8 +3475,14 @@ function undoLastSetRecord(session, exIdx) {
 function recalculateTodaySession() {
   const key = todaySessionKey();
   const oldSession = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
+  if (oldSession) normalizeBackSessionState(oldSession);
+  const selectedBackLiftKey = normalizeBackLiftKey(oldSession?.selectedBackLiftKey);
   const menu = isFourMenuMode()
-    ? buildFourMenu(oldSession?.selectedSplitKey || normalizeActiveFourMenuKey(store.currentState.nextMenuKey), store.settings)
+    ? buildFourMenu(
+        oldSession?.selectedSplitKey || normalizeActiveFourMenuKey(store.currentState.nextMenuKey),
+        store.settings,
+        { backLiftKey: selectedBackLiftKey }
+      )
     : getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
 
   if (!oldSession) {
@@ -3442,7 +3575,10 @@ function recalculateTodaySession() {
     oldSession.splitName = menu.name;
     oldSession.selectedSplitKey = menu.menuKey;
     oldSession.performedSplitKey = menu.menuKey === 'rest' ? null : menu.menuKey;
-    oldSession.deadliftVariant = menu.menuKey === 'back' ? getFourMenuBackLiftKey(getFourMenuState()) : null;
+    oldSession.selectedBackLiftKey = menu.menuKey === 'back'
+      ? (selectedBackLiftKey || normalizeBackLiftKey(menu.exercises.find(ex => ex.isFourMenuMain)?.key) || getFourMenuBackLiftKey(getFourMenuState()))
+      : null;
+    oldSession.deadliftVariant = oldSession.selectedBackLiftKey === 'halfDead' ? 'rack' : oldSession.selectedBackLiftKey === 'floorDead' ? 'floor' : null;
   }
   oldSession.isDeload = menu.isDeload;
   oldSession.isAdjustmentRotation = menu.isAdjustmentRotation;
@@ -3560,7 +3696,7 @@ function openSetEditSheet(exIdx) {
     `<button class="seg-opt ${draft[idx].state === state ? (state === 'skip' ? 'on-pause' : 'on') : ''}" data-se-state="${state}" data-se-idx="${idx}">${label}</button>`;
 
   const body = () => `
-    <div class="sec-label">${escapeHtml(ex.name)}</div>
+    <div class="sec-label">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>
     ${draft.map((d, i) => `
       <div class="row" style="gap:8px;margin-bottom:10px;align-items:center;">
         <span class="sn" style="flex:0 0 22px;text-align:center;color:var(--text-3);font-weight:800;">${i + 1}</span>
@@ -3718,7 +3854,7 @@ function renderActiveExerciseCard(ex, exIdx) {
   return `
     <div class="card card-ex active ${ex.isFourMenuMain || ex.isBig3 ? 'card-main' : 'card-accessory'}" data-ex="${exIdx}">
       <div class="ex-head">
-        <div class="ex-title">${ex.name}</div>
+        <div class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>
         <div class="ex-chips">${exerciseRoleChipHtml(ex)}</div>
       </div>
       ${previous ? `<div class="ex-sub previous-performance">${escapeHtml(previous.text)}</div>
@@ -3764,7 +3900,7 @@ function renderCompletedExerciseCard(ex, exIdx) {
   return `
     <div class="card done-card exercise-card-complete" data-ex="${exIdx}">
       <div class="dn-row">
-        <span class="ex-title" style="font-size:15px;">${ex.name}</span>
+        <span class="ex-title" style="font-size:15px;">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
         <span class="chip chip-ok">✓ 完了</span>
       </div>
       <div class="dn-row mt-8">
@@ -3783,6 +3919,7 @@ function renderToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const s = store.currentState;
   const fourMenuPicker = renderFourMenuTodayPicker(session);
+  const backLiftPicker = renderBackLiftVariantSwitch(session);
   const restoredDraft = session.status === 'inProgress' && !session.completed && session.date < todayStr();
   const draftBanner = restoredDraft ? `
     <div class="card flat incomplete-session-banner">
@@ -3798,6 +3935,7 @@ function renderToday() {
   if (session.isRest) {
     return `
       ${fourMenuPicker}
+      ${backLiftPicker}
       ${draftBanner}
       <div class="rest-day-banner">
         <div class="big">今日は休み</div>
@@ -3830,7 +3968,7 @@ function renderToday() {
         <div class="sec-label">次の種目</div>
         ${upNext.map(({ ex, exIdx }) => `
           <div class="next-row" data-make-active="${exIdx}" role="button">
-            <span class="nx-name">${ex.name}</span>
+            <span class="nx-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
             <span class="nx-detail">${exercisePlanText(ex)}</span>
             ${exerciseRoleChipHtml(ex)}
             <span class="nx-go" aria-hidden="true">›</span>
@@ -3851,7 +3989,7 @@ function renderToday() {
     ? `<div class="card flat">
         ${(session.skippedRestExercises || []).map(ex => `
           <div class="next-row pause-row">
-            <span class="nx-name">${escapeHtml(ex.name)}</span>
+            <span class="nx-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
             <span class="chip chip-pause">休止中</span>
           </div>
         `).join('')}
@@ -3860,6 +3998,7 @@ function renderToday() {
 
   return `
     ${fourMenuPicker}
+    ${backLiftPicker}
     ${draftBanner}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
@@ -3891,6 +4030,20 @@ function renderFourMenuTodayPicker(session) {
   `;
 }
 
+function renderBackLiftVariantSwitch(session) {
+  if (!session?.fourMenuRotation || normalizeFourMenuKey(session.selectedSplitKey || session.performedSplitKey) !== 'back') return '';
+  normalizeBackSessionState(session);
+  const selected = normalizeBackLiftKey(session.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState());
+  return `
+    <div class="back-lift-switch" aria-label="背中メイン種目">
+      <div class="seg">
+        <button class="seg-opt ${selected === 'halfDead' ? 'on' : ''}" data-back-lift-select="halfDead">ハーフデッド</button>
+        <button class="seg-opt ${selected === 'floorDead' ? 'on' : ''}" data-back-lift-select="floorDead">デッドリフト</button>
+      </div>
+    </div>
+  `;
+}
+
 
 function afterToday() {
   const session = getOrCreateTodaySession({ persist: false });
@@ -3901,6 +4054,15 @@ function afterToday() {
       if (hasDone && !confirm('入力済みのセットがあります。今日のメニューを変更しますか？')) return;
       selectFourMenuForToday(btn.dataset.fourMenuSelect);
       render();
+    };
+  });
+
+  document.querySelectorAll('[data-back-lift-select]').forEach(btn => {
+    btn.onclick = () => {
+      if (switchBackLiftVariant(session, btn.dataset.backLiftSelect)) {
+        todayEdit = null;
+        render();
+      }
     };
   });
 
@@ -4173,7 +4335,7 @@ function openAdjustModal(exIdx) {
   const ex = session.exercises[exIdx];
   const currentWeight = ex.plannedWeight ?? ex.sets.find(s => s.weight != null)?.weight ?? 0;
   openModal('重量調整', `
-    <div class="muted mb-8">${ex.name}</div>
+    <div class="muted mb-8">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>
     <div>現在の予定: <strong>${currentWeight || '-'}kg</strong></div>
     <label class="field mt-8"><span>新しい予定重量(kg)</span>
       <input type="number" id="adj-weight" step="0.5" value="${currentWeight || ''}" />
@@ -4404,7 +4566,7 @@ function openMainSetEditModal(exIdx) {
   const ex = session?.exercises?.[exIdx];
   if (!ex?.isBig3 && !ex?.isFourMenuMain) return;
   openModal('メイン種目編集', `
-    <div class="muted mb-8">${ex.name}</div>
+    <div class="muted mb-8">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>
     <label class="field">
       <span>予定重量(kg)</span>
       <input type="number" inputmode="decimal" step="0.5" id="mainEditWeight" value="${ex.plannedWeight ?? ''}" />
@@ -4897,6 +5059,7 @@ function buildExerciseLogFromSession(session, ex, existing = null) {
     menuKey: session.performedSplitKey || session.selectedSplitKey || null,
     splitName: session.splitName || session.dayName || null,
     menuName: session.splitName || session.dayName || null,
+    selectedBackLiftKey: normalizeBackLiftKey(session.selectedBackLiftKey) || null,
     deadliftVariant: ex.deadliftVariant || session.deadliftVariant || null,
   } : {};
   return {
@@ -5097,6 +5260,8 @@ function finishTodaySession() {
       store.currentState.lastCompletedMenuKey = performed;
       store.currentState.lastCompletedDate = session.date;
       if (performed === 'back') {
+        const completedBackLiftKey = getSessionBackLiftKey(session);
+        if (completedBackLiftKey) store.currentState.lastCompletedBackLiftKey = completedBackLiftKey;
         store.currentState.backCompletedCount = (parseInt(store.currentState.backCompletedCount, 10) || 0) + 1;
       }
       store.currentState.nextMenuKey = nextFourMenuKey(performed);
@@ -5799,7 +5964,7 @@ function computeNextBlockSuggestion() {
     { key: 'bench', maxKey: 'bench', name: 'ベンチプレス', range: [2.5, 2.5] },
     { key: 'squat', maxKey: 'squat', name: 'スクワット', range: [2.5, 5] },
     { key: 'halfDead', maxKey: 'halfDead', name: 'ハーフデッド', range: [2.5, 5] },
-    { key: 'floorDead', maxKey: 'floorDead', name: '床引きデッド', range: [2.5, 5] },
+    { key: 'floorDead', maxKey: 'floorDead', name: 'デッドリフト', range: [2.5, 5] },
   ];
 
   return lifts.map(lift => {
@@ -5924,7 +6089,9 @@ function logMatchesFilter(log) {
   if (logFilter.role === 'main' && !String(log.menuType || '').startsWith('four-main-') && !isBig3Key(log.exerciseKey)) return false;
   if (logFilter.role === 'accessory' && !String(log.menuType || '').includes('accessory')) return false;
   const query = String(logFilter.query || '').trim().toLowerCase();
-  if (query && !`${log.exerciseKey || ''} ${log.exerciseName || ''}`.toLowerCase().includes(query)) return false;
+  const normalizedKey = normalizeBig3Key(log.exerciseKey);
+  const aliases = normalizedKey === 'floorDead' ? 'デッドリフト 床引きデッド floordead floor_dead' : '';
+  if (query && !`${log.exerciseKey || ''} ${log.exerciseName || ''} ${displayExerciseName(log.exerciseKey, log.exerciseName)} ${aliases}`.toLowerCase().includes(query)) return false;
   return true;
 }
 
@@ -6066,7 +6233,7 @@ function summarizeLogGroup(logs) {
   const trainingLogs = logs.filter(log => !log.isExerciseRest && !log.todayOnlyDeleted);
   const completed = trainingLogs.filter(log => (parseInt(log.doneSets, 10) || 0) >= (parseInt(log.plannedSets, 10) || 0));
   const restCount = logs.length - trainingLogs.length;
-  const mainNames = (trainingLogs.length ? trainingLogs : logs).slice(0, 3).map(log => log.exerciseName).filter(Boolean).join(' / ') || '記録';
+  const mainNames = (trainingLogs.length ? trainingLogs : logs).slice(0, 3).map(log => displayExerciseName(log.exerciseKey, log.exerciseName)).filter(Boolean).join(' / ') || '記録';
   const hasCandidate = trainingLogs.some(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate);
   return { completedCount: completed.length, totalCount: trainingLogs.length, restCount, mainNames, hasCandidate };
 }
@@ -6085,7 +6252,7 @@ function renderLogDetail(logs) {
       return `
         <div class="log-detail-row">
           <div class="row between">
-            <span class="muted">${escapeHtml(log.exerciseName)}</span>
+            <span class="muted">${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}</span>
             <span class="chip chip-pause">${log.isExerciseRest ? '休止中' : '削除'}</span>
           </div>
         </div>
@@ -6097,7 +6264,7 @@ function renderLogDetail(logs) {
     return `
       <div class="log-detail-row">
         <div class="row between">
-          <strong>${log.exerciseName}</strong>
+          <strong>${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}</strong>
           ${exerciseRoleChipHtml(log)}
         </div>
         ${setRows}
@@ -6126,7 +6293,7 @@ function renderDailyLogView(logMap = logsByDate()) {
     const summaryRows = logs.slice(0, 4).map(log => {
       if (log.isExerciseRest || log.todayOnlyDeleted) return '';
       const best = bestSetText(log);
-      return `<span class="muted" style="font-size:12px;">${log.exerciseName}${best ? ` ${best}` : ''}</span>`;
+      return `<span class="muted" style="font-size:12px;">${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}${best ? ` ${best}` : ''}</span>`;
     }).filter(Boolean).join(' ・ ');
     return `
       <details class="section ui-details log-card" ${cardIdx === 0 ? 'open' : ''}>
@@ -6188,7 +6355,7 @@ function renderMonthlyLogView() {
   const selInfo = logFilter.selDate && logFilter.selDate.startsWith(month) ? dayInfo(logFilter.selDate) : null;
   const selFirst = selInfo?.logs[0];
   const selLine = selInfo && selInfo.logs.length
-    ? `<div class="muted mt-8">${fmtDateShort(logFilter.selDate)} ・ ${selFirst.fourMenuRotation ? escapeHtml(selFirst.splitName || selFirst.menuName || fourMenuLabel(selFirst.performedSplitKey || selFirst.selectedSplitKey || selFirst.menuKey)) : `B${selFirst.block || '-'} / R${selFirst.rotation || '-'} / Day${selFirst.day || '-'}`} ・ ${[...new Set(selInfo.logs.map(log => log.exerciseName))].slice(0, 4).join('、')}</div>`
+    ? `<div class="muted mt-8">${fmtDateShort(logFilter.selDate)} ・ ${selFirst.fourMenuRotation ? escapeHtml(selFirst.splitName || selFirst.menuName || fourMenuLabel(selFirst.performedSplitKey || selFirst.selectedSplitKey || selFirst.menuKey)) : `B${selFirst.block || '-'} / R${selFirst.rotation || '-'} / Day${selFirst.day || '-'}`} ・ ${[...new Set(selInfo.logs.map(log => displayExerciseName(log.exerciseKey, log.exerciseName)))].slice(0, 4).map(escapeHtml).join('、')}</div>`
     : (logFilter.selDate && logFilter.selDate.startsWith(month) ? '<div class="muted mt-8">記録なし</div>' : '');
 
   return `
@@ -6803,7 +6970,7 @@ function renderSettings() {
       <label class="field"><span>ベンチプレスMAX (kg)</span><input type="number" step="0.5" id="set-bench" value="${m.bench}" /></label>
       <label class="field"><span>スクワットMAX (kg)</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /></label>
       <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
-      <label class="field"><span>床引きデッドMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
+      <label class="field"><span>デッドリフトMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
       <label class="field"><span>ミリタリープレス基準 (kg)</span><input type="number" step="0.5" id="set-shoulderPress" value="${m.shoulderPress ?? 77.5}" /></label>
       <label class="field"><span>重量刻み (kg)</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /></label>
       <details class="ui-details compact-details">
@@ -6840,7 +7007,7 @@ function renderSettings() {
         <summary>補足</summary>
         <div class="muted" style="font-size:12px;">
         ※ 4ローテ目（疲労抜き）は両モードとも同じ縮小ボリューム（モード切替の影響を受けません）。<br>
-        ※ Day7床引きデッドはハーフデッド強化の補助・フォーム維持目的のため高強度モードでも変更されません。<br>
+        ※ Day7デッドリフトはハーフデッド強化の補助・フォーム維持目的のため高強度モードでも変更されません。<br>
         ※ モード変更後、未実施の今後メニューに自動反映されます。<br>
         ※ 過去ログは書き換わりません。
         </div>
@@ -7078,7 +7245,7 @@ function afterSettings() {
   };
 
   document.getElementById('btnReset').onclick = () => {
-    if (!confirm('MAX設定（ベンチ・スクワット・ハーフデッド・床引きデッド・ミリタリープレス）だけを初期値に戻しますか？')) return;
+    if (!confirm('MAX設定（ベンチ・スクワット・ハーフデッド・デッドリフト・ミリタリープレス）だけを初期値に戻しますか？')) return;
     resetMaxSettings();
     saveStore();
     showToast('MAX設定だけ初期値に戻しました');
@@ -7182,6 +7349,8 @@ if (typeof window !== 'undefined') {
     accessoryPresetOptionsHtml,
     fillSlotFormFromPreset,
     normalizeBig3Key,
+    normalizeBackLiftKey,
+    displayExerciseName,
     migrateStoreData,
     estimateMaxFromSet,
     bestEstimatedMaxFromLog,
@@ -7288,6 +7457,10 @@ if (typeof window !== 'undefined') {
     normalizeActiveFourMenuKey,
     nextFourMenuKey,
     getFourMenuBackLiftKey,
+    getSessionBackLiftKey,
+    deriveLastCompletedBackLiftKey,
+    switchBackLiftVariant,
+    renderBackLiftVariantSwitch,
     getFourMenuMainPlan,
     getMainProgressionIncrement,
     countConsecutiveMainMisses,
@@ -7306,6 +7479,7 @@ if (typeof window !== 'undefined') {
     summarizeRecentRotations,
     summarizeDirectSets,
     logMatchesFilter,
+    setLogFilter: patch => { logFilter = { ...logFilter, ...patch }; },
     storageStatus,
     computeNextBlockSuggestion,
     getRestState: () => ({ ...restState }),

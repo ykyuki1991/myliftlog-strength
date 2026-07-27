@@ -1738,6 +1738,168 @@ function testFourMenuSessionSelectionAndDeadliftAlternation() {
   assert.ok(back.exercises.some(ex => ex.key === 'floorDead'));
 }
 
+function testManualBackLiftVariantSwitchAndPersistence() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  store.currentState.nextMenuKey = 'back';
+  store.currentState.backCompletedCount = 0;
+  store.currentState.lastCompletedBackLiftKey = null;
+
+  api.renderToday();
+  assert.ok(api.selectFourMenuForToday('back'));
+  let session = api.getOrCreateTodaySession({ persist: false });
+  const sessionId = session.sessionId;
+  const workoutDate = session.workoutDate;
+  assert.strictEqual(session.selectedBackLiftKey, 'halfDead');
+  assert.ok(api.renderBackLiftVariantSwitch(session).includes('data-back-lift-select="halfDead"'));
+  assert.ok(api.renderBackLiftVariantSwitch(session).includes('デッドリフト'));
+  assert.strictEqual(api.renderBackLiftVariantSwitch({ fourMenuRotation: true, selectedSplitKey: 'chest' }), '');
+
+  const logsBeforeSwitch = store.logs.length;
+  const emaxBeforeSwitch = store.estimatedMaxHistory.length;
+  const countBeforeSwitch = store.currentState.backCompletedCount;
+  const half = session.exercises.find(ex => ex.key === 'halfDead');
+  const accessory = session.exercises.find(ex => ex.isAccessory);
+  half.sets[0] = { weight: 180, reps: 5, done: true };
+  half.sets.push({ weight: 175, reps: 5, done: false });
+  half.rpe = '9';
+  half.note = 'ハーフ下書き';
+  half.pains = ['違和感'];
+  accessory.note = '補助入力維持';
+  accessory.sets[0].weight = 77;
+  api.persistTodaySession(session);
+
+  assert.strictEqual(api.switchBackLiftVariant(session, 'floorDead'), true);
+  assert.strictEqual(session.sessionId, sessionId);
+  assert.strictEqual(session.workoutDate, workoutDate);
+  assert.strictEqual(session.selectedBackLiftKey, 'floorDead');
+  assert.strictEqual(session.exercises.find(ex => ex.isAccessory).note, '補助入力維持');
+  assert.strictEqual(session.exercises.find(ex => ex.isAccessory).sets[0].weight, 77);
+  assert.strictEqual(store.logs.length, logsBeforeSwitch);
+  assert.strictEqual(store.estimatedMaxHistory.length, emaxBeforeSwitch);
+  assert.strictEqual(store.currentState.backCompletedCount, countBeforeSwitch);
+
+  const floor = session.exercises.find(ex => ex.key === 'floorDead');
+  assert.ok(floor);
+  floor.sets[0] = { weight: 160, reps: 5, done: true };
+  floor.rpe = '9.5';
+  floor.note = 'デッド下書き';
+  api.persistTodaySession(session);
+  assert.strictEqual(api.switchBackLiftVariant(session, 'halfDead'), true);
+  const restoredHalf = session.exercises.find(ex => ex.key === 'halfDead');
+  assert.strictEqual(restoredHalf.sets[0].weight, 180);
+  assert.strictEqual(restoredHalf.rpe, '9');
+  assert.strictEqual(restoredHalf.note, 'ハーフ下書き');
+  assert.strictEqual(restoredHalf.sets.length, half.sets.length);
+  assert.strictEqual(api.switchBackLiftVariant(session, 'floorDead'), true);
+  const restoredFloor = session.exercises.find(ex => ex.key === 'floorDead');
+  assert.strictEqual(restoredFloor.sets[0].weight, 160);
+  assert.strictEqual(restoredFloor.rpe, '9.5');
+  assert.strictEqual(restoredFloor.note, 'デッド下書き');
+
+  assert.strictEqual(api.selectFourMenuForToday('chest'), true);
+  assert.strictEqual(api.selectFourMenuForToday('back'), true);
+  session = api.getOrCreateTodaySession({ persist: false });
+  assert.strictEqual(session.selectedBackLiftKey, 'floorDead', 'menu tab round-trips must preserve the manual variant');
+  assert.strictEqual(session.exercises.find(ex => ex.key === 'floorDead').note, 'デッド下書き');
+
+  session.date = '2026-07-01';
+  session.workoutDate = '2026-07-01';
+  session.performedDate = '2026-07-01';
+  api.persistTodaySession(session);
+  const draftExport = JSON.parse(isolated.storage[STORAGE_KEY]);
+  const reloaded = createHarness({ initialStore: draftExport, forceLegacy: false });
+  const reloadApi = reloaded.api;
+  const reloadStore = reloadApi.getStore();
+  const reloadSession = reloadApi.getOrCreateTodaySession({ persist: false });
+  assert.strictEqual(reloadSession.sessionId, sessionId);
+  assert.strictEqual(reloadSession.workoutDate, '2026-07-01');
+  assert.strictEqual(reloadSession.selectedBackLiftKey, 'floorDead');
+  assert.strictEqual(reloadSession.backVariantDrafts.halfDead.note, 'ハーフ下書き');
+  assert.strictEqual(reloadSession.exercises.find(ex => ex.key === 'floorDead').note, 'デッド下書き');
+
+  const discardHarness = createHarness({ initialStore: draftExport, forceLegacy: false, confirm: () => true });
+  const discardStore = discardHarness.api.getStore();
+  const lastBeforeDiscard = discardStore.currentState.lastCompletedBackLiftKey;
+  assert.strictEqual(discardHarness.api.discardIncompleteTodaySession(), true);
+  assert.strictEqual(Object.keys(discardStore.daySessions).length, 0);
+  assert.strictEqual(discardStore.logs.length, 0);
+  assert.strictEqual(discardStore.estimatedMaxHistory.length, 0);
+  assert.strictEqual(discardStore.currentState.backCompletedCount, 0);
+  assert.strictEqual(discardStore.currentState.lastCompletedBackLiftKey, lastBeforeDiscard);
+
+  const cancelDiscard = createHarness({ initialStore: draftExport, forceLegacy: false, confirm: () => false });
+  const cancelSession = cancelDiscard.api.getOrCreateTodaySession({ persist: false });
+  assert.strictEqual(cancelDiscard.api.discardIncompleteTodaySession(), false);
+  assert.strictEqual(cancelSession.selectedBackLiftKey, 'floorDead');
+  assert.strictEqual(cancelSession.backVariantDrafts.halfDead.note, 'ハーフ下書き');
+  assert.strictEqual(cancelSession.exercises.find(ex => ex.key === 'floorDead').note, 'デッド下書き');
+
+  reloadSession.exercises.forEach(ex => ex.sets.forEach(set => {
+    set.done = true;
+    set.skipped = false;
+    if (!set.reps) set.reps = ex.plannedReps;
+  }));
+  reloadSession.exercises.find(ex => ex.key === 'floorDead').rpe = '9.5';
+  reloadApi.persistTodaySession(reloadSession);
+  reloadApi.finishTodaySession();
+  const mainLogs = reloadStore.logs.filter(log => log.sessionId === sessionId && String(log.menuType).startsWith('four-main-'));
+  assert.strictEqual(mainLogs.length, 1);
+  assert.strictEqual(mainLogs[0].exerciseKey, 'floorDead');
+  assert.strictEqual(mainLogs[0].exerciseName, 'デッドリフト');
+  assert.strictEqual(reloadStore.logs.some(log => log.sessionId === sessionId && log.exerciseKey === 'halfDead'), false);
+  assert.strictEqual(reloadStore.currentState.lastCompletedBackLiftKey, 'floorDead');
+  assert.strictEqual(reloadStore.currentState.backCompletedCount, 1);
+  assert.strictEqual(reloadApi.getFourMenuBackLiftKey(reloadStore.currentState), 'halfDead');
+  assert.ok(reloadStore.estimatedMaxHistory.some(entry => entry.liftKey === 'floorDead'));
+  assert.strictEqual(reloadStore.estimatedMaxHistory.some(entry => entry.liftKey === 'halfDead'), false);
+  const logCount = reloadStore.logs.length;
+  const emaxCount = reloadStore.estimatedMaxHistory.length;
+  reloadApi.finishTodaySession();
+  assert.strictEqual(reloadStore.currentState.backCompletedCount, 1);
+  assert.strictEqual(reloadStore.currentState.lastCompletedBackLiftKey, 'floorDead');
+  assert.strictEqual(reloadStore.logs.length, logCount);
+  assert.strictEqual(reloadStore.estimatedMaxHistory.length, emaxCount);
+}
+
+function testDeadliftDisplayAndLegacySearchCompatibility() {
+  const isolated = createFourMenuHarness();
+  const api = isolated.api;
+  const store = api.getStore();
+  const legacyFloorLog = {
+    id: 'legacy-floor-name',
+    date: '2026-07-02',
+    fourMenuRotation: true,
+    performedSplitKey: 'back',
+    selectedSplitKey: 'back',
+    exerciseKey: 'floorDead',
+    exerciseName: '床引きデッド',
+    menuType: 'four-main-floorDead',
+    plannedWeight: 160,
+    plannedReps: 5,
+    plannedSets: 3,
+    doneSets: 3,
+    sets: [{ weight: 160, reps: 5, done: true }],
+    rpe: '9',
+    ts: 1,
+  };
+  store.logs = [legacyFloorLog];
+  store.currentState.lastCompletedBackLiftKey = 'halfDead';
+  assert.strictEqual(api.displayExerciseName('floorDead', '床引きデッド'), 'デッドリフト');
+  assert.ok(api.renderDailyLogView().includes('デッドリフト'));
+  assert.ok(!api.renderDailyLogView().includes('床引きデッド'));
+  assert.ok(api.renderSettings().includes('デッドリフトMAX'));
+  assert.ok(api.renderBlock().includes('デッドリフト'));
+  api.setLogFilter({ query: 'デッドリフト' });
+  assert.strictEqual(api.logMatchesFilter(legacyFloorLog), true);
+  api.setLogFilter({ query: '床引きデッド' });
+  assert.strictEqual(api.logMatchesFilter(legacyFloorLog), true);
+  api.setLogFilter({ query: '' });
+  assert.strictEqual(api.normalizeBig3Key('floorDead'), 'floorDead');
+  assert.strictEqual(api.normalizeBig3Key('床引きデッド'), 'floorDead');
+}
+
 function testFourMenuLogRenderingAndOverrideScope() {
   const isolated = createFourMenuHarness();
   const api = isolated.api;
@@ -1988,7 +2150,41 @@ function testFourMenuStateMigrationAliasesAndBackCount() {
   assert.strictEqual(store.currentState.nextMenuKey, 'shoulder_arm');
   assert.strictEqual(store.currentState.lastCompletedMenuKey, 'shoulder_arm');
   assert.strictEqual(store.currentState.backCompletedCount, 1, 'one back session must count once, not once per exercise log');
+  assert.strictEqual(store.currentState.lastCompletedBackLiftKey, 'halfDead');
   assert.strictEqual(isolated.api.getFourMenuBackLiftKey(store.currentState), 'floorDead');
+  const migratedAgain = isolated.api.migrateStoreData(store);
+  assert.strictEqual(migratedAgain.currentState.lastCompletedBackLiftKey, 'halfDead');
+  assert.strictEqual(isolated.api.getFourMenuBackLiftKey(migratedAgain.currentState), 'floorDead');
+}
+
+function testBackLiftMigrationUsesLatestCompletedLift() {
+  const logs = [{
+    id: 'old-half', sessionId: 'back-half', date: '2026-07-01', ts: 100,
+    fourMenuRotation: true, performedSplitKey: 'back', exerciseKey: 'halfDead',
+    menuType: 'four-main-halfDead', plannedSets: 3, doneSets: 3,
+    sets: [{ weight: 180, reps: 5, done: true }],
+  }, {
+    id: 'new-floor', sessionId: 'back-floor', date: '2026-07-10', ts: 200,
+    fourMenuRotation: true, performedSplitKey: 'back', exerciseKey: 'floorDead',
+    exerciseName: '床引きデッド', menuType: 'four-main-floorDead', plannedSets: 3, doneSets: 3,
+    sets: [{ weight: 160, reps: 5, done: true }],
+  }, {
+    id: 'new-floor-accessory', sessionId: 'back-floor', date: '2026-07-10', ts: 201,
+    fourMenuRotation: true, performedSplitKey: 'back', exerciseKey: 'machine_row',
+    menuType: 'four-accessory-row', plannedSets: 3, doneSets: 3,
+    sets: [{ weight: 80, reps: 10, done: true }],
+  }];
+  const isolated = createHarness({
+    initialStore: { settings: { programMode: 'fourMenu' }, currentState: { backCompletedCount: 2 }, logs },
+    forceLegacy: false,
+  });
+  const store = isolated.api.getStore();
+  assert.strictEqual(store.currentState.lastCompletedBackLiftKey, 'floorDead');
+  assert.strictEqual(isolated.api.getFourMenuBackLiftKey(store.currentState), 'halfDead');
+  assert.strictEqual(JSON.stringify(store.logs), JSON.stringify(logs), 'migration must not rewrite historical logs');
+  const migratedAgain = isolated.api.migrateStoreData(store);
+  assert.strictEqual(migratedAgain.currentState.lastCompletedBackLiftKey, 'floorDead');
+  assert.strictEqual(isolated.api.getFourMenuBackLiftKey(migratedAgain.currentState), 'halfDead');
 }
 
 function testImportMigrationPreservesLegacyAndMaxData() {
@@ -2063,11 +2259,14 @@ testDataProtectionAndProgressionImprovements();
 testRecoveryAndSessionIdentity();
 testPreviousSummaryAccessoryCandidateAndAnalytics();
 testFourMenuSessionSelectionAndDeadliftAlternation();
+testManualBackLiftVariantSwitchAndPersistence();
+testDeadliftDisplayAndLegacySearchCompatibility();
 testFourMenuLogRenderingAndOverrideScope();
 testFourMenuAccessoryTemplatesAndPlanActions();
 testFourMenuMainIdentityAndCompletionIdempotency();
 testIncompleteWorkoutDraftPersistence();
 testFourMenuStateMigrationAliasesAndBackCount();
+testBackLiftMigrationUsesLatestCompletedLift();
 testImportMigrationPreservesLegacyAndMaxData();
 testMaxUpdateAndRotationProgressionAreCapped();
 testDeloadAccessoryAndMaxTestTiming();

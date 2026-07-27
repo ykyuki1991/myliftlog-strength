@@ -552,6 +552,16 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
   padding-inline: 2px;
 }
 
+.back-lift-switch {
+  width: min(100%, 420px);
+  margin: 0 0 var(--space-3);
+}
+
+.back-lift-switch .seg-opt {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
 /* ==== セット行 ==== */
 .set-row {
   display: flex;
