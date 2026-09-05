@@ -2290,6 +2290,37 @@ function testCustomScopeAndFailedSave() {
   assert.strictEqual(api.getOrCreateTodaySession().selectedSplitKey, 'custom');
   assert.strictEqual(api.getStore().logs.length, 0);
 }
+function testCustomReviewRegressions() {
+  const { api } = createFourMenuHarness();
+  const store = api.getStore();
+  api.addFourMenuAccessorySlot('custom', { key: 'custom-pause', name: '休止テスト', plannedSets: 2, reps: 10, plannedWeight: 20 });
+  store.settings.exerciseRestSettings = [{ id: 'pause', name: '休止', parts: [], exercises: ['custom-pause'], startDate: '2000-01-01', endDate: '2099-12-31' }];
+  const menu = api.buildFourMenu('custom');
+  assert.ok(!menu.exercises.some(ex => ex.key === 'custom-pause'));
+  assert.ok(menu.skippedRestExercises.some(ex => ex.key === 'custom-pause'));
+  api.selectFourMenuForToday('custom');
+  const session = api.getOrCreateTodaySession();
+  const accessory = session.exercises.find(ex => ex.isAccessory && ex.fourMenuKey === 'chest' && ex.weightType !== 'bodyweight');
+  const before = accessory.plannedWeight;
+  accessory.sets.forEach(s => { s.done = true; s.reps = accessory.plannedReps; });
+  assert.strictEqual(api.applyAccessoryProgressionCandidate(session, accessory), true);
+  assert.ok(store.settings.fourMenuAccessorySlots.chest.find(s => s.slotId === accessory.slotId).plannedWeight > before);
+  assert.ok(!store.settings.fourMenuAccessorySlots.custom.some(s => s.slotId === accessory.slotId));
+
+  const bench = session.exercises.find(ex => ex.key === 'bench');
+  api.saveMainSetOverride('chest', { ...bench, plannedWeight: 120, plannedReps: 4, plannedSets: 2 });
+  api.recalculateTodaySession();
+  let updated = session.exercises.find(ex => ex.key === 'bench');
+  assert.strictEqual(updated.plannedWeight, 120);
+  assert.strictEqual(updated.sets.length, 2);
+  assert.ok(updated.sets.every(s => s.weight === 120 && s.reps === 4));
+  updated.sets[0].weight = 112.5;
+  const recorded = JSON.stringify(updated);
+  api.saveMainSetOverride('chest', { ...updated, plannedWeight: 125 });
+  api.recalculateTodaySession();
+  assert.strictEqual(JSON.stringify(session.exercises.find(ex => ex.key === 'bench')), recorded);
+}
+testCustomReviewRegressions();
 testCustomScopeAndFailedSave();
 testCustomWorkoutAndDraftSafety();
 testBig3FormulaUnaffected();

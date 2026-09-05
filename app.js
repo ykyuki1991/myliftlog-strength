@@ -2280,7 +2280,7 @@ function getAccessoryProgressionCandidate(ex) {
 
 function applyAccessoryProgressionCandidate(session, ex) {
   const candidate = getAccessoryProgressionCandidate(ex);
-  const menuKey = normalizeFourMenuKey(session?.performedSplitKey || session?.selectedSplitKey || ex?.fourMenuKey);
+  const menuKey = normalizeFourMenuKey(ex?.fourMenuKey || session?.performedSplitKey || session?.selectedSplitKey);
   if (!candidate || !FOUR_MENU_LABELS[menuKey] || !ex.slotId) return false;
   const slot = getFourMenuAccessorySlots(menuKey).find(item => item.slotId === ex.slotId);
   if (!slot) return false;
@@ -2690,7 +2690,8 @@ function buildFourMenu(menuKey, settings = store.settings, options = {}) {
       return true;
     });
     exercises.sort((a, b) => Number(!!b.isFourMenuMain) - Number(!!a.isFourMenuMain));
-    return { fourMenuRotation: true, menuKey: 'custom', name: `カスタム${keys.length ? ': ' + keys.map(fourMenuLabel).join('・') : ''}`, customMenuKeys: keys, isRest: false, exercises, skippedRestExercises: menus.flatMap(menu => menu.skippedRestExercises || []), activeExerciseRests: menus.flatMap(menu => menu.activeExerciseRests || []) };
+    const restApplied = applyExerciseRestSettingsToExercises(exercises, todayStr(), settings);
+    return { fourMenuRotation: true, menuKey: 'custom', name: `カスタム${keys.length ? ': ' + keys.map(fourMenuLabel).join('・') : ''}`, customMenuKeys: keys, isRest: false, exercises: restApplied.exercises, skippedRestExercises: [...menus.flatMap(menu => menu.skippedRestExercises || []), ...restApplied.skipped], activeExerciseRests: restApplied.active };
   }
   if (normalizedKey === 'rest') {
     return {
@@ -3549,7 +3550,13 @@ function recalculateTodaySession() {
 
   const newExercises = menu.exercises.map(newEx => {
     const oldEx = oldSession.exercises.find(e => e.key === newEx.key && e.menuType === newEx.menuType);
-    if (oldEx && oldSession.fourMenuRotation && oldEx.isFourMenuMain) return cloneWorkoutExercise(oldEx);
+    if (oldEx && oldSession.fourMenuRotation && oldEx.isFourMenuMain) {
+      const hasInput = oldEx.todayEdited || oldEx.note || (oldEx.pains || []).some(p => p !== 'なし') ||
+        (oldEx.rpe && oldEx.rpe !== '未入力') || oldEx.sets.length !== oldEx.plannedSets ||
+        oldEx.sets.some(s => s.done || s.skipped || s.rpe ||
+          Number(s.weight) !== Number(oldEx.plannedWeight) || Number(s.reps) !== Number(oldEx.plannedReps));
+      return hasInput ? cloneWorkoutExercise(oldEx) : materializeSessionExercise(newEx);
+    }
     const targetSets = typeof newEx.plannedSets === 'number' ? newEx.plannedSets : 3;
     const defaultReps = typeof newEx.plannedReps === 'number' ? newEx.plannedReps : '';
 
@@ -4286,6 +4293,7 @@ function afterToday() {
         ex.sets = ex.sets.map(set => set.done ? set : { ...set, weight: ex.plannedWeight });
         ex.progressionReason = '5%減を手動採用';
         ex.progressionReasonCode = 'manual_reduction_adopted';
+        ex.todayEdited = true;
         saveMainSetOverride(ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey, ex);
         persistTodaySession(session);
         showToast('5%減候補を今後へ反映しました');
@@ -4420,6 +4428,7 @@ function openAdjustModal(exIdx) {
       if (!v) return;
       const newW = roundToIncrement(v, store.settings.increment);
       ex.plannedWeight = newW;
+      ex.todayEdited = true;
       ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
       saveStore();
       closeModal();
