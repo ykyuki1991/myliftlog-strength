@@ -261,8 +261,8 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(css.includes('padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px'));
   assert.ok(css.includes('body.timer-visible #main'));
   assert.ok(css.includes('var(--rest-bar-offset)'));
-  assert.ok(html.includes('20260727-deadlift-variant'));
-  assert.ok(sw.includes("mll-strength-v22"));
+  assert.ok(html.includes('20260905-custom-workout'));
+  assert.ok(sw.includes("mll-strength-v23"));
 }
 
 testStartPersistsState();
