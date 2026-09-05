@@ -1518,7 +1518,7 @@ function testExistingStoreMigratesToFourMenuMode() {
   assert.ok(store.settings.fourMenuAccessorySlots.legs.every(slot => typeof slot.reps === 'number'));
   const html = api.renderToday();
   assert.ok(html.includes('肩・腕'));
-  assert.strictEqual((html.match(/data-four-menu-select=/g) || []).length, 4);
+  assert.strictEqual((html.match(/data-four-menu-select=/g) || []).length, 5);
   assert.ok(!html.includes('data-four-menu-select="rest"'));
   assert.ok(!html.includes('次のメニュー'));
   assert.ok(!html.includes('<h2 class="screen-title">今日</h2>'));
@@ -1698,6 +1698,8 @@ function testPreviousSummaryAccessoryCandidateAndAnalytics() {
   assert.strictEqual(api.getAccessoryProgressionCandidate({ ...accessory, weightType: 'bodyweight' }), null);
 
   store.logs[0].categories = ['胸'];
+  store.logs[0].date = new Date().toISOString().slice(0, 10);
+  store.logs[0].performedDate = store.logs[0].date;
   assert.strictEqual(api.summarizeDirectSets({ days: 30 }).胸, 3);
 }
 
@@ -1712,7 +1714,7 @@ function testFourMenuSessionSelectionAndDeadliftAlternation() {
   const initialHtml = api.renderToday();
   assert.strictEqual(Object.keys(store.daySessions).length, 0, 'opening today must not create an empty session');
   assert.strictEqual(store.logs.length, 0, 'opening today must not create a workout or rest log');
-  assert.strictEqual((initialHtml.match(/data-four-menu-select=/g) || []).length, 4);
+  assert.strictEqual((initialHtml.match(/data-four-menu-select=/g) || []).length, 5);
   assert.ok(api.selectFourMenuForToday('shoulder_arm'));
   let session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
   assert.ok(session);
@@ -2223,6 +2225,104 @@ function testImportMigrationPreservesLegacyAndMaxData() {
   assert.strictEqual(migratedAgain.logs.filter(log => log.id === legacyRestLog.id).length, 1);
 }
 
+function testCustomWorkoutAndDraftSafety() {
+  const h = createFourMenuHarness();
+  const api = h.api;
+  const store = api.getStore();
+  api.renderToday();
+  assert.ok(api.selectFourMenuForToday('custom'));
+  let session = api.getOrCreateTodaySession();
+  assert.strictEqual(session.selectedSplitKey, 'custom');
+  assert.ok(session.exercises.some(ex => ex.key === 'bench'));
+  assert.ok(session.exercises.some(ex => ex.key === 'halfDead'));
+  const id = session.sessionId;
+  const bench = session.exercises.find(ex => ex.key === 'bench');
+  bench.sets[0].weight = 111;
+  bench.note = 'keep input';
+  api.persistTodaySession(session);
+  api.selectFourMenuForToday('legs');
+  api.selectFourMenuForToday('custom');
+  session = api.getOrCreateTodaySession();
+  assert.strictEqual(session.sessionId, id);
+  assert.strictEqual(session.exercises.find(ex => ex.key === 'bench').sets[0].weight, 111);
+  api.recalculateTodaySession();
+  assert.strictEqual(session.exercises.find(ex => ex.key === 'bench').sets[0].weight, 111);
+  const imported = createHarness({ initialStore: JSON.parse(h.storage[STORAGE_KEY]), forceLegacy: false });
+  assert.strictEqual(imported.api.getOrCreateTodaySession().selectedSplitKey, 'custom');
+  const next = store.currentState.nextMenuKey;
+  const backCount = store.currentState.backCompletedCount;
+  session.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; }));
+  api.finishTodaySession();
+  assert.strictEqual(store.currentState.nextMenuKey, next);
+  assert.strictEqual(store.currentState.backCompletedCount, backCount);
+  assert.ok(store.logs.every(log => log.performedSplitKey === 'custom'));
+  assert.ok(api.renderDailyLogView().includes('カスタム'));
+  assert.strictEqual(api.selectFourMenuForToday('chest'), false);
+  const n = store.logs.length;
+  api.finishTodaySession();
+  assert.strictEqual(store.logs.length, n);
+  assert.ok(api.getFourMenuMainPlan('bench', 'chest').weight > 0);
+  const nextSession = api.startNewTodaySession();
+  assert.notStrictEqual(nextSession.sessionId, id);
+  assert.strictEqual(store.logs.length, n);
+  assert.ok(api.selectFourMenuForToday('custom'));
+}
+function testCustomScopeAndFailedSave() {
+  const h = createFourMenuHarness();
+  const api = h.api;
+  const store = api.getStore();
+  api.renderToday();
+  api.selectFourMenuForToday('custom');
+  const session = api.getOrCreateTodaySession();
+  const bench = session.exercises.find(ex => ex.key === 'bench');
+  assert.strictEqual(bench.fourMenuKey, 'chest');
+  const halfWeight = api.getFourMenuMainPlan('halfDead', 'back').weight;
+  api.applyMainSetEdit(bench, { plannedWeight: 120, plannedReps: 5, plannedSets: 3 });
+  api.saveMainSetOverride(bench.fourMenuKey, bench);
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest').weight, 120);
+  assert.strictEqual(api.getFourMenuMainPlan('halfDead', 'back').weight, halfWeight);
+  api.addFourMenuAccessorySlot('custom', { key: 'custom-extra', name: 'カスタム補助', plannedSets: 2, reps: 10 });
+  const migrated = api.migrateStoreData(JSON.parse(JSON.stringify(store)));
+  assert.ok(migrated.settings.fourMenuAccessorySlots.custom.some(ex => ex.key === 'custom-extra'));
+  assert.ok(!migrated.settings.fourMenuAccessorySlots.shoulder_arm.some(ex => ex.key === 'custom-extra'));
+  h.setStorageFailure(true);
+  assert.strictEqual(api.selectFourMenuForToday('legs'), false);
+  assert.strictEqual(api.getOrCreateTodaySession().selectedSplitKey, 'custom');
+  assert.strictEqual(api.getStore().logs.length, 0);
+}
+function testCustomReviewRegressions() {
+  const { api } = createFourMenuHarness();
+  const store = api.getStore();
+  api.addFourMenuAccessorySlot('custom', { key: 'custom-pause', name: '休止テスト', plannedSets: 2, reps: 10, plannedWeight: 20 });
+  store.settings.exerciseRestSettings = [{ id: 'pause', name: '休止', parts: [], exercises: ['custom-pause'], startDate: '2000-01-01', endDate: '2099-12-31' }];
+  const menu = api.buildFourMenu('custom');
+  assert.ok(!menu.exercises.some(ex => ex.key === 'custom-pause'));
+  assert.ok(menu.skippedRestExercises.some(ex => ex.key === 'custom-pause'));
+  api.selectFourMenuForToday('custom');
+  const session = api.getOrCreateTodaySession();
+  const accessory = session.exercises.find(ex => ex.isAccessory && ex.fourMenuKey === 'chest' && ex.weightType !== 'bodyweight');
+  const before = accessory.plannedWeight;
+  accessory.sets.forEach(s => { s.done = true; s.reps = accessory.plannedReps; });
+  assert.strictEqual(api.applyAccessoryProgressionCandidate(session, accessory), true);
+  assert.ok(store.settings.fourMenuAccessorySlots.chest.find(s => s.slotId === accessory.slotId).plannedWeight > before);
+  assert.ok(!store.settings.fourMenuAccessorySlots.custom.some(s => s.slotId === accessory.slotId));
+
+  const bench = session.exercises.find(ex => ex.key === 'bench');
+  api.saveMainSetOverride('chest', { ...bench, plannedWeight: 120, plannedReps: 4, plannedSets: 2 });
+  api.recalculateTodaySession();
+  let updated = session.exercises.find(ex => ex.key === 'bench');
+  assert.strictEqual(updated.plannedWeight, 120);
+  assert.strictEqual(updated.sets.length, 2);
+  assert.ok(updated.sets.every(s => s.weight === 120 && s.reps === 4));
+  updated.sets[0].weight = 112.5;
+  const recorded = JSON.stringify(updated);
+  api.saveMainSetOverride('chest', { ...updated, plannedWeight: 125 });
+  api.recalculateTodaySession();
+  assert.strictEqual(JSON.stringify(session.exercises.find(ex => ex.key === 'bench')), recorded);
+}
+testCustomReviewRegressions();
+testCustomScopeAndFailedSave();
+testCustomWorkoutAndDraftSafety();
 testBig3FormulaUnaffected();
 testRirAndEstimatedMax();
 testEstimatedMaxFiltering();

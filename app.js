@@ -143,11 +143,13 @@ const BIG3_LIFTS = {
 };
 
 const FOUR_MENU_ORDER = ['shoulder_arm', 'legs', 'chest', 'back'];
+const SELECTABLE_MENUS = [...FOUR_MENU_ORDER, 'custom'];
 const FOUR_MENU_LABELS = {
   shoulder_arm: '肩・腕',
   legs: '脚',
   chest: '胸',
   back: '背中',
+  custom: 'カスタム',
   rest: '休み',
 };
 const FOUR_MENU_MAIN_LIFTS = {
@@ -2014,7 +2016,7 @@ function normalizeFourMenuAccessorySlot(slot) {
 }
 
 function defaultFourMenuAccessorySlots() {
-  return Object.fromEntries(FOUR_MENU_ORDER.map(menuKey => [
+  return Object.fromEntries(SELECTABLE_MENUS.map(menuKey => [
     menuKey,
     (FOUR_MENU_ACCESSORY_SLOTS[menuKey] || []).map(slot => normalizeFourMenuAccessorySlot(deepClone(slot))),
   ]));
@@ -2023,7 +2025,7 @@ function defaultFourMenuAccessorySlots() {
 function mergeFourMenuAccessorySlots(saved) {
   const defaults = defaultFourMenuAccessorySlots();
   if (!saved || typeof saved !== 'object') return defaults;
-  return Object.fromEntries(FOUR_MENU_ORDER.map(menuKey => {
+  return Object.fromEntries(SELECTABLE_MENUS.map(menuKey => {
     const source = Array.isArray(saved[menuKey]) ? saved[menuKey] : defaults[menuKey];
     return [menuKey, source.map(normalizeFourMenuAccessorySlot).filter(Boolean)];
   }));
@@ -2278,7 +2280,7 @@ function getAccessoryProgressionCandidate(ex) {
 
 function applyAccessoryProgressionCandidate(session, ex) {
   const candidate = getAccessoryProgressionCandidate(ex);
-  const menuKey = normalizeFourMenuKey(session?.performedSplitKey || session?.selectedSplitKey || ex?.fourMenuKey);
+  const menuKey = normalizeFourMenuKey(ex?.fourMenuKey || session?.performedSplitKey || session?.selectedSplitKey);
   if (!candidate || !FOUR_MENU_LABELS[menuKey] || !ex.slotId) return false;
   const slot = getFourMenuAccessorySlots(menuKey).find(item => item.slotId === ex.slotId);
   if (!slot) return false;
@@ -2676,6 +2678,21 @@ function fourMenuAccessoryExerciseFromSlot(menuKey, slot) {
 
 function buildFourMenu(menuKey, settings = store.settings, options = {}) {
   const normalizedKey = menuKey === 'rest' ? 'rest' : normalizeFourMenuKey(menuKey);
+  if (normalizedKey === 'custom') {
+    const configured = options.customMenuKeys ?? settings.customMenuKeys;
+    const keys = [...new Set(Array.isArray(configured) ? configured : ['chest', 'back'])].filter(key => FOUR_MENU_ORDER.includes(key));
+    const menus = keys.map(key => buildFourMenu(key, settings, options));
+    const seen = new Set();
+    const exercises = [...menus.flatMap(menu => menu.exercises), ...getFourMenuAccessorySlots('custom', settings).map(slot => fourMenuAccessoryExerciseFromSlot('custom', slot))].filter(ex => {
+      const identity = `${ex.isFourMenuMain ? 'main' : 'accessory'}:${ex.key}`;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
+    exercises.sort((a, b) => Number(!!b.isFourMenuMain) - Number(!!a.isFourMenuMain));
+    const restApplied = applyExerciseRestSettingsToExercises(exercises, todayStr(), settings);
+    return { fourMenuRotation: true, menuKey: 'custom', name: `カスタム${keys.length ? ': ' + keys.map(fourMenuLabel).join('・') : ''}`, customMenuKeys: keys, isRest: false, exercises: restApplied.exercises, skippedRestExercises: [...menus.flatMap(menu => menu.skippedRestExercises || []), ...restApplied.skipped], activeExerciseRests: restApplied.active };
+  }
   if (normalizedKey === 'rest') {
     return {
       fourMenuRotation: true,
@@ -3132,7 +3149,7 @@ function todaySessionKey() {
 
 // 今日のセッション取得 or 作成
 function getOrCreateTodaySession(options = {}) {
-  const key = todaySessionKey();
+  const key = options.sessionKey || todaySessionKey();
   if (previewTodaySession?.key === key) return normalizeBackSessionState(previewTodaySession);
   if (!store.daySessions[key]) {
     const fourMode = isFourMenuMode();
@@ -3238,7 +3255,7 @@ function startNewTodaySession() {
   const previous = getOrCreateTodaySession();
   if (previous && previous.status === 'inProgress' && !previous.completed && !confirm('未完了のセッションがあります。新しいセッションを開始しますか？')) return null;
   store.currentState.activeSessionKey = `${todayStr()}-four-menu-${uid()}`;
-  const session = getOrCreateTodaySession();
+  const session = getOrCreateTodaySession({ sessionKey: store.currentState.activeSessionKey });
   saveStore();
   return session;
 }
@@ -3392,13 +3409,16 @@ function skipNextSet(session, exIdx) {
   return { ok: true, skippedSet: nextIdx, allDone: isExerciseComplete(ex) };
 }
 
-function selectFourMenuForToday(menuKey) {
+function selectFourMenuForToday(menuKey, options = {}) {
   if (!isFourMenuMode()) return false;
-  if (!FOUR_MENU_ORDER.includes(normalizeFourMenuKey(menuKey))) return false;
+  if (!SELECTABLE_MENUS.includes(menuKey)) return false;
   const key = todaySessionKey();
   const oldSession = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
-  const selected = normalizeActiveFourMenuKey(menuKey);
-  if (oldSession && normalizeFourMenuKey(oldSession.selectedSplitKey) === selected && !oldSession.completed) {
+  const beforeSwitch = JSON.stringify(store);
+  const beforePreview = previewTodaySession ? JSON.stringify(previewTodaySession) : null;
+  const selected = menuKey;
+  if (oldSession?.completed) return false;
+  if (oldSession && normalizeFourMenuKey(oldSession.selectedSplitKey) === selected && !options.customMenuKeys) {
     normalizeBackSessionState(oldSession);
     return persistTodaySession(oldSession);
   }
@@ -3410,7 +3430,12 @@ function selectFourMenuForToday(menuKey) {
   const selectedBackLiftKey = selected === 'back'
     ? (normalizeBackLiftKey(oldSession?.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState()))
     : null;
-  const menu = buildFourMenu(selected, store.settings, { backLiftKey: selectedBackLiftKey });
+  const menu = buildFourMenu(selected, store.settings, { backLiftKey: selectedBackLiftKey, customMenuKeys: options.customMenuKeys || oldSession?.menuDrafts?.custom?.customMenuKeys });
+  const exerciseDrafts = oldSession?.exerciseDrafts || {};
+  (oldSession?.exercises || []).forEach(ex => { exerciseDrafts[`${ex.key}:${ex.menuType}`] = cloneWorkoutExercise(ex); });
+  const menuDrafts = oldSession?.menuDrafts || {};
+  if (oldSession) menuDrafts[oldSession.selectedSplitKey] = JSON.parse(JSON.stringify({ exercises: oldSession.exercises, deletedAccessories: oldSession.deletedAccessories || [], skippedRestExercises: oldSession.skippedRestExercises || [], customMenuKeys: oldSession.customMenuKeys }));
+  const restored = !options.customMenuKeys ? menuDrafts[selected] : null;
   const state = getFourMenuState();
   const sessionDate = oldSession?.date || todayStr();
   const now = Date.now();
@@ -3421,6 +3446,10 @@ function selectFourMenuForToday(menuKey) {
     date: sessionDate,
     workoutDate: oldSession?.workoutDate || sessionDate,
     workoutType: selected,
+    menuDrafts,
+    exerciseDrafts,
+    customMenuKeys: restored?.customMenuKeys || menu.customMenuKeys || null,
+    deletedAccessories: restored?.deletedAccessories || [],
     status: 'inProgress',
     createdAt: oldSession?.createdAt || oldSession?.ts || now,
     updatedAt: now,
@@ -3435,13 +3464,15 @@ function selectFourMenuForToday(menuKey) {
     dayName: menu.name,
     isRest: menu.isRest,
     activeExerciseRests: menu.activeExerciseRests || [],
-    skippedRestExercises: menu.skippedRestExercises || [],
+    skippedRestExercises: restored?.skippedRestExercises || menu.skippedRestExercises || [],
     selectedBackLiftKey: selectedBackLiftKey || normalizeBackLiftKey(oldSession?.selectedBackLiftKey),
     deadliftVariant: (selectedBackLiftKey || normalizeBackLiftKey(oldSession?.selectedBackLiftKey)) === 'halfDead'
       ? 'rack'
       : (selectedBackLiftKey || normalizeBackLiftKey(oldSession?.selectedBackLiftKey)) === 'floorDead' ? 'floor' : null,
     backVariantDrafts: oldSession?.backVariantDrafts || (selected === 'back' ? {} : null),
-    exercises: menu.exercises.map(ex => {
+    exercises: restored?.exercises || menu.exercises.map(ex => {
+      const existing = options.customMenuKeys && exerciseDrafts[`${ex.key}:${ex.menuType}`];
+      if (existing) return cloneWorkoutExercise(existing);
       if (selected === 'back' && ex.isFourMenuMain && oldSession?.backVariantDrafts?.[ex.key]) {
         return cloneWorkoutExercise(oldSession.backVariantDrafts[ex.key]);
       }
@@ -3452,8 +3483,10 @@ function selectFourMenuForToday(menuKey) {
   };
   previewTodaySession = null;
   store.currentState.activeSessionKey = key;
-  saveStore();
-  return true;
+  if (saveStore()) return true;
+  store = migrateStoreData(JSON.parse(beforeSwitch));
+  previewTodaySession = beforePreview ? JSON.parse(beforePreview) : null;
+  return false;
 }
 
 // 最後に記録（完了/スキップ）したセットを未実施に戻す
@@ -3481,7 +3514,7 @@ function recalculateTodaySession() {
     ? buildFourMenu(
         oldSession?.selectedSplitKey || normalizeActiveFourMenuKey(store.currentState.nextMenuKey),
         store.settings,
-        { backLiftKey: selectedBackLiftKey }
+        { backLiftKey: selectedBackLiftKey, customMenuKeys: oldSession?.customMenuKeys }
       )
     : getDayMenu(store.currentState.day, store.currentState.rotation, store.settings);
 
@@ -3517,6 +3550,13 @@ function recalculateTodaySession() {
 
   const newExercises = menu.exercises.map(newEx => {
     const oldEx = oldSession.exercises.find(e => e.key === newEx.key && e.menuType === newEx.menuType);
+    if (oldEx && oldSession.fourMenuRotation && oldEx.isFourMenuMain) {
+      const hasInput = oldEx.todayEdited || oldEx.note || (oldEx.pains || []).some(p => p !== 'なし') ||
+        (oldEx.rpe && oldEx.rpe !== '未入力') || oldEx.sets.length !== oldEx.plannedSets ||
+        oldEx.sets.some(s => s.done || s.skipped || s.rpe ||
+          Number(s.weight) !== Number(oldEx.plannedWeight) || Number(s.reps) !== Number(oldEx.plannedReps));
+      return hasInput ? cloneWorkoutExercise(oldEx) : materializeSessionExercise(newEx);
+    }
     const targetSets = typeof newEx.plannedSets === 'number' ? newEx.plannedSets : 3;
     const defaultReps = typeof newEx.plannedReps === 'number' ? newEx.plannedReps : '';
 
@@ -4017,15 +4057,16 @@ function renderToday() {
 function renderFourMenuTodayPicker(session) {
   if (!session?.fourMenuRotation) return '';
   const scheduled = session.scheduledSplitKey || store.currentState.nextMenuKey;
-  const selected = normalizeActiveFourMenuKey(session.selectedSplitKey || scheduled);
-  const buttons = FOUR_MENU_ORDER.map(key => `
-    <button class="seg-opt ${selected === key ? 'on' : ''}" data-four-menu-select="${key}">
+  const selected = session.selectedSplitKey || scheduled;
+  const buttons = SELECTABLE_MENUS.map(key => `
+    <button class="seg-opt ${selected === key ? 'on' : ''}" aria-pressed="${selected === key}" ${session.completed ? 'disabled' : ''} data-four-menu-select="${key}">
       ${fourMenuLabel(key)}
     </button>
   `).join('');
   return `
     <div class="four-menu-picker" aria-label="今日のメニュー">
       <div class="seg">${buttons}</div>
+      ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '種目を追加'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>組み合わせを編集</button></div>` : ''}
     </div>
   `;
 }
@@ -4050,10 +4091,24 @@ function afterToday() {
 
   document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
     btn.onclick = () => {
-      const hasDone = session?.exercises?.some(ex => (ex.sets || []).some(set => set.done || set.skipped));
-      if (hasDone && !confirm('入力済みのセットがあります。今日のメニューを変更しますか？')) return;
-      selectFourMenuForToday(btn.dataset.fourMenuSelect);
+      if (btn.dataset.fourMenuSelect === session.selectedSplitKey) return;
+      if (!selectFourMenuForToday(btn.dataset.fourMenuSelect)) { showToast('メニューを保存できませんでした'); return; }
       render();
+    };
+  });
+  const customEditor = document.getElementById('editCustomMenu');
+  if (customEditor) customEditor.onclick = () => openModal('組み合わせ', `
+    <div class="custom-menu-options">${FOUR_MENU_ORDER.map(key => `<label><input type="checkbox" data-custom-menu="${key}" ${(session.customMenuKeys || []).includes(key) ? 'checked' : ''}>${fourMenuLabel(key)}</label>`).join('')}</div>
+    <button class="btn-primary" id="saveCustomMenu">この組み合わせで記録</button>
+  `, () => {
+    document.getElementById('saveCustomMenu').onclick = () => {
+      const keys = [...document.querySelectorAll('[data-custom-menu]:checked')].map(el => el.dataset.customMenu);
+      if (!keys.length) { showToast('メニューを1つ以上選んでください'); return; }
+      const removed = session.exercises.filter(ex => !keys.includes(ex.fourMenuKey));
+      if (removed.some(ex => ex.sets?.some(set => set.done || set.skipped) || ex.note || ex.rpe !== '未入力') && !confirm('入力済みの種目が組み合わせから外れます。変更しますか？')) return;
+      if (!selectFourMenuForToday('custom', { customMenuKeys: keys })) { showToast('保存できませんでした'); return; }
+      store.settings.customMenuKeys = keys;
+      saveStore(); closeModal(); render();
     };
   });
 
@@ -4238,7 +4293,8 @@ function afterToday() {
         ex.sets = ex.sets.map(set => set.done ? set : { ...set, weight: ex.plannedWeight });
         ex.progressionReason = '5%減を手動採用';
         ex.progressionReasonCode = 'manual_reduction_adopted';
-        saveMainSetOverride(session.performedSplitKey || session.selectedSplitKey, ex);
+        ex.todayEdited = true;
+        saveMainSetOverride(ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey, ex);
         persistTodaySession(session);
         showToast('5%減候補を今後へ反映しました');
         render();
@@ -4372,6 +4428,7 @@ function openAdjustModal(exIdx) {
       if (!v) return;
       const newW = roundToIncrement(v, store.settings.increment);
       ex.plannedWeight = newW;
+      ex.todayEdited = true;
       ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
       saveStore();
       closeModal();
@@ -4393,7 +4450,7 @@ function openAdjustModal(exIdx) {
         if (ex.slotId) {
           if (session.fourMenuRotation) {
             updateFourMenuAccessorySlot(
-              session.performedSplitKey || session.selectedSplitKey,
+              ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey,
               ex.slotId,
               { plannedWeight: newW }
             );
@@ -4413,7 +4470,7 @@ function openAdjustModal(exIdx) {
       const baseW = ex.plannedWeight - (ex.adjusted || 0);
       const totalAdj = (newW - baseW);
       const adjKey = session.fourMenuRotation
-        ? `Four-${session.performedSplitKey || session.selectedSplitKey}-${ex.key}-${ex.menuType}`
+        ? `Four-${ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey}-${ex.key}-${ex.menuType}`
         : `Day${session.day}-${ex.key}-${ex.menuType}`;
       store.manualAdjustments[adjKey] = totalAdj;
       ex.plannedWeight = newW;
@@ -4602,7 +4659,7 @@ function openMainSetEditModal(exIdx) {
       if (applyFuture) {
         const scopeLabel = session.fourMenuRotation ? '同じメニュー・種目・枠' : '同じDay・種目・枠';
         if (!confirm(`${scopeLabel}の今後の予定にも反映します。過去ログは変更しません。`)) return;
-        saveMainSetOverride(session.fourMenuRotation ? session.performedSplitKey || session.selectedSplitKey : session.day, ex);
+        saveMainSetOverride(session.fourMenuRotation ? ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey : session.day, ex);
       }
       saveStore();
       closeModal();
@@ -4619,7 +4676,7 @@ function openAccessoryTodayModal(exIdx) {
   const ex = session.exercises[exIdx];
   if (!ex?.isAccessory) return;
   const fourMenuKey = session.fourMenuRotation
-    ? normalizeFourMenuKey(session.performedSplitKey || session.selectedSplitKey)
+    ? normalizeFourMenuKey(ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey)
     : null;
   const contextLabel = fourMenuKey ? fourMenuLabel(fourMenuKey) : `Day${session.day}`;
   openModal('補助種目編集', `
@@ -5051,6 +5108,8 @@ function buildExerciseLogFromSession(session, ex, existing = null) {
   const fourMeta = session.fourMenuRotation ? {
     fourMenuRotation: true,
     weeklySplit: false,
+    customMenuKeys: session.customMenuKeys || null,
+    sourceMenuKey: ex.fourMenuKey || null,
     scheduledDate: session.scheduledDate || session.date,
     performedDate: session.performedDate || session.date,
     scheduledSplitKey: session.scheduledSplitKey || null,
@@ -6116,7 +6175,7 @@ function renderLog() {
   return `
     ${tabs}
     ${logFilter.type === 'daily' ? `${renderTrainingSummary()}<div class="section log-filters">
-      <select id="log-menu-filter"><option value="all">全メニュー</option>${FOUR_MENU_ORDER.map(key => `<option value="${key}" ${logFilter.menu === key ? 'selected' : ''}>${fourMenuLabel(key)}</option>`).join('')}<option value="legacy" ${logFilter.menu === 'legacy' ? 'selected' : ''}>旧8日ログ</option></select>
+      <select id="log-menu-filter"><option value="all">全メニュー</option>${SELECTABLE_MENUS.map(key => `<option value="${key}" ${logFilter.menu === key ? 'selected' : ''}>${fourMenuLabel(key)}</option>`).join('')}<option value="legacy" ${logFilter.menu === 'legacy' ? 'selected' : ''}>旧8日ログ</option></select>
       <select id="log-role-filter"><option value="all">メイン・補助</option><option value="main" ${logFilter.role === 'main' ? 'selected' : ''}>メイン</option><option value="accessory" ${logFilter.role === 'accessory' ? 'selected' : ''}>補助</option></select>
       <input type="search" id="log-query-filter" value="${escapeHtml(logFilter.query)}" placeholder="種目を検索" aria-label="種目を検索" />
     </div>` : ''}
