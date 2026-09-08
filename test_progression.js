@@ -1069,7 +1069,7 @@ function testBodyweightExerciseUsesKgInput() {
   isolatedApi.moveExerciseToActive(session, chinIdx);
   let html = isolatedApi.renderToday();
   assert.ok(!html.includes('>自重<'), 'bodyweight exercises must not show fixed 自重 label');
-  assert.ok(html.includes('data-vbox="kg"'), 'weight box must stay tappable');
+  assert.ok(html.includes('data-direct-field="kg"'), 'weight must be directly editable without opening a sheet');
   assert.ok(html.includes('5〜8'), 'planned reps range should show as the reps default');
 
   // 加重5kg（またはアシスト−相当）をkgとして表示できる
@@ -1077,7 +1077,7 @@ function testBodyweightExerciseUsesKgInput() {
   const pending = chin.sets[isolatedApi.firstPendingSetIndex(chin)];
   pending.weight = 5;
   html = isolatedApi.renderToday();
-  assert.ok(html.includes('5.0<span class="u">kg</span>'), 'entered weight must render as kg');
+  assert.ok(/aria-label="セット重量 kg"[^>]*value="5"/.test(html), 'entered weight must render in the kg input');
 }
 
 function testInclineDbCurlPresetAndRestScope() {

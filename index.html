@@ -3,33 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#07090d" />
+  <meta name="theme-color" content="#101213" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="MyLiftLog" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=20260905-custom-workout" />
+  <link rel="stylesheet" href="styles.css?v=20260908-quiet-performance" />
   <title>MyLiftLog Strength Planner</title>
 </head>
 <body>
   <!-- レストタイマーバー（動作中のみ表示） -->
   <div id="restTimer" class="rest-bar hidden">
     <div class="rest-bar-row">
-      <span class="rest-bar-time" id="restTimerDisplay">00:00</span>
+      <div class="rest-time-group"><span class="rest-caption">レスト</span><span class="rest-bar-time" id="restTimerDisplay" role="timer">00:00</span></div>
       <div class="rest-bar-track"><div class="rest-bar-fill" id="restBarFill"></div></div>
-      <button id="restMinus30" aria-label="30秒減らす">-30</button>
-      <button id="restPlus30" aria-label="30秒増やす">+30</button>
+      <details class="timer-options"><summary>調整</summary><div><button id="restMinus30" aria-label="30秒減らす">−30秒</button><button id="restPlus30" aria-label="30秒増やす">＋30秒</button><button id="restReset" aria-label="リセット">↺</button></div></details>
       <button id="restToggle">停止</button>
-      <button id="restReset" aria-label="リセット">↺</button>
       <button id="restClose">スキップ</button>
     </div>
   </div>
 
   <main id="main"></main>
 
-  <nav class="bottom-nav">
+  <nav class="bottom-nav" aria-label="メインナビゲーション">
     <button class="nav-btn" data-screen="today">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M3 9v6"/><path d="M21 9v6"/><path d="M6.5 12h11"/></svg></span>
       <span class="nav-label">今日</span>
@@ -62,6 +60,6 @@
   <!-- トースト -->
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=20260905-custom-workout"></script>
+  <script src="app.js?v=20260908-quiet-performance"></script>
 </body>
 </html>

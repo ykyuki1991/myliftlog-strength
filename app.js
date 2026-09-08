@@ -3633,24 +3633,51 @@ function recalculateTodaySession() {
 
 // ===== 画面ルーター =====
 let currentScreen = 'today';
+let renderedScreen = null;
+const screenScroll = {};
+const disclosureState = {};
 
 function navigate(screen) {
   persistActiveWorkoutDraft();
   currentScreen = screen;
   document.querySelectorAll('.nav-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.screen === screen);
+    if (typeof b.setAttribute === 'function') b.setAttribute('aria-current', b.dataset.screen === screen ? 'page' : 'false');
   });
   render();
 }
 
 function render() {
   const main = document.getElementById('main');
+  const previousScreen = renderedScreen;
+  if (previousScreen) screenScroll[previousScreen] = window.scrollY || 0;
+  const scope = currentScreen === 'today' ? `${currentScreen}:${todaySessionKey()}` : currentScreen;
   switch (currentScreen) {
     case 'today': main.innerHTML = renderToday(); afterToday(); break;
     case 'block': main.innerHTML = renderBlock(); afterBlock(); break;
     case 'log': main.innerHTML = renderLog(); afterLog(); break;
     case 'settings': main.innerHTML = renderSettings(); afterSettings(); break;
   }
+  if (main.dataset) main.dataset.screen = currentScreen;
+  document.querySelectorAll('.tabs .tab, .seg .seg-opt').forEach(el => {
+    if (typeof el.setAttribute === 'function') el.setAttribute('aria-pressed', String(el.classList.contains('active') || el.classList.contains('on')));
+  });
+  const menuFilter = document.getElementById('log-menu-filter');
+  const roleFilter = document.getElementById('log-role-filter');
+  if (typeof menuFilter?.setAttribute === 'function') menuFilter.setAttribute('aria-label', 'メニューで絞り込み');
+  if (typeof roleFilter?.setAttribute === 'function') roleFilter.setAttribute('aria-label', '種目の種類で絞り込み');
+  document.querySelectorAll('#main details').forEach((el, i) => {
+    const key = `${scope}:${el.dataset.uiKey || `${i}:${el.querySelector('summary')?.textContent.trim()}`}`;
+    if (Object.prototype.hasOwnProperty.call(disclosureState, key)) el.open = disclosureState[key];
+    el.addEventListener('toggle', () => { disclosureState[key] = el.open; });
+  });
+  document.querySelectorAll('#main [role="button"][tabindex="0"]').forEach(el => {
+    el.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); el.click(); }
+    });
+  });
+  if (typeof window.scrollTo === 'function') window.scrollTo(0, screenScroll[currentScreen] || 0);
+  renderedScreen = currentScreen;
   updateHeader();
 }
 
@@ -3696,7 +3723,7 @@ function renderStaticSetRow(set, setIdx, editExIdx = null) {
     ? '<span class="chip chip-pause">スキップ</span>'
     : `${fmtW(set.weight)}<span class="u">kg</span> × ${set.reps ?? '-'}`;
   const check = set.done ? '<span class="ck">✓</span>' : '<span class="ck"></span>';
-  const editAttr = editExIdx != null ? ` data-edit-ex="${editExIdx}"` : '';
+  const editAttr = editExIdx != null ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"` : '';
   return `
     <div class="set-row ${stateClass}"${editAttr}>
       <div class="sn">${setIdx + 1}</div>
@@ -3825,58 +3852,42 @@ function renderActiveExerciseCard(ex, exIdx) {
 
   // 自重種目（チンニング等）もkgで表示・編集する（アシスト=軽く/加重=重くを同じ欄で扱う）
   const currentWeight = set.weight ?? ex.plannedWeight;
-  const kgVal = currentWeight != null ? `${fmtW(currentWeight)}<span class="u">kg</span>` : '—';
   const hasSetReps = set.reps != null && set.reps !== '';
-  const repsVal = hasSetReps ? `${set.reps}` : `${ex.plannedReps ?? '-'}`;
   const rpeVal = ex.rpe && ex.rpe !== '未入力' ? `@${ex.rpe}` : '—';
 
-  let editorHtml = '';
-  if (editing === 'kg') {
-    editorHtml = `
-      <div class="vb-editor">
-        <button class="stepper" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}">−</button>
-        <input class="stp-input" type="number" inputmode="decimal" step="0.1" min="0"
-          value="${currentWeight ?? ''}" placeholder="kg" data-direct-field="kg" data-ex="${exIdx}" />
-        <button class="stepper" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}">＋</button>
-      </div>`;
-  } else if (editing === 'reps') {
-    editorHtml = `
-      <div class="vb-editor">
-        <button class="stepper" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}">−</button>
-        <input class="stp-input" type="number" inputmode="numeric" step="1" min="0"
-          value="${hasSetReps ? set.reps : ''}" placeholder="${ex.plannedReps ?? '回'}" data-direct-field="reps" data-ex="${exIdx}" />
-        <button class="stepper" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}">＋</button>
-      </div>`;
-  } else if (editing === 'rpe') {
-    editorHtml = `
-      <div class="vb-editor rpe-editor">
-        ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<span class="chip chip-tap ${ex.rpe === r ? 'on' : ''}" data-rpe-edit="${r}" data-ex="${exIdx}">${r}</span>`).join('')}
-      </div>`;
-  }
+  const editorHtml = editing === 'rpe' ? `
+    <div class="vb-editor rpe-editor" aria-label="種目のRPE">
+      ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<button class="chip chip-tap ${String(ex.rpe) === r ? 'on' : ''}" aria-pressed="${String(ex.rpe) === r}" data-rpe-edit="${r}" data-ex="${exIdx}">${r}</button>`).join('')}
+    </div>` : '';
 
   const activeBlock = setIdx >= 0 ? `
     <div class="active-set">
       <div class="as-head">
         <span class="as-title">セット ${setIdx + 1} / ${totalSets}</span>
-        <span class="as-prev">予定 ${exercisePlanText(ex)}${ex.pctNote ? ` ・ ${ex.pctNote}` : ''}${ex.isAccessory && ex.targetRpe ? ` ・ @${ex.targetRpe}` : ''}</span>
+        <span class="as-prev">${ex.isAccessory && ex.targetRpe ? `目標 RPE ${ex.targetRpe}` : '今回の記録'}</span>
       </div>
       <div class="vbox-row">
-        <div class="vbox ${editing === 'kg' ? 'selected' : ''}" data-vbox="kg" data-ex="${exIdx}">
-          <span class="vb-label">重量</span>
-          <span class="vb-val">${kgVal}</span>
-        </div>
-        <div class="vbox ${editing === 'reps' ? 'selected' : ''}" data-vbox="reps" data-ex="${exIdx}">
+        <label class="vbox weight-input">
+          <span class="vb-label">重量 <span>kg</span></span>
+          <input type="number" inputmode="decimal" step="0.1" min="0" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+        </label>
+        <label class="vbox">
           <span class="vb-label">回数</span>
-          <span class="vb-val">${repsVal}</span>
-        </div>
-        <div class="vbox ${editing === 'rpe' ? 'selected' : ''}" data-vbox="rpe" data-ex="${exIdx}">
-          <span class="vb-label">RPE</span>
+          <input type="number" inputmode="numeric" step="1" min="0" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+        </label>
+        <button class="vbox ${editing === 'rpe' ? 'selected' : ''}" data-vbox="rpe" data-ex="${exIdx}" aria-label="種目RPEを選択" aria-expanded="${editing === 'rpe'}">
+          <span class="vb-label">種目RPE</span>
           <span class="vb-val">${rpeVal}</span>
-        </div>
+        </button>
+      </div>
+      <div class="quick-adjust" aria-label="重量を調整">
+        <button data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−${store.settings.increment || 2.5} kg</button>
+        <button data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋${store.settings.increment || 2.5} kg</button>
+        ${hasRecordedSet ? `<button class="btn-text" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
       </div>
       ${editorHtml}
       <div class="as-actions">
-        <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">完了</button>
+        <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">✓ セット完了</button>
         <button class="btn-ghost" data-action="skipSet" data-ex="${exIdx}">スキップ</button>
       </div>
     </div>
@@ -3888,26 +3899,26 @@ function renderActiveExerciseCard(ex, exIdx) {
     : '';
 
   const painChips = PAIN_OPTIONS.map(p => `
-    <span class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" data-ex="${exIdx}" data-pain="${p}">${p}</span>
+    <button class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" aria-pressed="${ex.pains.includes(p)}" data-ex="${exIdx}" data-pain="${p}">${p}</button>
   `).join('');
 
   return `
     <div class="card card-ex active ${ex.isFourMenuMain || ex.isBig3 ? 'card-main' : 'card-accessory'}" data-ex="${exIdx}">
       <div class="ex-head">
-        <div class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>
-        <div class="ex-chips">${exerciseRoleChipHtml(ex)}</div>
+        <div><div class="exercise-eyebrow">${ex.isFourMenuMain || ex.isBig3 ? 'メイン' : '補助'}</div><h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1></div>
+        <button class="btn-ghost btn-small" data-action="${ex.isBig3 || ex.isFourMenuMain ? 'editMainSet' : 'editAccessory'}" data-ex="${exIdx}">編集</button>
       </div>
-      ${previous ? `<div class="ex-sub previous-performance">${escapeHtml(previous.text)}</div>
-        <div class="ex-sub">今回 ${fmtW(ex.plannedWeight)}kg（${escapeHtml(ex.progressionReason || '予定重量')}）</div>` : ''}
-      ${prFacts.length ? `<div class="status-row">${prFacts.map(text => `<span class="chip chip-outline">${text}</span>`).join('')}</div>` : ''}
-      ${ex.reductionCandidateWeight ? `<div class="accessory-suggestion"><span class="suggestion-label">5%減候補</span><span>${fmtW(ex.reductionCandidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptMainReduction" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
-      ${ex.adjusted ? `<div class="ex-sub">調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}kg</div>` : ''}
+      ${previous ? `<div class="ex-sub previous-performance">${escapeHtml(previous.text)}</div>` : ''}
       ${doneRows}
       ${activeBlock}
       ${todoRows}
       ${progressionNote}
-      <details class="ui-details compact-details mt-8">
+      <details class="ui-details compact-details mt-8" data-ui-key="exercise-${ex.key}-${ex.menuType}">
         <summary>メモ・状態・調整</summary>
+        <div class="ex-sub">予定 ${exercisePlanText(ex)} ・ ${escapeHtml(ex.progressionReason || '予定重量')}${ex.pctNote ? ` ・ ${escapeHtml(ex.pctNote)}` : ''}</div>
+        ${prFacts.length ? `<div class="status-row">${prFacts.map(text => `<span class="chip chip-outline">${text}</span>`).join('')}</div>` : ''}
+        ${ex.reductionCandidateWeight ? `<div class="accessory-suggestion"><span class="suggestion-label">5%減候補</span><span>${fmtW(ex.reductionCandidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptMainReduction" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
+        ${ex.adjusted ? `<div class="ex-sub">調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}kg</div>` : ''}
         <div class="row-rpe-pain">${painChips}</div>
         <label class="field mt-8">
           <span>メモ</span>
@@ -3996,29 +4007,30 @@ function renderToday() {
   const upNext = incomplete.slice(1);
 
   const totalDoneSets = session.exercises.reduce((acc, ex) => acc + ex.sets.filter(s2 => s2.done).length, 0);
+  const volume = session.exercises.reduce((sum, ex) => sum + ex.sets.reduce((n, set) => n + (set.done && !set.skipped ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0), 0);
   const allDoneBanner = !incomplete.length
     ? `<div class="card flat complete-menu-banner">
         <div class="big">✓ 今日のメニュー完了</div>
-        <div class="muted">${completed.length}種目 ・ ${totalDoneSets}セット</div>
+        <div class="workout-metrics"><div><strong>${totalDoneSets}</strong><span>完了セット</span></div><div><strong>${volume.toLocaleString('ja-JP')}</strong><span>総ボリューム kg</span></div></div>
+        ${session.completed ? '<button class="btn-text btn-block" id="btnViewWorkoutLog">記録を見る</button>' : ''}
       </div>`
     : '';
 
   const nextCard = upNext.length
-    ? `<div class="card">
+    ? `<section class="up-next">
         <div class="sec-label">次の種目</div>
         ${upNext.map(({ ex, exIdx }) => `
-          <div class="next-row" data-make-active="${exIdx}" role="button">
+          <div class="next-row" data-make-active="${exIdx}" role="button" tabindex="0" aria-label="${escapeHtml(displayExerciseName(ex.key, ex.name))}を先に実施">
             <span class="nx-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
             <span class="nx-detail">${exercisePlanText(ex)}</span>
-            ${exerciseRoleChipHtml(ex)}
             <span class="nx-go" aria-hidden="true">›</span>
           </div>
         `).join('')}
-      </div>`
+      </section>`
     : '';
 
   const completedCards = completed.length
-    ? `<details class="ui-details completed-exercises" ${incomplete.length ? '' : 'open'}>
+    ? `<details class="ui-details completed-exercises" data-ui-key="completed" ${incomplete.length ? '' : 'open'}>
         <summary><span>完了済み ${completed.length}件</span></summary>
         ${completed.map(({ ex, exIdx }) => renderCompletedExerciseCard(ex, exIdx)).join('')}
       </details>`
@@ -4088,6 +4100,8 @@ function renderBackLiftVariantSwitch(session) {
 
 function afterToday() {
   const session = getOrCreateTodaySession({ persist: false });
+  const viewLog = document.getElementById('btnViewWorkoutLog');
+  if (viewLog) viewLog.onclick = () => navigate('log');
 
   document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
     btn.onclick = () => {
@@ -4214,7 +4228,9 @@ function afterToday() {
       if (rerender) render();
     };
     input.addEventListener('input', () => saveDirectInput(false));
-    input.addEventListener('change', () => saveDirectInput(true));
+    // Keep the clicked completion button in the DOM when the input loses focus.
+    input.addEventListener('change', () => saveDirectInput(false));
+    input.addEventListener('focus', () => { if (typeof input.select === 'function') input.select(); });
   });
 
   // RPE（アクティブセットのエディタ内チップ・再タップで解除）
@@ -5936,44 +5952,34 @@ function openFourMenuAccessoryPlanAddModal(menuKey) {
 
 function renderFourMenuPlan() {
   const state = getFourMenuState();
-  const rows = FOUR_MENU_ORDER.map(menuKey => {
+  const rows = FOUR_MENU_ORDER.map((menuKey, index) => {
     const menu = buildFourMenu(menuKey, store.settings);
     const main = menu.exercises.find(ex => ex.isFourMenuMain || ex.isBig3);
     const accessoryCount = menu.exercises.filter(ex => ex.isAccessory).length;
     const selected = state.nextMenuKey === menuKey;
     return `
-      <div class="card four-plan-card ${selected ? 'active-plan' : ''}">
+      <article class="card four-plan-card ${selected ? 'active-plan' : ''}">
         <div class="row between">
           <div>
-            <div class="strong">${fourMenuLabel(menuKey)}</div>
-            <div class="muted">${main ? `${main.name} ${fmtW(main.plannedWeight)}kg × ${main.plannedReps} × ${main.plannedSets}` : 'メインなし'}</div>
+            <div class="plan-menu-name"><span class="plan-index">0${index + 1}</span><h2>${fourMenuLabel(menuKey)}</h2></div>
           </div>
           ${selected ? '<span class="status-pill status-ok">次回</span>' : `<button class="btn-secondary btn-small" data-set-next-four-menu="${menuKey}">次回に設定</button>`}
         </div>
-        ${main ? `<div class="muted mt-8" style="font-size:12px;">${main.progressionReason} / 参照: ${main.progressionReferenceDate}</div>` : ''}
-        <details class="ui-details compact-details mt-8">
+        ${main ? `<div class="plan-main"><span>${escapeHtml(displayExerciseName(main.key, main.name))}</span><div><strong>${fmtW(main.plannedWeight)}<small> kg</small></strong><span>${main.plannedReps}回 × ${main.plannedSets}セット</span></div></div><div class="muted">${escapeHtml(main.progressionReason)} · ${escapeHtml(main.progressionReferenceDate)}</div>` : '<div class="muted">メインなし</div>'}
+        <details class="ui-details compact-details mt-8" data-ui-key="plan-${menuKey}">
           <summary>補助 ${accessoryCount}種目</summary>
           ${(menu.exercises.filter(ex => ex.isAccessory).map(ex => `<div class="next-row"><span class="nx-name">${ex.name}</span><span class="nx-detail">${exercisePlanText(ex)}</span><button class="btn-ghost btn-small" data-edit-four-accessory="${ex.slotId}" data-four-menu-key="${menuKey}">編集</button></div>`).join('')) || '<div class="muted">なし</div>'}
           <button class="btn-secondary btn-small mt-8" data-add-four-accessory="${menuKey}">補助種目を追加</button>
         </details>
-      </div>
+      </article>
     `;
   }).join('');
   return `
-    <div class="section">
-      <h2>4メニュー順番ローテ</h2>
-      <div class="row between">
-        <div>
-          <div class="sec-label">現在の次回</div>
-          <div class="value-big">${fourMenuLabel(state.nextMenuKey)}</div>
-        </div>
-      </div>
-      <div class="muted mt-8" style="font-size:12px;">肩・腕 → 脚 → 胸 → 背中 の順に進みます</div>
-    </div>
-    <div class="section">
-      <h2>メニュー一覧</h2>
+    <div class="plan-overview"><span>4メニュー計画</span><span>次回 <strong>${fourMenuLabel(state.nextMenuKey)}</strong></span></div>
+    <div class="plan-grid">
       ${rows}
     </div>
+    <section class="section custom-plan"><h2>カスタム</h2><div class="muted">${(store.settings.customMenuKeys || ['chest', 'back']).filter(key => FOUR_MENU_ORDER.includes(key)).map(fourMenuLabel).join(' ＋ ')}</div></section>
   `;
 }
 
@@ -6192,7 +6198,7 @@ function renderLog() {
 
 // 種目切替セグメント（MAX/推定MAXタブ共通）
 function liftSegHtml(selectedKey, dataAttr) {
-  return `<div class="seg mb-12">${Object.values(BIG3_LIFTS).map(l => `
+  return `<div class="seg lift-seg mb-12">${Object.values(BIG3_LIFTS).map(l => `
     <button class="seg-opt ${selectedKey === l.key ? 'on' : ''}" ${dataAttr}="${l.key}">${l.name.replace('プレス', '').replace('引きデッド', 'デッド')}</button>
   `).join('')}</div>`;
 }
@@ -6355,7 +6361,7 @@ function renderDailyLogView(logMap = logsByDate()) {
       return `<span class="muted" style="font-size:12px;">${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}${best ? ` ${best}` : ''}</span>`;
     }).filter(Boolean).join(' ・ ');
     return `
-      <details class="section ui-details log-card" ${cardIdx === 0 ? 'open' : ''}>
+      <details class="section ui-details log-card" data-ui-key="log-${escapeHtml(date)}">
         <summary>
           <span>
             <span class="log-card-title">${fmtDateShort(date)} ${logGroupHeaderMeta(first)}</span>
@@ -7024,8 +7030,8 @@ function renderSettings() {
       </div>
     ` : ''}
 
-    <div class="section">
-      <h2>MAX設定</h2>
+    <div class="section settings-max">
+      <div class="row between settings-save"><h2>MAX設定</h2><button class="btn-primary btn-small" id="btnSaveSettings">変更を保存</button></div>
       <label class="field"><span>ベンチプレスMAX (kg)</span><input type="number" step="0.5" id="set-bench" value="${m.bench}" /></label>
       <label class="field"><span>スクワットMAX (kg)</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /></label>
       <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
@@ -7101,20 +7107,19 @@ function renderSettings() {
       </details>
     </div>
 
-    <div class="section">
-      <h2>補助管理モード</h2>
+    <details class="section ui-details" data-ui-key="settings-accessory">
+      <summary>補助管理モード</summary>
       <div class="volume-mode-group">
         ${Object.entries(ACCESSORY_MANAGEMENT_MODES).map(([value, label]) => `
           <label class="volume-mode-option ${accessoryMode === value ? 'active' : ''}">
             <input type="radio" name="accessoryMode" value="${value}" ${accessoryMode === value ? 'checked' : ''} />
             <div>
               <div class="opt-title">${label}</div>
-              <div class="muted opt-desc">${value === 'aggressive' ? '初期値。軽い/適正/攻めすぎを短く表示します。' : value === 'fatigue' ? '疲労・痛みをやや強めに見ます。' : '標準的に提案します。'}</div>
             </div>
           </label>
         `).join('')}
       </div>
-    </div>
+    </details>
 
     <div class="section ${isFourMenuMode() ? 'hidden' : ''}">
       <h2>デロード時MAX測定</h2>
@@ -7157,13 +7162,12 @@ function renderSettings() {
     </div>
 
     <div class="section">
-      <button class="btn-primary" id="btnSaveSettings">保存</button>
       <div class="btn-row mt-8">
-        <button class="btn-warn" id="btnRecalcToday">今日のメニューを再計算</button>
-        <button class="btn-danger" id="btnReset">初期値に戻す</button>
+        <button class="btn-secondary" id="btnRecalcToday">今日のメニューを再計算</button>
       </div>
       <details class="ui-details compact-details mt-8">
-        <summary>補足</summary>
+        <summary>再計算・初期値の詳細</summary>
+        <button class="btn-danger" id="btnReset">初期値に戻す</button>
         <div class="muted" style="font-size:12px;">
         ※ MAX変更後、未実施の今後メニューは新MAXで自動計算されます。<br>
         ※ 過去ログは書き換えません。<br>
@@ -7348,6 +7352,14 @@ function afterSettings() {
 
 // ===== 初期化 =====
 function init() {
+  if (window.visualViewport) {
+    const updateViewport = () => {
+      document.documentElement.style.setProperty('--visible-height', `${window.visualViewport.height}px`);
+      document.body.classList.toggle('keyboard-open', window.visualViewport.height < window.innerHeight * 0.75);
+    };
+    window.visualViewport.addEventListener('resize', updateViewport);
+    updateViewport();
+  }
   // Nav
   document.querySelectorAll('.nav-btn').forEach(b => {
     b.addEventListener('click', () => navigate(b.dataset.screen));

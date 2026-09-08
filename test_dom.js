@@ -255,14 +255,16 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(html.includes('aria-live="polite"'));
   assert.ok(!html.includes('class="app-header"'));
   assert.ok(!html.includes('class="app-title"'));
-  assert.ok(css.includes('top: env(safe-area-inset-top)'));
+  assert.ok(css.includes('bottom: calc(var(--nav-height) + env(safe-area-inset-bottom))'), 'timer must sit above navigation');
   const bodyRule = css.match(/body\s*\{[^}]*\}/)?.[0] || '';
   assert.ok(!bodyRule.includes('safe-area-inset-top'), 'body must not add top safe area');
   assert.ok(css.includes('padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px'));
   assert.ok(css.includes('body.timer-visible #main'));
   assert.ok(css.includes('var(--rest-bar-offset)'));
-  assert.ok(html.includes('20260905-custom-workout'));
-  assert.ok(sw.includes("mll-strength-v23"));
+  assert.ok(html.includes('20260908-quiet-performance'));
+  assert.ok(sw.includes("mll-strength-v24"));
+  assert.ok(html.includes('role="timer"'));
+  assert.ok(css.includes('font-variant-numeric: tabular-nums'));
 }
 
 testStartPersistsState();
