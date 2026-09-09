@@ -3762,7 +3762,7 @@ function openSetEditSheet(exIdx) {
   let draftRpe = ex.rpe || '未入力';
 
   const stateBtn = (idx, state, label) =>
-    `<button class="seg-opt ${draft[idx].state === state ? (state === 'skip' ? 'on-pause' : 'on') : ''}" data-se-state="${state}" data-se-idx="${idx}">${label}</button>`;
+    `<button class="seg-opt ${draft[idx].state === state ? (state === 'skip' ? 'on-pause' : 'on') : ''}" aria-label="${state === 'done' ? '完了' : state === 'skip' ? 'スキップ' : '未完了'}" aria-pressed="${draft[idx].state === state}" data-se-state="${state}" data-se-idx="${idx}">${label}</button>`;
 
   const body = () => `
     <div class="sec-label">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>

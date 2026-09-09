@@ -61,7 +61,7 @@
   --fs-56: 56px;
   --fw-regular: 400;
   --fw-semibold: 600;
-  --tracking-tight: -0.02em;
+  --tracking-tight: 0;
 
   /* ---- Metrics ---- */
   --nav-height: 72px;

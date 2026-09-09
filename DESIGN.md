@@ -85,8 +85,8 @@ against them has not been made.
    `--text-3` clear 4.5:1 on every surface they are used on.
 
 6. **Numbers are instruments.** Seven sizes -- 11/13/15/17/22/34/56 -- and two
-   weights, 400 and 600. `letter-spacing: -0.02em` at 22px and up, and no
-   explicit `letter-spacing: 0` anywhere. The recorded weight is at least 2.2x
+   weights, 400 and 600. Letter spacing is zero to keep numerical labels
+   and Japanese text uncompressed. The recorded weight is at least 2.2x
    every other string that can appear on the same screen; the exercise name is
    17/400/`--text-2`. System font, tabular numerals.
 
@@ -128,4 +128,4 @@ Protect existing unit tests, add DOM interaction tests for direct editing/comple
 
 `node test_ui.js` uses an independently installed Playwright and a disposable browser profile, not live user data. Set `CHROME_PATH` for a local Chrome executable, or `UI_BROWSER=webkit` with `PLAYWRIGHT_BROWSERS_PATH` for Playwright WebKit. `NODE_PATH` can point to the bundled Playwright modules. No browser testing dependency is loaded by the production app.
 
-The suite checks 134 assertions locally, including all four log views and narrow edit sheets. Chromium uses protocol-level offline mode; local WebKit tests disconnect the HTTP origin because protocol-level offline navigation fails inside the WebKit test runtime. Both exercise service-worker fallback and the v23-to-v24 cache upgrade. `UI_PUBLIC_URL` runs the same isolated regression against the published site in Chromium (excluding the local old-version upgrade fixture).
+The suite checks all four log views, narrow edit sheets and accessible set-state controls. Chromium uses protocol-level offline mode; local WebKit tests disconnect the HTTP origin because protocol-level offline navigation fails inside the WebKit test runtime. Both exercise service-worker fallback and the v24-to-v25 cache upgrade. Color contrast uses canvas sRGB conversion so OKLCH colors are measured correctly. `UI_PUBLIC_URL` runs the same isolated regression against the published site in Chromium (excluding the local old-version upgrade fixture).
