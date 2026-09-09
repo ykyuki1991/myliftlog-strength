@@ -3907,7 +3907,7 @@ function renderActiveExerciseCard(ex, exIdx) {
   return `
     <div class="card card-ex active ${ex.isFourMenuMain || ex.isBig3 ? 'card-main' : 'card-accessory'}" data-ex="${exIdx}">
       <div class="ex-head">
-        <div><div class="exercise-eyebrow">${ex.isFourMenuMain || ex.isBig3 ? 'メイン' : '補助'}</div><h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1></div>
+        <div><div class="micro-label">${ex.isFourMenuMain || ex.isBig3 ? 'MAIN' : 'ACCESSORY'}</div><h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1></div>
         <button class="btn-ghost btn-small" data-action="${ex.isBig3 || ex.isFourMenuMain ? 'editMainSet' : 'editAccessory'}" data-ex="${exIdx}">編集</button>
       </div>
       ${previous ? `<div class="ex-sub previous-performance">${escapeHtml(previous.text)}</div>` : ''}

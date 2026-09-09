@@ -261,8 +261,8 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(css.includes('padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px'));
   assert.ok(css.includes('body.timer-visible #main'));
   assert.ok(css.includes('var(--rest-bar-offset)'));
-  assert.ok(html.includes('20260909-precision-strength'));
-  assert.ok(sw.includes("mll-strength-v25"));
+  assert.ok(html.includes('20260909-precision-today'));
+  assert.ok(sw.includes("mll-strength-v26"));
   assert.ok(html.includes('role="timer"'));
   assert.ok(css.includes('font-variant-numeric: tabular-nums'));
 }

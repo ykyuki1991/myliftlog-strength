@@ -4,6 +4,33 @@
    See DESIGN.md for the numeric constraints these tokens have to satisfy.
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   Archivo Narrow (SIL OFL 1.1, fonts/OFL.txt), subset to digits, Latin and the
+   punctuation this app renders. 4.6 KB per weight. Chosen over Barlow
+   Condensed, Saira Condensed and IBM Plex Sans Condensed because its digits
+   are tabular by default AND it ships a `tnum` feature, and because its digit
+   advance is the narrowest of the four (0.456 em) -- which is what lets a
+   five-character weight fit the 56px display at 320px. See DESIGN.md.
+
+   font-display: swap, so a failed or slow load renders the system stack
+   instead of blocking the number the user is reading.
+   -------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Archivo Narrow";
+  src: url("fonts/archivo-narrow-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archivo Narrow";
+  src: url("fonts/archivo-narrow-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -61,7 +88,11 @@
   --fs-56: 56px;
   --fw-regular: 400;
   --fw-semibold: 600;
-  --tracking-tight: 0;
+  --tracking-tight: -0.02em;
+  /* Numerals are set tighter than text: the instrument reading is one shape. */
+  --tracking-num: -0.03em;
+  /* Micro labels are the opposite: small, wide, quiet. */
+  --tracking-label: 0.08em;
 
   /* ---- Metrics ---- */
   --nav-height: 72px;
@@ -81,7 +112,12 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --font-num: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* Numerals and uppercase micro labels. Bundled, never fetched from a CDN;
+     falls back to the system stack if the file fails to load. */
+  --font-num: "Archivo Narrow", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* Japanese and all running text stays on the system stack. */
+  --font-jp: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
+             "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
 
   --shadow: 0 18px 52px rgba(0, 0, 0, 0.6);
   --shadow-soft: 0 6px 22px rgba(0, 0, 0, 0.28);
@@ -121,8 +157,7 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
-               "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  font-family: var(--font-jp);
   font-size: var(--fs-15);
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
@@ -153,6 +188,30 @@ input, textarea, select {
 .max-current-val {
   font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-num);
+}
+
+/* --------------------------------------------------------------------------
+   MICRO LABEL
+   The small uppercase Latin label that sits above or beside a number. Small,
+   wide-tracked and quiet, so the number beside it reads as the content and the
+   label reads as the unit. Left-aligned: centring both label and value leaves
+   the eye with no starting point.
+
+   Only labels attached to numbers take this treatment. Exercise names, menu
+   names, notes, prose and button text stay Japanese in the system font.
+   -------------------------------------------------------------------------- */
+.micro-label {
+  display: block;
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: left;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
 /* ==== ヘッダー ==== */
@@ -1050,7 +1109,6 @@ select { height: var(--control-height); }
 .vbox:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
 .quick-adjust { display: flex; gap: 8px; margin-top: 8px; }
 .quick-adjust button { flex: 1; min-width: 0; font-size: var(--fs-13); font-weight: var(--fw-regular); min-height: 44px; background: var(--surface-2); color: var(--text-2); }
-.exercise-eyebrow { font-size: var(--fs-13); font-weight: var(--fw-semibold); color: var(--accent-bright); margin-bottom: 8px; }
 .workout-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
 .workout-metrics strong { display: block; font-size: var(--fs-34); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tight); font-variant-numeric: tabular-nums; }
 .workout-metrics span { color: var(--text-2); font-size: var(--fs-13); }
