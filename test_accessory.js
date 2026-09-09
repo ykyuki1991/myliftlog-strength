@@ -271,7 +271,9 @@ function testSetCompletionAndMainSetEdit() {
   assert.strictEqual(ex.sets[0].done, true);
 
   let html = api.renderToday();
-  assert.ok(html.includes('set-row-done'), 'done sets should render with green row class');
+  // セット行は4カラムテーブルになった。完了行のクラスは set-tr-done。
+  assert.ok(html.includes('set-tr-done'), 'done sets should render as a completed table row');
+  assert.ok(html.includes('st-done'), 'completed status marker');
 
   ex.sets.forEach(set => { set.done = true; });
   assert.strictEqual(api.isExerciseComplete(ex), true);

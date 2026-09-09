@@ -3854,20 +3854,56 @@ function exercisePlanText(ex) {
 // 記録済みセット行（done / skip / todo）。editExIdx指定時はタップでセット編集
 const ICON_CHECK = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
 
-function renderStaticSetRow(set, setIdx, editExIdx = null) {
-  const stateClass = set.done ? 'set-row-done' : (set.skipped ? 'set-row-skip' : '');
-  const value = set.skipped && !set.done
-    ? '<span class="chip chip-pause">スキップ</span>'
-    : `${fmtW(set.weight)}<span class="u">kg</span> × ${set.reps ?? '-'}`;
-  const check = set.done ? `<span class="ck">${ICON_CHECK}</span>` : '<span class="ck"></span>';
-  const editAttr = editExIdx != null ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"` : '';
+// セット履歴は SET / WEIGHT / REPS / STATUS の4カラムテーブル。
+// 桁は tabular-nums で揃え、行間は罫線で区切る。
+// STATUS は文字を入れない: 375px幅に Completed / In progress は収まらない。
+function setStatusCell(state) {
+  if (state === 'done') return `<span class="st-dot st-done" role="img" aria-label="完了">${ICON_CHECK}</span>`;
+  if (state === 'active') return '<span class="st-dot st-active" role="img" aria-label="進行中"></span>';
+  if (state === 'skip') return '<span class="st-dot st-skip" role="img" aria-label="スキップ"></span>';
+  return '<span class="st-dot st-todo" role="img" aria-label="予定"></span>';
+}
+
+function setRowState(set, setIdx, activeIdx) {
+  if (set.done) return 'done';
+  if (set.skipped) return 'skip';
+  return setIdx === activeIdx ? 'active' : 'todo';
+}
+
+function renderSetTableRow(set, setIdx, state, editExIdx) {
+  const weight = set.weight != null && set.weight !== '' ? fmtW(set.weight) : '—';
+  const reps = set.reps != null && set.reps !== '' ? set.reps : '—';
+  const editAttr = editExIdx != null
+    ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"`
+    : ' role="row"';
   return `
-    <div class="set-row ${stateClass}"${editAttr}>
-      <div class="sn">${setIdx + 1}</div>
-      <div class="sv">${value}</div>
-      <div class="st">${check}</div>
-    </div>
-  `;
+    <div class="set-tr set-tr-${state}"${editAttr}>
+      <span class="set-td set-td-n num">${setIdx + 1}</span>
+      <span class="set-td set-td-w num">${weight}</span>
+      <span class="set-td set-td-r num">${reps}</span>
+      <span class="set-td set-td-s">${setStatusCell(state)}</span>
+    </div>`;
+}
+
+function renderSetTable(ex, exIdx, activeIdx) {
+  const rows = ex.sets
+    .map((set, i) => renderSetTableRow(set, i, setRowState(set, i, activeIdx), exIdx))
+    .join('');
+  return `
+    <div class="set-table" role="table" aria-label="セット履歴">
+      <div class="set-thead" role="row">
+        <span class="micro-label set-td-n" role="columnheader">SET</span>
+        <span class="micro-label set-td-w" role="columnheader">WEIGHT</span>
+        <span class="micro-label set-td-r" role="columnheader">REPS</span>
+        <span class="micro-label set-td-s" role="columnheader">STATUS</span>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+// 旧APIの互換: 単一行を返す呼び出しが残っている場合に備える
+function renderStaticSetRow(set, setIdx, editExIdx = null) {
+  return renderSetTableRow(set, setIdx, setRowState(set, setIdx, -1), editExIdx);
 }
 
 // その日の実施順だけ入れ替える（ローテ・予定は変更しない）
@@ -3980,8 +4016,7 @@ function renderActiveExerciseCard(ex, exIdx) {
   const setIdx = firstPendingSetIndex(ex);
   const set = ex.sets[setIdx] || {};
   const totalSets = ex.sets.length;
-  const doneRows = ex.sets.slice(0, setIdx).map((s2, i) => renderStaticSetRow(s2, i, exIdx)).join('');
-  const todoRows = ex.sets.slice(setIdx + 1).map((s2, i) => renderStaticSetRow(s2, setIdx + 1 + i, exIdx)).join('');
+  const setTable = renderSetTable(ex, exIdx, setIdx);
   const editing = todayEdit && todayEdit.exIdx === exIdx ? todayEdit.field : null;
   const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
   const previous = ex.isFourMenuMain ? previousMainSummary(ex, session) : null;
@@ -4000,8 +4035,8 @@ function renderActiveExerciseCard(ex, exIdx) {
   const activeBlock = setIdx >= 0 ? `
     <div class="active-set">
       <div class="as-head">
-        <span class="as-title">セット ${setIdx + 1} / ${totalSets}</span>
-        <span class="as-prev">${ex.isAccessory && ex.targetRpe ? `目標 RPE ${ex.targetRpe}` : '今回の記録'}</span>
+        <span class="micro-label">SET ${setIdx + 1} / ${totalSets}</span>
+        <span class="micro-label as-prev">${ex.isAccessory && ex.targetRpe ? `TARGET RPE ${ex.targetRpe}` : 'TARGET'}</span>
       </div>
       <div class="vbox-row">
         <label class="vbox weight-input">
@@ -4042,13 +4077,22 @@ function renderActiveExerciseCard(ex, exIdx) {
   return `
     <div class="card card-ex active ${ex.isFourMenuMain || ex.isBig3 ? 'card-main' : 'card-accessory'}" data-ex="${exIdx}">
       <div class="ex-head">
-        <div><div class="micro-label">${ex.isFourMenuMain || ex.isBig3 ? 'MAIN' : 'ACCESSORY'}</div><h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1></div>
-        <button class="btn-ghost btn-small" data-action="${ex.isBig3 || ex.isFourMenuMain ? 'editMainSet' : 'editAccessory'}" data-ex="${exIdx}">編集</button>
+        <div class="ex-head-text">
+          <div class="micro-label">${ex.isFourMenuMain || ex.isBig3 ? 'MAIN' : 'ACCESSORY'}</div>
+          <h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1>
+        </div>
+        <div class="ex-head-actions">
+          <button class="hd-icon-btn ex-detail-btn" data-action="${ex.isBig3 || ex.isFourMenuMain ? 'editMainSet' : 'editAccessory'}" data-ex="${exIdx}" aria-label="${escapeHtml(displayExerciseName(ex.key, ex.name))}の詳細を開く">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+          </button>
+        </div>
       </div>
-      ${previous ? `<div class="ex-sub previous-performance">${escapeHtml(previous.text)}</div>` : ''}
-      ${doneRows}
+      <div class="ex-previous">
+        <span class="micro-label">PREVIOUS</span>
+        <span class="ex-previous-value num">${previous?.log ? escapeHtml(previous.text.replace(/^前回\s*/, '')) : '—'}</span>
+      </div>
+      ${setTable}
       ${activeBlock}
-      ${todoRows}
       ${progressionNote}
       <details class="ui-details compact-details mt-8" data-ui-key="exercise-${ex.key}-${ex.menuType}">
         <summary>メモ・状態・調整</summary>

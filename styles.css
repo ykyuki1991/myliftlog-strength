@@ -370,7 +370,6 @@ input, textarea, select {
 .num,
 .value-big,
 .value-mid,
-.set-row .sv,
 .vbox .vb-val,
 .rest-bar-time,
 .cal-cell,
@@ -928,72 +927,135 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 
 
 
-/* ==== セット行 ==== */
-.set-row {
-  display: flex;
+/* ==========================================================================
+   SET TABLE
+   Four columns, ruled rows, tabular figures. STATUS carries no words -- at
+   375px "Completed" does not fit -- only an icon and a colour. The upcoming
+   marker is a thin unfilled ring, deliberately the quietest thing in the
+   table: nothing has happened there yet.
+   ========================================================================== */
+.set-table {
+  margin: var(--space-3) 0;
+}
+
+.set-thead,
+.set-tr {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 44px;
   align-items: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 3px 2px;
-  border-bottom: 1px solid var(--surface-3);
+  gap: var(--space-2);
+  padding: 0 10px;
+  border-left: 3px solid transparent;
 }
 
-.set-row:last-child { border-bottom: none; }
+.set-thead {
+  min-height: 24px;
+  padding-bottom: 4px;
+}
 
-.set-row .sn {
-  flex: 0 0 26px;
-  text-align: center;
-  font-size: var(--fs-13);
+.set-tr {
+  min-height: 44px;
+  border-bottom: 1px solid var(--surface-2);
+  border-radius: var(--radius-control);
+}
+
+.set-tr:last-child { border-bottom: 0; }
+
+.set-td {
+  min-width: 0;
+  font-size: var(--fs-17);
   font-weight: var(--fw-semibold);
-  color: var(--text-3);
-  font-family: var(--font-num);
-  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.set-row .sv {
-  flex: 1;
-  font-size: var(--fs-22);
-  letter-spacing: var(--tracking-tight);
-  font-weight: var(--fw-semibold);
-  color: var(--text-3);
+.set-td-n { font-size: var(--fs-13); font-weight: var(--fw-regular); color: var(--text-3); }
+.set-td-s { display: flex; justify-content: flex-end; }
+.set-thead .set-td-s { justify-content: flex-end; text-align: right; }
+
+/* Done and skipped recede; the row in progress is the only painted one. */
+.set-tr-done .set-td { color: var(--text-2); }
+.set-tr-todo .set-td { color: var(--text-3); font-weight: var(--fw-regular); }
+.set-tr-skip .set-td { color: var(--text-3); font-weight: var(--fw-regular); }
+
+.set-tr-active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  /* one-sided bar, so this row is square */
+  border-radius: 0;
 }
 
-.set-row .sv .u {
-  font-size: var(--fs-11);
-  color: var(--text-3);
-  font-weight: var(--fw-semibold);
-  margin: 0 1px;
-}
+.set-tr[data-edit-ex] { cursor: pointer; }
 
-.set-row .st {
-  flex: 0 0 44px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.set-row .st .ck {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-pill);
-  border: 0;
-  background: var(--surface-2);
+/* ---- STATUS markers ---- */
+.st-dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: transparent;
+  border-radius: var(--radius-pill);
+  flex: 0 0 auto;
 }
 
-.set-row .st .ck svg { width: 16px; height: 16px; display: block; }
-
-.set-row-done .sv { color: var(--text-2); }
-.set-row-done .sn { color: var(--ok); }
-.set-row-done .st .ck {
+.st-done {
+  width: 18px;
+  height: 18px;
   background: var(--ok);
   color: var(--on-ok);
 }
 
-.set-row-skip .sv { color: var(--text-3); }
+.st-done .icon { width: 12px; height: 12px; }
+
+.st-active {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--accent-bright);
+  background: transparent;
+}
+
+.st-todo {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--surface-3);
+  background: transparent;
+}
+
+.st-skip {
+  width: 18px;
+  height: 18px;
+  position: relative;
+}
+
+.st-skip::before {
+  content: "";
+  position: absolute;
+  inset: 8px 1px auto 1px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: var(--text-3);
+  transform: rotate(-45deg);
+}
+
+/* ---- exercise card header ---- */
+.ex-head-text { min-width: 0; }
+.ex-head-actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+.ex-detail-btn { color: var(--text-3); }
+
+.ex-previous {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-top: 2px;
+}
+
+.ex-previous-value {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ==== アクティブセットブロック ==== */
 .active-set {
@@ -1113,17 +1175,18 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 .card-ex .ex-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .card-ex .ex-title {
-  font-size: var(--fs-17);
-  font-weight: var(--fw-regular);
-  color: var(--text-2);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text);
   margin: 0;
-  line-height: 1.3;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -1143,9 +1206,9 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 }
 
 .card-main .ex-title {
-  font-size: var(--fs-17);
-  font-weight: var(--fw-regular);
-  color: var(--text-2);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
 }
 
 .card-main .vbox:first-child .vb-val {
@@ -1218,7 +1281,6 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
   padding-left: 2px;
 }
 
-.set-row[data-edit-ex] { cursor: pointer; }
 
 /* 完了済みカード */
 .done-card { padding: var(--space-3) var(--space-4); margin-bottom: 8px; }
@@ -2215,7 +2277,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
   vertical-align: -0.125em;
 }
 
-.set-row .st .ck .icon { width: 15px; height: 15px; }
 .btn-primary .icon,
 .seg-opt .icon { width: 18px; height: 18px; vertical-align: -0.2em; }
 
