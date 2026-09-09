@@ -476,133 +476,162 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 
 .compact-section { padding: var(--space-3) var(--space-4); }
 
-/* ==== チップ ==== */
-.chip,
-.status-pill,
-.accessory-chip,
-.suggestion-label,
-.menu-type {
+/* ==========================================================================
+   TOKENS, PILLS AND LABELS
+
+   These five class names used to share a single rule, so a tappable RPE
+   token, a read-only status badge, an accessory tag and an inline lead-in
+   label all rendered identically. They are separate now, one shape each.
+   .menu-type is not emitted anywhere in app.js and has been dropped.
+   ========================================================================== */
+
+/* 1. .chip -- a token the user can tap: RPE, pain, intensity, adoption. */
+.chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 24px;
-  padding: 3px 10px;
+  min-height: 32px;
+  padding: 6px 14px;
   border-radius: var(--radius-pill);
   font-size: var(--fs-13);
   font-weight: var(--fw-semibold);
   line-height: 1.2;
-  border: 1px solid var(--line);
+  border: 0;
   background: var(--surface-2);
   color: var(--text-2);
   white-space: nowrap;
 }
 
-.chip-ok,
-.status-ok {
+.chip-ok {
   background: var(--ok-soft);
-  border-color: var(--ok);
   color: var(--ok);
 }
 
 .chip-max {
   background: var(--max-soft);
-  border-color: var(--max);
   color: var(--max);
 }
 
 .chip-max-fill {
   background: var(--max);
-  border-color: var(--max);
   color: var(--on-max);
 }
 
-.chip-pause,
-.status-low {
+.chip-pause {
   background: var(--surface-3);
-  border-color: var(--line);
   color: var(--text-2);
 }
 
 .chip-outline {
   background: transparent;
-  border-color: var(--line);
+  border: 1px solid var(--line);
   color: var(--text-2);
 }
 
 .chip-adopted {
   background: var(--accent-soft);
-  border-color: transparent;
   color: var(--accent-bright);
-}
-
-.status-caution {
-  background: var(--max-soft);
-  border-color: var(--max);
-  color: var(--max);
-}
-
-.status-danger {
-  background: var(--danger-soft);
-  border-color: var(--danger);
-  color: var(--danger);
 }
 
 /* 強度チップ（色相を使わない） */
 .chip-int-heavy {
   background: var(--text);
-  border-color: var(--text);
   color: var(--bg);
 }
 
 .chip-int-mid {
-  background: transparent;
-  border-color: var(--text-3);
-  color: var(--text-2);
+  background: var(--surface-3);
+  color: var(--text);
 }
 
 .chip-int-light {
-  background: var(--surface-3);
-  border-color: transparent;
+  background: var(--surface-2);
   color: var(--text-2);
 }
 
 /* タップ可能チップ */
 .chip-tap {
-  min-height: 40px;
-  padding: 8px 14px;
+  min-height: 44px;
+  padding: 10px 16px;
   font-size: var(--fs-15);
   cursor: pointer;
 }
 
 .chip-tap.on {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--on-accent);
 }
 
-.chip-tap.on-pause {
-  background: var(--surface-3);
-  border-color: var(--surface-3);
-  color: var(--bg);
-}
-
+.chip-tap.on-pause,
 .chip.pain.active {
-  background: var(--surface-3);
-  border-color: var(--surface-3);
+  background: var(--text-2);
   color: var(--bg);
 }
 
 .chip[data-rpe], .chip[data-pain] {
-  min-height: 38px;
-  padding: 7px 13px;
-  font-size: var(--fs-13);
+  min-height: 44px;
+  padding: 10px 16px;
   cursor: pointer;
 }
 
 .chip.active {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--on-accent);
+}
+
+/* 2. .status-pill -- read-only state. Never tappable, so it is smaller and
+      quieter than a .chip and always carries a role tint. */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  min-width: 52px;
+  padding: 2px 9px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.status-ok { background: var(--ok-soft); color: var(--ok); }
+.status-caution { background: var(--max-soft); color: var(--max); }
+.status-danger { background: var(--danger-soft); color: var(--danger-bright); }
+.status-low { background: var(--surface-2); color: var(--text-3); }
+
+/* 3. .accessory-chip -- a metadata tag on an accessory exercise. Not a pill:
+      a quiet rounded tag that reads as data, not as a control. */
+.accessory-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-regular);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+/* 4. .suggestion-label -- an inline lead-in to a sentence. No plane at all;
+      it is a label, and boxing it made it read as a fifth badge. */
+.suggestion-label {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-bright);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 /* ==== セグメントコントロール ==== */
@@ -1270,26 +1299,20 @@ body.sheet-open .bottom-nav { display: none; }
   margin: 7px 0 9px;
 }
 
-.accessory-chip-slot {
-  color: var(--text-2);
-  border-color: var(--line);
-  background: var(--surface-2);
-}
+.accessory-chip-slot { background: var(--surface-2); color: var(--text-2); }
+.accessory-chip-rpe { background: transparent; color: var(--text-3); padding-inline: 0; }
+.accessory-chip-fatigue { background: var(--surface-3); color: var(--text-2); }
 
-.accessory-chip-rpe {
-  color: var(--text-2);
-  border-color: var(--line);
-  background: transparent;
-}
-
-.accessory-chip-fatigue {
-  color: var(--text-2);
-  border-color: var(--line);
-  background: var(--surface-3);
-}
-
+/* In the editor these tags are tappable, so they take a real touch target. */
 .accessory-form-chips { margin-top: -4px; margin-bottom: 10px; }
-.accessory-form-chips .accessory-chip { cursor: pointer; min-height: 34px; }
+.accessory-form-chips .accessory-chip {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-13);
+  color: var(--text-2);
+}
 
 .accessory-details {
   margin: 4px 0 10px;
@@ -1332,11 +1355,7 @@ body.sheet-open .bottom-nav { display: none; }
   line-height: 1.45;
 }
 
-.suggestion-label {
-  flex: 0 0 auto;
-  font-size: var(--fs-11);
-  color: var(--text-2);
-}
+
 
 /* ==== ログ ==== */
 .log-card-list { display: grid; gap: 9px; }
@@ -1768,10 +1787,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
   white-space: nowrap;
 }
 
-.status-pill {
-  min-width: 44px;
-  text-align: center;
-}
+
 
 .load-warning {
   display: flex;
