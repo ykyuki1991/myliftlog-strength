@@ -2572,6 +2572,59 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 /* The open rotation day. */
 .rotation-day-card.is-current { background: var(--accent-soft); }
 
+/* ==========================================================================
+   MOTION
+   Four cues, no more. Each marks a state change the user caused; nothing
+   animates on its own. All of it is switched off under
+   prefers-reduced-motion, where the state change still lands instantly.
+   ========================================================================== */
+
+/* 1. A completed set folds into the table. */
+@keyframes set-fold-in {
+  from { opacity: 0; transform: translateY(-6px) scaleY(0.86); }
+  to   { opacity: 1; transform: none; }
+}
+
+.set-tr-just-done {
+  animation: set-fold-in 250ms var(--ease-out) both;
+  transform-origin: top center;
+}
+
+/* 2. The weight rolls to its new value. */
+@keyframes num-roll-up {
+  from { opacity: 0; transform: translateY(0.22em); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes num-roll-down {
+  from { opacity: 0; transform: translateY(-0.22em); }
+  to   { opacity: 1; transform: none; }
+}
+
+.stepper.roll-up .stepper-input { animation: num-roll-up 120ms var(--ease-out) both; }
+.stepper.roll-down .stepper-input { animation: num-roll-down 120ms var(--ease-out) both; }
+
+/* 3. The rest ring turning --max is the timer-end cue; it is a colour
+      transition already declared on .rest-ring-prog. */
+
+/* 4. A new PR pops once and settles. */
+@keyframes pr-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+.pr-badge-pop { animation: pr-pop 300ms var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .set-tr-just-done,
+  .stepper.roll-up .stepper-input,
+  .stepper.roll-down .stepper-input,
+  .pr-badge-pop {
+    animation: none !important;
+  }
+}
+
 /* ==== ユーティリティ ==== */
 .hidden { display: none !important; }
 .modal.hidden {

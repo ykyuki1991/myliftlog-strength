@@ -2657,7 +2657,7 @@ function sessionPrSetIndexes(ex) {
   return out;
 }
 
-function renderPrBadge(ex) {
+function renderPrBadge(ex, justSet = false) {
   const record = getExercisePrRecord(ex);
   const prIdx = sessionPrSetIndexes(ex);
   const live = prIdx.length ? parseFloat(ex.sets[prIdx[prIdx.length - 1]].weight) : null;
@@ -2665,7 +2665,7 @@ function renderPrBadge(ex) {
   if (!Number.isFinite(weight)) return '';
   const reps = live != null ? ex.sets[prIdx[prIdx.length - 1]].reps : record?.reps;
   return `
-    <span class="pr-badge ${live != null ? 'pr-badge-new' : ''}" role="img" aria-label="自己ベスト ${fmtW(weight)}キロ${reps ? ` ${reps}回` : ''}">
+    <span class="pr-badge ${live != null ? 'pr-badge-new' : ''}${justSet ? ' pr-badge-pop' : ''}" role="img" aria-label="自己ベスト ${fmtW(weight)}キロ${reps ? ` ${reps}回` : ''}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6"/><path d="M12 13v7"/></svg>
       <span class="micro-label pr-badge-tag">PR</span>
       <span class="pr-badge-value num">${fmtW(weight)}</span>
@@ -3917,6 +3917,32 @@ function bindMenuSheetControls(session) {
 // 今日画面の編集状態（アクティブセットの値ボックス選択）
 let todayEdit = null; // { exIdx, field: 'kg' | 'reps' | 'rpe' }
 
+// 演出は4つだけ。prefers-reduced-motion では全て無効化し、状態変化のみ即時反映する。
+// 触覚も同じ設定に従わせる（動きを減らしたい人に振動だけ残さない）。
+let motionCue = null; // { type: 'setDone' | 'weight' | 'pr', exIdx, setIdx }
+
+function prefersReducedMotion() {
+  try {
+    return typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) { return false; }
+}
+
+function haptic(pattern) {
+  if (prefersReducedMotion()) return;
+  try { if (navigator && 'vibrate' in navigator) navigator.vibrate(pattern); } catch (e) { /* 非対応は無視 */ }
+}
+
+function cueMotion(cue) {
+  motionCue = prefersReducedMotion() ? null : cue;
+}
+
+function consumeMotionCue() {
+  const cue = motionCue;
+  motionCue = null;
+  return cue;
+}
+
 // 強度/役割チップ（状態は色・強度は文字）
 function exerciseRoleChipHtml(ex) {
   const type = String(ex.menuType || '');
@@ -3955,14 +3981,14 @@ function setRowState(set, setIdx, activeIdx) {
   return setIdx === activeIdx ? 'active' : 'todo';
 }
 
-function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false) {
+function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false, cueType = null) {
   const weight = set.weight != null && set.weight !== '' ? fmtW(set.weight) : '—';
   const reps = set.reps != null && set.reps !== '' ? set.reps : '—';
   const editAttr = editExIdx != null
     ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"`
     : ' role="row"';
   return `
-    <div class="set-tr set-tr-${state}"${editAttr}>
+    <div class="set-tr set-tr-${state}${cueType === 'setDone' || cueType === 'pr' ? ' set-tr-just-done' : ''}"${editAttr}>
       <span class="set-td set-td-n num">${setIdx + 1}</span>
       <span class="set-td set-td-w num">${weight}</span>
       <span class="set-td set-td-r num">${reps}</span>
@@ -3970,10 +3996,13 @@ function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false) {
     </div>`;
 }
 
-function renderSetTable(ex, exIdx, activeIdx) {
+function renderSetTable(ex, exIdx, activeIdx, cue = null) {
   const prRows = new Set(sessionPrSetIndexes(ex));
   const rows = ex.sets
-    .map((set, i) => renderSetTableRow(set, i, setRowState(set, i, activeIdx), exIdx, prRows.has(i)))
+    .map((set, i) => renderSetTableRow(
+      set, i, setRowState(set, i, activeIdx), exIdx, prRows.has(i),
+      cue && cue.exIdx === exIdx && cue.setIdx === i ? cue.type : null,
+    ))
     .join('');
   return `
     <div class="set-table" role="table" aria-label="セット履歴">
@@ -4098,11 +4127,12 @@ function openSetEditSheet(exIdx) {
 
 // 進行中の種目カード（アクティブセットブロック入り）
 function renderActiveExerciseCard(ex, exIdx) {
+  const cue = consumeMotionCue();
   const session = store.daySessions[todaySessionKey()];
   const setIdx = firstPendingSetIndex(ex);
   const set = ex.sets[setIdx] || {};
   const totalSets = ex.sets.length;
-  const setTable = renderSetTable(ex, exIdx, setIdx);
+  const setTable = renderSetTable(ex, exIdx, setIdx, cue);
   const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
   const previous = ex.isFourMenuMain ? previousMainSummary(ex, session) : null;
   const prFacts = ex.isFourMenuMain ? getMainPrFacts(ex) : [];
@@ -4125,7 +4155,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         <span class="micro-label">SET ${setIdx + 1} / ${totalSets}</span>
         <span class="micro-label as-prev">${ex.isAccessory && ex.targetRpe ? `TARGET RPE ${ex.targetRpe}` : 'TARGET'}</span>
       </div>
-      <div class="stepper stepper-weight">
+      <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
         <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
         <label class="stepper-value">
           <span class="micro-label stepper-label">WEIGHT (KG)</span>
@@ -4176,7 +4206,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         <span class="micro-label">PREVIOUS</span>
         <span class="ex-previous-value num">${previous?.log ? escapeHtml(previous.text.replace(/^前回\s*/, '')) : '—'}</span>
         ${rpeVal !== '—' ? `<span class="ex-rpe num">${rpeVal}</span>` : ''}
-        ${renderPrBadge(ex)}
+        ${renderPrBadge(ex, cue && cue.type === 'pr' && cue.exIdx === exIdx)}
       </div>
       ${setTable}
       ${activeBlock}
@@ -4414,6 +4444,7 @@ function afterToday() {
         const inc = parseFloat(store.settings.increment) || 2.5;
         const base = parseFloat(set.weight ?? ex.plannedWeight) || 0;
         set.weight = Math.max(0, Math.round((base + dir * inc) * 100) / 100);
+        cueMotion({ type: 'weight', exIdx, dir });
       } else if (field === 'reps') {
         const parsed = parseInt(set.reps, 10);
         // 未入力時はレンジ表記（8〜12等）の上限を初期値にして±する
@@ -4547,12 +4578,20 @@ function afterToday() {
         persistTodaySession(session);
         startRestTimer(ex.restSec, ex.name);
       } else if (action === 'completeSet') {
+        const prBefore = sessionPrSetIndexes(ex).length;
+        const doneIdx = firstPendingSetIndex(ex);
         const result = toggleNextSetCompletion(session, exIdx);
         if (result.ok) {
           todayEdit = null;
           persistTodaySession(session);
-          if (!result.reverted) startRestTimer(ex.restSec, ex.name);
-          else showToast('1セット戻しました');
+          if (!result.reverted) {
+            const gotPr = sessionPrSetIndexes(ex).length > prBefore;
+            cueMotion({ type: gotPr ? 'pr' : 'setDone', exIdx, setIdx: doneIdx });
+            haptic(gotPr ? [40, 40, 120] : 30);
+            startRestTimer(ex.restSec, ex.name);
+          } else {
+            showToast('1セット戻しました');
+          }
           render();
         }
       } else if (action === 'skipSet') {
@@ -5753,7 +5792,7 @@ function syncRestTimer({ persist = true, alert = true } = {}) {
       restState.alertedAt = nowMs();
       if (alert) {
         playBeep();
-        if ('vibrate' in navigator) navigator.vibrate([300, 100, 300]);
+        haptic([80, 60, 80]);
       }
     }
   }
