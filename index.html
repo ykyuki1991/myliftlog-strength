@@ -15,17 +15,6 @@
   <title>MyLiftLog Strength Planner</title>
 </head>
 <body>
-  <!-- レストタイマーバー（動作中のみ表示） -->
-  <div id="restTimer" class="rest-bar hidden">
-    <div class="rest-bar-row">
-      <div class="rest-time-group"><span class="rest-caption">レスト</span><span class="rest-bar-time" id="restTimerDisplay" role="timer">00:00</span></div>
-      <div class="rest-bar-track"><div class="rest-bar-fill" id="restBarFill"></div></div>
-      <details class="timer-options"><summary>調整</summary><div><button id="restMinus30" aria-label="30秒減らす">−30秒</button><button id="restPlus30" aria-label="30秒増やす">＋30秒</button><button id="restReset" aria-label="リセット">↺</button></div></details>
-      <button id="restToggle">停止</button>
-      <button id="restClose">スキップ</button>
-    </div>
-  </div>
-
   <header id="appHeader" class="app-header" data-variant="compact">
     <div class="app-header-inner">
       <div class="hd-text">
@@ -33,6 +22,25 @@
         <h1 class="hd-title" id="hdTitle"></h1>
       </div>
       <div class="hd-actions">
+        <div id="restTimer" class="rest-ring hidden">
+          <button id="restRingBtn" class="rest-ring-btn" aria-label="レストタイマーの操作">
+            <svg class="rest-ring-svg" viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="rest-ring-track" cx="50" cy="50" r="44" pathLength="100" />
+              <circle class="rest-ring-prog" id="restBarFill" cx="50" cy="50" r="44" pathLength="100" />
+            </svg>
+            <span class="rest-ring-inner">
+              <span class="rest-ring-time" id="restTimerDisplay" role="timer">00:00</span>
+              <span class="micro-label rest-ring-caption">REST</span>
+            </span>
+          </button>
+          <div class="rest-pop hidden" id="restPop" role="group" aria-label="レストタイマー">
+            <button id="restToggle">停止</button>
+            <button id="restMinus30" aria-label="30秒減らす">−30秒</button>
+            <button id="restPlus30" aria-label="30秒増やす">＋30秒</button>
+            <button id="restReset" aria-label="リセット">リセット</button>
+            <button id="restClose">スキップ</button>
+          </div>
+        </div>
         <button id="hdOptions" class="hd-icon-btn hidden" aria-label="メニューと調整を開く">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
         </button>

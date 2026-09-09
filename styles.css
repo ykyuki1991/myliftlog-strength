@@ -108,7 +108,6 @@
      for its padding, so the two can never disagree. */
   --header-h: 44px;
   --page-top-space: 12px;
-  --rest-bar-offset: 104px;
 
   --duration-press: 120ms;
   --duration-fast: 160ms;
@@ -371,7 +370,6 @@ input, textarea, select {
 .value-big,
 .value-mid,
 .vbox .vb-val,
-.rest-bar-time,
 .cal-cell,
 .hist-row .h-val,
 .max-current-val {
@@ -403,95 +401,127 @@ input, textarea, select {
   white-space: nowrap;
 }
 
-/* ==== ヘッダー ==== */
-/* ==== レストタイマーバー ==== */
-.rest-bar {
-  position: fixed;
-  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(100%, 640px);
-  z-index: 49;
-  background: var(--surface);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border: 0;
-  border-radius: var(--radius-card) var(--radius-card) 0 0;
-  padding: 12px 16px;
-  box-shadow: var(--shadow-soft);
-}
+/* ==========================================================================
+   REST RING
+   The rest timer was a bar pinned across the bottom of the screen. It is an
+   arc in the header now: stroke-dasharray on a pathLength=100 circle, so the
+   dash offset is literally the percentage remaining. --accent while running,
+   --max in the last 30 seconds and when it fires.
 
-.rest-bar.hidden { display: none; }
-.rest-time-group { display: grid; gap: 4px; }
-.rest-caption { font-size: var(--fs-11); color: var(--text-2); }
-.timer-options { justify-self: end; }
-.timer-options > summary { min-height: 44px; padding: 12px 8px; cursor: pointer; list-style: none; font-size: var(--fs-13); color: var(--text-2); }
-.timer-options > summary::-webkit-details-marker { display: none; }
-.timer-options > div { position: absolute; bottom: 100%; right: 8px; display: flex; padding: 8px; gap: 8px; background: var(--surface-3); border: 0; border-radius: var(--radius-control); box-shadow: var(--shadow); }
-body.keyboard-open .bottom-nav, body.keyboard-open .rest-bar { visibility: hidden; pointer-events: none; }
-body.keyboard-open { padding-bottom: 0; }
-body.sheet-open { overflow: hidden; }
-body.sheet-open .rest-bar { visibility: hidden; }
-
-.rest-bar-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 8px;
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.rest-bar-time {
-  font-size: var(--fs-22);
-  letter-spacing: var(--tracking-tight);
-  font-weight: var(--fw-semibold);
-  color: var(--accent-bright);
-  line-height: 1;
+   It stays visible while the keyboard is open. Hiding the remaining time
+   while the user types the weight -- which is exactly when they are waiting
+   -- was the old bar's worst behaviour.
+   ========================================================================== */
+.rest-ring {
+  position: relative;
   flex: 0 0 auto;
-  min-width: 78px;
+  width: 88px;
+  height: 88px;
+  transition: width var(--duration-normal) var(--ease-out), height var(--duration-normal) var(--ease-out);
 }
 
-.rest-bar-track {
-  grid-row: 2;
-  grid-column: 1 / -1;
-  flex: 1;
-  height: 5px;
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  min-width: 24px;
-}
+.rest-ring.hidden { display: none; }
 
-.rest-bar-fill {
-  height: 100%;
+body[data-header-variant="compact"] .rest-ring { width: 40px; height: 40px; }
+
+.rest-ring-btn {
+  position: relative;
+  display: block;
   width: 100%;
-  background: var(--accent);
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
   border-radius: var(--radius-pill);
-  transition: width 0.4s linear;
 }
 
-.rest-bar button {
-  flex: 0 0 auto;
+.rest-ring-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.rest-ring-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 8;
+}
+
+.rest-ring-prog {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--duration-normal) linear, stroke var(--duration-fast) ease;
+}
+
+.rest-ring.warn .rest-ring-prog,
+.rest-ring.alarm .rest-ring-prog { stroke: var(--max); }
+.rest-ring.warn .rest-ring-time,
+.rest-ring.alarm .rest-ring-time { color: var(--max); }
+
+.rest-ring-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.rest-ring-time {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-num);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  color: var(--accent-bright);
+  transition: font-size var(--duration-normal) var(--ease-out);
+}
+
+.rest-ring-caption { text-align: center; }
+
+body[data-header-variant="compact"] .rest-ring-time { font-size: var(--fs-11); }
+body[data-header-variant="compact"] .rest-ring-caption { display: none; }
+
+/* Popover: pause/resume, the two adjustments and skip, on one 44px target. */
+.rest-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2;
+  display: grid;
+  grid-auto-flow: row;
+  gap: 4px;
+  min-width: 148px;
+  padding: var(--space-2);
+  background: var(--surface-3);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
+}
+
+.rest-pop.hidden { display: none; }
+
+.rest-pop button {
+  width: 100%;
   min-height: 44px;
-  min-width: 44px;
-  padding: 6px 9px;
+  padding: 8px 12px;
   font-size: var(--fs-13);
   font-weight: var(--fw-semibold);
   background: var(--surface-2);
-  color: var(--text-2);
+  color: var(--text);
   border-radius: var(--radius-control);
   white-space: nowrap;
 }
 
-.rest-bar #restClose {
-  color: var(--text);
-  background: var(--surface-3);
-}
-
-.rest-bar.alarm { background: var(--max-soft); }
-.rest-bar.alarm .rest-bar-time { color: var(--max); }
-.rest-bar.alarm .rest-bar-fill { background: var(--max); }
+.rest-pop #restToggle { background: var(--accent); color: var(--on-accent); }
+.rest-pop #restClose { background: transparent; color: var(--text-2); }
 
 /* 旧フローティングタイマー互換 */
 .rest-timer.hidden { display: none; }
@@ -505,9 +535,8 @@ body.sheet-open .rest-bar { visibility: hidden; }
   overflow-x: hidden;
 }
 
-body.timer-visible #main {
-  padding-bottom: calc(22px + var(--rest-bar-offset));
-}
+/* The ring lives in the header, so the page no longer reserves bar space. */
+body.timer-visible #main { padding-bottom: 22px; }
 
 .sec-label {
   font-size: var(--fs-13);
@@ -1052,7 +1081,6 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 .set-tr {
   min-height: 44px;
   border-bottom: 1px solid var(--surface-2);
-  border-radius: var(--radius-control);
 }
 
 .set-tr:last-child { border-bottom: 0; }
@@ -1078,7 +1106,7 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 .set-tr-active {
   background: var(--accent-soft);
   border-left-color: var(--accent);
-  /* one-sided bar, so this row is square */
+  /* one-sided bar, so this row stays square */
   border-radius: 0;
 }
 
@@ -1792,7 +1820,7 @@ body.sheet-open .bottom-nav { display: none; }
 .rpe-editor button { min-height: 44px; width: 100%; justify-content: center; }
 button.chip, .tab { min-height: 44px; }
 input, select, textarea { scroll-margin-block: 96px; }
-html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 24px); }
+html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 
 .tabs {
   display: flex;
@@ -2465,11 +2493,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 @media (max-width: 430px) {
   #main { padding-left: 12px; padding-right: 12px; }
   .card { padding: 20px 16px; }
-  .rest-bar { padding: 7px 10px; }
-  .rest-bar-row { gap: 8px; }
-  .rest-bar-time { min-width: 62px; }
-  .rest-bar-track { min-width: 18px; }
-  .rest-bar button { min-width: 42px; padding: 6px 7px; }
   .acc-edit-header,
   .acc-edit-row {
     grid-template-columns: minmax(0, 1fr) 70px 70px 56px;

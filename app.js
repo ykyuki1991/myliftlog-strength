@@ -5587,6 +5587,7 @@ function setRestTimerVisibility(visible) {
   const timer = document.getElementById('restTimer');
   if (!timer) return;
   timer.classList.toggle('hidden', !visible);
+  if (!visible) toggleRestPopover(false);
   if (document.body?.classList) document.body.classList.toggle('timer-visible', !!visible);
 }
 
@@ -5594,6 +5595,13 @@ function setRestTimerAlarm(alarm) {
   const timer = document.getElementById('restTimer');
   if (!timer) return;
   timer.classList.toggle('alarm', !!alarm);
+}
+
+function toggleRestPopover(force) {
+  const pop = document.getElementById('restPop');
+  if (!pop?.classList) return;
+  const next = force != null ? !force : !pop.classList.contains('hidden');
+  pop.classList.toggle('hidden', next);
 }
 
 function setRestToggleText() {
@@ -5674,13 +5682,17 @@ function updateRestDisplay() {
   if (!display) return;
   display.textContent =
     `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  // 進捗バー（要素がある実DOMでのみ更新）
+  // 残量はリングの円弧で表す。pathLength=100 なので dashoffset は残り%そのもの。
   const fill = document.getElementById('restBarFill');
   if (fill && fill.style) {
     const total = restState.restDurationSec || 0;
     const pct = total > 0 ? Math.max(0, Math.min(100, (restState.remaining / total) * 100)) : 0;
-    fill.style.width = `${pct}%`;
+    fill.style.strokeDasharray = '100';
+    fill.style.strokeDashoffset = String(100 - pct);
   }
+  // 残り30秒で --max に切り替える
+  const ring = document.getElementById('restTimer');
+  if (ring?.classList) ring.classList.toggle('warn', restState.remaining > 0 && restState.remaining <= 30);
 }
 
 function playBeep() {
@@ -5734,8 +5746,19 @@ function setupRestTimerControls() {
     resetRestTimer();
   };
   document.getElementById('restClose').onclick = () => {
+    toggleRestPopover(false);
     closeRestTimer();
   };
+  // リングタップでポップオーバー。停止/再開・±30秒・スキップを1つの44pxターゲットに集約する。
+  const ringBtn = document.getElementById('restRingBtn');
+  if (ringBtn) ringBtn.onclick = () => toggleRestPopover();
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('click', (event) => {
+      const ring = document.getElementById('restTimer');
+      if (!ring || !event?.target?.closest) return;
+      if (!ring.contains(event.target)) toggleRestPopover(false);
+    });
+  }
 }
 
 function adjustRestTimer(deltaSec) {
