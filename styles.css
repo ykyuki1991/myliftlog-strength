@@ -316,8 +316,9 @@ body.timer-visible #main {
   border-radius: var(--radius-control);
 }
 
-.section { padding: 20px 0; margin-bottom: 16px; min-width: 0; }
+.section { padding: 20px 0; margin-bottom: 16px; min-width: 0; border-bottom: 1px solid var(--surface-2); }
 .section:first-child { padding-top: 4px; }
+.section:last-child { border-bottom: 0; }
 
 .card.active {
   background: var(--surface);
@@ -1669,9 +1670,17 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 
 .ui-details {
   border: 0;
-  border-radius: var(--radius-control);
-  background: var(--surface-2);
+  border-radius: var(--radius-card);
+  background: var(--surface);
   margin: 8px 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.card .ui-details,
+.exercise-card .ui-details,
+.four-plan-card .ui-details {
+  background: var(--surface-2);
+  border-radius: var(--radius-control);
   padding: var(--space-2) var(--space-3);
 }
 
@@ -1980,14 +1989,18 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 .btn-primary .icon,
 .seg-opt .icon { width: 18px; height: 18px; vertical-align: -0.2em; }
 
-/* The set editor: was a flex row carrying flex/min-height/text-align inline. */
+/* The set editor: was a flex row carrying flex/min-height/text-align inline.
+   The three state buttons take their own row; at 320px they cannot share
+   one with two number fields without clipping their labels. */
 .set-edit-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.6fr);
+  grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-4);
 }
+
+.set-edit-row .seg { grid-column: 1 / -1; }
 
 .set-edit-row .sn {
   text-align: center;
@@ -2004,7 +2017,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
   font-variant-numeric: tabular-nums;
 }
 
-.set-edit-row .seg-opt { padding-inline: 2px; }
+.set-edit-row .seg-opt { padding-inline: 4px; white-space: nowrap; }
 
 /* Typographic utilities on the fixed scale. */
 .text-fine { font-size: var(--fs-11); }
