@@ -103,6 +103,10 @@
   --space-5: 20px;
   --space-6: 24px;
   --control-height: 48px;
+  /* Header height. Compact everywhere; the today screen expands to the
+     editorial variant while the page is at the top. body reads the same token
+     for its padding, so the two can never disagree. */
+  --header-h: 44px;
   --page-top-space: 12px;
   --rest-bar-offset: 104px;
 
@@ -167,10 +171,132 @@ html, body {
 }
 
 body {
+  padding-top: calc(var(--header-h) + env(safe-area-inset-top));
   padding-bottom: calc(var(--nav-height) + 24px + env(safe-area-inset-bottom));
   user-select: none;
   -webkit-user-select: none;
+  transition: padding-top var(--duration-normal) var(--ease-out);
 }
+
+body[data-header-variant="editorial"] { --header-h: 96px; }
+
+/* ==========================================================================
+   COMMON HEADER
+   Four screens, one header. The today screen expands it: an uppercase micro
+   label over the body part, with the rest ring and the options control on the
+   right. Scrolling interpolates the height back to 44px -- height only, no
+   transform, so the text never blurs mid-animation.
+   ========================================================================== */
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  height: calc(var(--header-h) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 16px 0;
+  background: var(--bg);
+  transition: height var(--duration-normal) var(--ease-out);
+}
+
+.app-header-inner {
+  height: var(--header-h);
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hd-text { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+
+.hd-eyebrow {
+  overflow: hidden;
+  opacity: 1;
+  max-height: 16px;
+  transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) ease;
+}
+
+body[data-header-variant="compact"] .hd-eyebrow { max-height: 0; opacity: 0; }
+
+.hd-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-jp);
+  font-size: var(--fs-34);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.15;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: font-size var(--duration-normal) var(--ease-out);
+}
+
+body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
+.app-header[data-screen="today"] .hd-title { cursor: pointer; }
+
+.hd-actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+
+.hd-icon-btn {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: var(--radius-pill);
+}
+
+.hd-icon-btn svg { width: 22px; height: 22px; display: block; }
+
+/* ==========================================================================
+   MENU SHEET
+   The five-way picker used to sit at the top of the page, where it was the
+   largest blue area on screen for a control touched once a day. It is a
+   vertical list in a sheet now -- five equal columns cannot hold
+   「カスタム」 at 375px anyway -- and selection is a 3px bar plus a
+   check rather than a fill.
+   ========================================================================== */
+.sheet-group-label { margin: var(--space-3) 0 var(--space-2); }
+.sheet-group-label:first-child { margin-top: 0; }
+
+.menu-list { display: grid; gap: 2px; }
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 52px;
+  padding: 10px var(--space-3);
+  background: var(--surface);
+  color: var(--text-2);
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  text-align: left;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-regular);
+}
+
+.menu-row.on {
+  border-left-color: var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: var(--fw-semibold);
+}
+
+.menu-row-name { flex: 1; min-width: 0; }
+.menu-row-note { color: var(--text-3); }
+.menu-row-check { flex: 0 0 20px; color: var(--accent-bright); }
+.menu-row-check .icon { width: 20px; height: 20px; }
 
 input, textarea, select {
   user-select: text;
@@ -309,7 +435,7 @@ body.sheet-open .rest-bar { visibility: hidden; }
 
 /* ==== メイン ==== */
 #main {
-  padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px;
+  padding: var(--page-top-space) 16px 22px;
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
@@ -730,32 +856,13 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
   padding: 5px 4px 0;
 }
 
-.four-menu-picker {
-  padding-bottom: 0;
-  margin-bottom: var(--space-6);
-}
 
-.four-menu-picker .seg { margin: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--surface-2); border: 0; }
-.four-menu-picker .seg-opt { min-width: 0; padding-inline: 2px; font-size: var(--fs-13); }
 .custom-menu-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: var(--fs-13); }
 .custom-menu-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .custom-menu-options label { display: flex; align-items: center; gap: 8px; min-height: 48px; }
 .custom-menu-options input { width: 20px; height: 20px; }
 
-.four-menu-picker .seg-opt {
-  min-height: 44px;
-  padding-inline: 2px;
-}
 
-.back-lift-switch {
-  width: min(100%, 420px);
-  margin: 0 0 var(--space-3);
-}
-
-.back-lift-switch .seg-opt {
-  min-height: 44px;
-  white-space: nowrap;
-}
 
 /* ==== セット行 ==== */
 .set-row {
@@ -2129,7 +2236,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 
 /* ==== レスポンシブ ==== */
 @media (min-width: 768px) {
-  #main { padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 24px 22px; }
+  #main { padding: var(--page-top-space) 24px 22px; }
   #main[data-screen="block"] { max-width: 1000px; }
   .plan-grid { grid-template-columns: 1fr 1fr; }
 }

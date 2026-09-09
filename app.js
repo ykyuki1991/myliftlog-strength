@@ -3681,16 +3681,151 @@ function render() {
   updateHeader();
 }
 
-function updateHeader() {
+// 4画面共通ヘッダー。今日画面だけエディトリアル版に広がり、スクロールで44pxに縮む。
+const SCREEN_TITLES = { today: '今日', log: 'ログ', block: '計画', settings: '設定' };
+
+function todayHeaderTitle(session) {
   const s = store.currentState;
-  const el = document.getElementById('headerStatus');
-  if (!el) return;
   if (isFourMenuMode()) {
-    el.textContent = '';
+    const key = session?.selectedSplitKey || session?.scheduledSplitKey || s.nextMenuKey;
+    if (key === 'custom') {
+      const parts = (session?.customMenuKeys || []).map(fourMenuLabel).filter(Boolean);
+      return parts.length ? parts.join('・') : 'カスタム';
+    }
+    return fourMenuLabel(key) || '今日';
+  }
+  return `Day${s.day}`;
+}
+
+function updateHeader() {
+  const header = document.getElementById('appHeader');
+  const eyebrow = document.getElementById('hdEyebrow');
+  const title = document.getElementById('hdTitle');
+  const options = document.getElementById('hdOptions');
+  if (!header || !eyebrow || !title) return;
+
+  const isToday = currentScreen === 'today';
+  header.dataset.screen = currentScreen;
+  if (options?.classList) options.classList.toggle('hidden', !isToday);
+
+  if (isToday) {
+    const session = getOrCreateTodaySession({ persist: false });
+    const s = store.currentState;
+    eyebrow.textContent = 'WORKOUT';
+    title.textContent = todayHeaderTitle(session);
+    title.title = isFourMenuMode() ? '' : `B${s.block} / R${s.rotation} / Day${s.day}`;
+    setHeaderVariant((window.scrollY || 0) > 24 ? 'compact' : 'editorial');
+  } else {
+    eyebrow.textContent = '';
+    title.textContent = SCREEN_TITLES[currentScreen] || '';
+    setHeaderVariant('compact');
+  }
+}
+
+function setHeaderVariant(variant) {
+  const header = document.getElementById('appHeader');
+  if (header?.dataset) header.dataset.variant = variant;
+  if (document.body?.dataset) document.body.dataset.headerVariant = variant;
+}
+
+// スクロールでエディトリアル版 → コンパクト版。高さの補間のみで transform は使わない。
+function setupHeaderScroll() {
+  const header = document.getElementById('appHeader');
+  if (!header || typeof window.addEventListener !== 'function') return;
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(() => {
+      ticking = false;
+      if (currentScreen !== 'today') return;
+      setHeaderVariant((window.scrollY || 0) > 24 ? 'compact' : 'editorial');
+    });
+  }, { passive: true });
+}
+
+// ===== メニュー切替・調整シート =====
+// 5分割セグメントを本文トップから外し、ここに集約する。
+// 選択中は塗りではなく左端3pxバー+チェックで示す（大面積の青塗りを画面から消すため）。
+function menuSheetRowsHtml(session) {
+  const scheduled = session.scheduledSplitKey || store.currentState.nextMenuKey;
+  const selected = session.selectedSplitKey || scheduled;
+  return SELECTABLE_MENUS.map(key => `
+    <button class="menu-row ${selected === key ? 'on' : ''}" role="menuitemradio" aria-checked="${selected === key}" ${session.completed ? 'disabled' : ''} data-four-menu-select="${key}">
+      <span class="menu-row-name">${fourMenuLabel(key)}</span>
+      ${key === scheduled ? '<span class="micro-label menu-row-note">SCHEDULED</span>' : ''}
+      <span class="menu-row-check" aria-hidden="true">${selected === key ? ICON_CHECK : ''}</span>
+    </button>
+  `).join('');
+}
+
+function backLiftRowsHtml(session) {
+  if (normalizeFourMenuKey(session.selectedSplitKey || session.performedSplitKey) !== 'back') return '';
+  normalizeBackSessionState(session);
+  const selected = normalizeBackLiftKey(session.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState());
+  const row = (key, label) => `
+    <button class="menu-row ${selected === key ? 'on' : ''}" role="menuitemradio" aria-checked="${selected === key}" data-back-lift-select="${key}">
+      <span class="menu-row-name">${label}</span>
+      <span class="menu-row-check" aria-hidden="true">${selected === key ? ICON_CHECK : ''}</span>
+    </button>`;
+  return `
+    <div class="micro-label sheet-group-label">BACK MAIN LIFT</div>
+    <div class="menu-list">${row('halfDead', 'ハーフデッド')}${row('floorDead', 'デッドリフト')}</div>`;
+}
+
+function openMenuSheet() {
+  const session = getOrCreateTodaySession({ persist: false });
+  if (!session?.fourMenuRotation) {
+    openModal('調整', `${renderR4AdjustmentPanel(session)}${renderDeloadMaxTestPanel(session)}` || '<div class="muted">調整項目はありません</div>', () => bindMenuSheetControls(session));
     return;
   }
-  el.innerHTML =
-    `B${s.block} / <span class="${Number(s.rotation) === 4 ? 'pos-r4' : ''}">R${s.rotation}</span> / Day${s.day}`;
+  const selected = session.selectedSplitKey || session.scheduledSplitKey || store.currentState.nextMenuKey;
+  openModal('メニューと調整', `
+    <div class="micro-label sheet-group-label">TODAY'S MENU</div>
+    <div class="menu-list" role="menu">${menuSheetRowsHtml(session)}</div>
+    ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '種目を追加'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>組み合わせを編集</button></div>` : ''}
+    ${backLiftRowsHtml(session)}
+    ${renderR4AdjustmentPanel(session)}
+    ${renderDeloadMaxTestPanel(session)}
+  `, () => bindMenuSheetControls(session));
+}
+
+// メニュー選択系の束縛。本文から出したのでシートのマウント時に張る。
+function bindMenuSheetControls(session) {
+  document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
+    btn.onclick = () => {
+      if (btn.dataset.fourMenuSelect === session.selectedSplitKey) { closeModal(); return; }
+      if (!selectFourMenuForToday(btn.dataset.fourMenuSelect)) { showToast('メニューを保存できませんでした'); return; }
+      closeModal();
+      render();
+    };
+  });
+
+  document.querySelectorAll('[data-back-lift-select]').forEach(btn => {
+    btn.onclick = () => {
+      if (switchBackLiftVariant(session, btn.dataset.backLiftSelect)) {
+        todayEdit = null;
+        closeModal();
+        render();
+      }
+    };
+  });
+
+  const customEditor = document.getElementById('editCustomMenu');
+  if (customEditor) customEditor.onclick = () => openModal('組み合わせ', `
+    <div class="custom-menu-options">${FOUR_MENU_ORDER.map(key => `<label><input type="checkbox" data-custom-menu="${key}" ${(session.customMenuKeys || []).includes(key) ? 'checked' : ''}>${fourMenuLabel(key)}</label>`).join('')}</div>
+    <button class="btn-primary" id="saveCustomMenu">この組み合わせで記録</button>
+  `, () => {
+    document.getElementById('saveCustomMenu').onclick = () => {
+      const keys = [...document.querySelectorAll('[data-custom-menu]:checked')].map(el => el.dataset.customMenu);
+      if (!keys.length) { showToast('メニューを1つ以上選んでください'); return; }
+      const removed = session.exercises.filter(ex => !keys.includes(ex.fourMenuKey));
+      if (removed.some(ex => ex.sets?.some(set => set.done || set.skipped) || ex.note || ex.rpe !== '未入力') && !confirm('入力済みの種目が組み合わせから外れます。変更しますか？')) return;
+      if (!selectFourMenuForToday('custom', { customMenuKeys: keys })) { showToast('保存できませんでした'); return; }
+      store.settings.customMenuKeys = keys;
+      saveStore(); closeModal(); render();
+    };
+  });
 }
 
 // ===== 今日のトレーニング画面 =====
@@ -3971,8 +4106,6 @@ function renderCompletedExerciseCard(ex, exIdx) {
 function renderToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const s = store.currentState;
-  const fourMenuPicker = renderFourMenuTodayPicker(session);
-  const backLiftPicker = renderBackLiftVariantSwitch(session);
   const restoredDraft = session.status === 'inProgress' && !session.completed && session.date < todayStr();
   const draftBanner = restoredDraft ? `
     <div class="card flat incomplete-session-banner">
@@ -3987,8 +4120,6 @@ function renderToday() {
 
   if (session.isRest) {
     return `
-      ${fourMenuPicker}
-      ${backLiftPicker}
       ${draftBanner}
       <div class="rest-day-banner">
         <div class="big">今日は休み</div>
@@ -4051,8 +4182,6 @@ function renderToday() {
     : '';
 
   return `
-    ${fourMenuPicker}
-    ${backLiftPicker}
     ${draftBanner}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
@@ -4068,74 +4197,11 @@ function renderToday() {
   `;
 }
 
-function renderFourMenuTodayPicker(session) {
-  if (!session?.fourMenuRotation) return '';
-  const scheduled = session.scheduledSplitKey || store.currentState.nextMenuKey;
-  const selected = session.selectedSplitKey || scheduled;
-  const buttons = SELECTABLE_MENUS.map(key => `
-    <button class="seg-opt ${selected === key ? 'on' : ''}" aria-pressed="${selected === key}" ${session.completed ? 'disabled' : ''} data-four-menu-select="${key}">
-      ${fourMenuLabel(key)}
-    </button>
-  `).join('');
-  return `
-    <div class="four-menu-picker" aria-label="今日のメニュー">
-      <div class="seg">${buttons}</div>
-      ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '種目を追加'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>組み合わせを編集</button></div>` : ''}
-    </div>
-  `;
-}
-
-function renderBackLiftVariantSwitch(session) {
-  if (!session?.fourMenuRotation || normalizeFourMenuKey(session.selectedSplitKey || session.performedSplitKey) !== 'back') return '';
-  normalizeBackSessionState(session);
-  const selected = normalizeBackLiftKey(session.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState());
-  return `
-    <div class="back-lift-switch" aria-label="背中メイン種目">
-      <div class="seg">
-        <button class="seg-opt ${selected === 'halfDead' ? 'on' : ''}" data-back-lift-select="halfDead">ハーフデッド</button>
-        <button class="seg-opt ${selected === 'floorDead' ? 'on' : ''}" data-back-lift-select="floorDead">デッドリフト</button>
-      </div>
-    </div>
-  `;
-}
-
 
 function afterToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const viewLog = document.getElementById('btnViewWorkoutLog');
   if (viewLog) viewLog.onclick = () => navigate('log');
-
-  document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
-    btn.onclick = () => {
-      if (btn.dataset.fourMenuSelect === session.selectedSplitKey) return;
-      if (!selectFourMenuForToday(btn.dataset.fourMenuSelect)) { showToast('メニューを保存できませんでした'); return; }
-      render();
-    };
-  });
-  const customEditor = document.getElementById('editCustomMenu');
-  if (customEditor) customEditor.onclick = () => openModal('組み合わせ', `
-    <div class="custom-menu-options">${FOUR_MENU_ORDER.map(key => `<label><input type="checkbox" data-custom-menu="${key}" ${(session.customMenuKeys || []).includes(key) ? 'checked' : ''}>${fourMenuLabel(key)}</label>`).join('')}</div>
-    <button class="btn-primary" id="saveCustomMenu">この組み合わせで記録</button>
-  `, () => {
-    document.getElementById('saveCustomMenu').onclick = () => {
-      const keys = [...document.querySelectorAll('[data-custom-menu]:checked')].map(el => el.dataset.customMenu);
-      if (!keys.length) { showToast('メニューを1つ以上選んでください'); return; }
-      const removed = session.exercises.filter(ex => !keys.includes(ex.fourMenuKey));
-      if (removed.some(ex => ex.sets?.some(set => set.done || set.skipped) || ex.note || ex.rpe !== '未入力') && !confirm('入力済みの種目が組み合わせから外れます。変更しますか？')) return;
-      if (!selectFourMenuForToday('custom', { customMenuKeys: keys })) { showToast('保存できませんでした'); return; }
-      store.settings.customMenuKeys = keys;
-      saveStore(); closeModal(); render();
-    };
-  });
-
-  document.querySelectorAll('[data-back-lift-select]').forEach(btn => {
-    btn.onclick = () => {
-      if (switchBackLiftVariant(session, btn.dataset.backLiftSelect)) {
-        todayEdit = null;
-        render();
-      }
-    };
-  });
 
   const continueDraft = document.getElementById('btnContinueDraft');
   if (continueDraft) continueDraft.onclick = () => showToast('未完了トレーニングを継続します');
@@ -7369,6 +7435,11 @@ function init() {
     if (e.target.id === 'modal') closeModal();
   });
   setupRestTimerControls();
+  setupHeaderScroll();
+  const headerOptions = document.getElementById('hdOptions');
+  if (headerOptions) headerOptions.onclick = openMenuSheet;
+  const headerTitle = document.getElementById('hdTitle');
+  if (headerTitle) headerTitle.onclick = () => { if (currentScreen === 'today') openMenuSheet(); };
   setupRestTimerLifecycleEvents();
   restoreRestTimer();
 
@@ -7530,7 +7601,9 @@ if (typeof window !== 'undefined') {
     getSessionBackLiftKey,
     deriveLastCompletedBackLiftKey,
     switchBackLiftVariant,
-    renderBackLiftVariantSwitch,
+    backLiftRowsHtml,
+    menuSheetRowsHtml,
+    todayHeaderTitle,
     getFourMenuMainPlan,
     getMainProgressionIncrement,
     countConsecutiveMainMisses,

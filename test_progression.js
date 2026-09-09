@@ -1517,9 +1517,14 @@ function testExistingStoreMigratesToFourMenuMode() {
   assert.ok(store.settings.fourMenuAccessorySlots);
   assert.ok(store.settings.fourMenuAccessorySlots.legs.every(slot => typeof slot.reps === 'number'));
   const html = api.renderToday();
-  assert.ok(html.includes('肩・腕'));
-  assert.strictEqual((html.match(/data-four-menu-select=/g) || []).length, 5);
-  assert.ok(!html.includes('data-four-menu-select="rest"'));
+  // メニューピッカーは本文からヘッダーのシートへ移動した。
+  // 「5つ選択できて rest は出ない」という契約はシート側で検証する。
+  const session = api.getOrCreateTodaySession({ persist: false });
+  assert.strictEqual(api.todayHeaderTitle(session), '肩・腕');
+  const menuHtml = api.menuSheetRowsHtml(session);
+  assert.strictEqual((menuHtml.match(/data-four-menu-select=/g) || []).length, 5);
+  assert.ok(!menuHtml.includes('data-four-menu-select="rest"'));
+  assert.ok(!html.includes('data-four-menu-select='), 'picker must not render in the page body');
   assert.ok(!html.includes('次のメニュー'));
   assert.ok(!html.includes('<h2 class="screen-title">今日</h2>'));
   assert.ok(!html.includes('変更中:'));
@@ -1528,7 +1533,9 @@ function testExistingStoreMigratesToFourMenuMode() {
   assert.ok(!api.renderBlock().includes('<h2 class="screen-title">計画</h2>'));
   assert.ok(!api.renderSettings().includes('<h2 class="screen-title">設定</h2>'));
   api.updateHeader();
-  assert.strictEqual(isolated.elements.headerStatus.textContent, '');
+  // ヘッダーは #headerStatus の「B/R/Day」表示をやめ、部位名を出す共通ヘッダーになった。
+  assert.ok(!/B\d+ \/ R\d+ \/ Day\d+/.test(isolated.elements.hdTitle.textContent || ''),
+    'four-menu header must not fall back to legacy progress metadata');
   const logHtml = api.renderDailyLogView();
   assert.ok(logHtml.includes('B2 / R3 / Day5'), 'legacy log view remains readable');
 }
@@ -1714,7 +1721,9 @@ function testFourMenuSessionSelectionAndDeadliftAlternation() {
   const initialHtml = api.renderToday();
   assert.strictEqual(Object.keys(store.daySessions).length, 0, 'opening today must not create an empty session');
   assert.strictEqual(store.logs.length, 0, 'opening today must not create a workout or rest log');
-  assert.strictEqual((initialHtml.match(/data-four-menu-select=/g) || []).length, 5);
+  // ピッカーは本文からシートへ移動。5択であることはシート側で検証する。
+  assert.strictEqual((api.menuSheetRowsHtml({ fourMenuRotation: true }).match(/data-four-menu-select=/g) || []).length, 5);
+  assert.ok(!initialHtml.includes('data-four-menu-select='), 'picker must not render in the page body');
   assert.ok(api.selectFourMenuForToday('shoulder_arm'));
   let session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
   assert.ok(session);
@@ -1754,9 +1763,9 @@ function testManualBackLiftVariantSwitchAndPersistence() {
   const sessionId = session.sessionId;
   const workoutDate = session.workoutDate;
   assert.strictEqual(session.selectedBackLiftKey, 'halfDead');
-  assert.ok(api.renderBackLiftVariantSwitch(session).includes('data-back-lift-select="halfDead"'));
-  assert.ok(api.renderBackLiftVariantSwitch(session).includes('デッドリフト'));
-  assert.strictEqual(api.renderBackLiftVariantSwitch({ fourMenuRotation: true, selectedSplitKey: 'chest' }), '');
+  assert.ok(api.backLiftRowsHtml(session).includes('data-back-lift-select="halfDead"'));
+  assert.ok(api.backLiftRowsHtml(session).includes('デッドリフト'));
+  assert.strictEqual(api.backLiftRowsHtml({ fourMenuRotation: true, selectedSplitKey: 'chest' }), '');
 
   const logsBeforeSwitch = store.logs.length;
   const emaxBeforeSwitch = store.estimatedMaxHistory.length;
@@ -1953,7 +1962,9 @@ function testFourMenuAccessoryTemplatesAndPlanActions() {
   const api = isolated.api;
   const store = api.getStore();
   api.updateHeader();
-  assert.strictEqual(isolated.elements.headerStatus.textContent, '');
+  // ヘッダーは #headerStatus の「B/R/Day」表示をやめ、部位名を出す共通ヘッダーになった。
+  assert.ok(!/B\d+ \/ R\d+ \/ Day\d+/.test(isolated.elements.hdTitle.textContent || ''),
+    'four-menu header must not fall back to legacy progress metadata');
   const initial = api.getFourMenuAccessorySlots('legs');
   assert.ok(initial.length >= 3);
   assert.ok(initial.every(slot => typeof slot.reps === 'number'), 'four-menu planned reps must be numeric');

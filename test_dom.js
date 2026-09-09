@@ -253,12 +253,14 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(html.includes('role="dialog"'));
   assert.ok(html.includes('aria-modal="true"'));
   assert.ok(html.includes('aria-live="polite"'));
-  assert.ok(!html.includes('class="app-header"'));
-  assert.ok(!html.includes('class="app-title"'));
+  // 第2段階で共通ヘッダーを追加した。第1段階の「ヘッダーを持たない」契約はここで反転する。
+  assert.ok(html.includes('class="app-header"'), 'common header must exist');
+  assert.ok(html.includes('id="hdTitle"'), 'header must expose a title node');
+  assert.ok(css.includes('padding-top: calc(var(--header-h) + env(safe-area-inset-top))'), 'header must reserve safe-area-inset-top');
   assert.ok(css.includes('bottom: calc(var(--nav-height) + env(safe-area-inset-bottom))'), 'timer must sit above navigation');
   const bodyRule = css.match(/body\s*\{[^}]*\}/)?.[0] || '';
   assert.ok(!bodyRule.includes('safe-area-inset-top'), 'body must not add top safe area');
-  assert.ok(css.includes('padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px'));
+  assert.ok(css.includes('padding: var(--page-top-space) 16px 22px'), 'safe-area is reserved once, by body');
   assert.ok(css.includes('body.timer-visible #main'));
   assert.ok(css.includes('var(--rest-bar-offset)'));
   assert.ok(html.includes('20260909-precision-today'));
