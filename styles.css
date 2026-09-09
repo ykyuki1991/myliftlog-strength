@@ -1,6 +1,7 @@
 /* ==========================================================================
    MyLiftLog Strength Planner - styles.css
-   Quiet Performance: neutral surfaces, direct recording, semantic color.
+   Precision Strength: three planes, hue-locked neutrals, exclusive role colors.
+   See DESIGN.md for the numeric constraints these tokens have to satisfy.
    ========================================================================== */
 
 * {
