@@ -257,6 +257,70 @@ body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
 .hd-icon-btn svg { width: 22px; height: 22px; display: block; }
 
 /* ==========================================================================
+   SESSION METRICS
+   Three chips under the editorial header. Label above, number below, both
+   left-aligned. No DURATION: a draft can span a night, so elapsed time is
+   not a measurement of anything (DESIGN.md principle 5).
+   ========================================================================== */
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.metric-chip {
+  min-width: 0;
+  padding: var(--space-2) 10px;
+  background: var(--surface);
+  border-radius: var(--radius-control);
+}
+
+.metric-value {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-unit {
+  font-size: var(--fs-11);
+  color: var(--text-3);
+  margin-left: 2px;
+}
+
+/* One-line banner for something that changes what the user does today.
+   The panel itself lives in the options sheet; this is only the pointer. */
+.day-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 48px;
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-3);
+  background: var(--max-soft);
+  border: 0;
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+
+.day-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-regular);
+  color: var(--text);
+  white-space: normal;
+}
+
+.day-banner-go { flex: 0 0 auto; color: var(--text-3); }
+
+/* ==========================================================================
    MENU SHEET
    The five-way picker used to sit at the top of the page, where it was the
    largest blue area on screen for a control touched once a day. It is a

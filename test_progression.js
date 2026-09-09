@@ -417,15 +417,21 @@ function testDeloadAccessoryAndMaxTestTiming() {
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   let html = isolatedApi.renderToday();
-  assert.ok(html.includes('MAX測定'));
-  assert.ok(html.includes('data-mode="trueOneRm"'), 'MAX測定する/しないの2択（する）');
-  assert.ok(html.includes('data-mode="normal"'), 'MAX測定する/しないの2択（しない）');
+  // パネル本体はオプションシートへ移動。本文には「今日がMAX測定日」の1行バナーだけ残す。
+  assert.ok(html.includes('MAX測定'), '本文にMAX測定日のバナーが残る');
+  assert.ok(html.includes('btnOpenMaxTestFromBanner'), 'バナーはシートを開く導線になる');
+  const maxPanel = isolatedApi.renderDeloadMaxTestPanel(isolatedApi.getOrCreateTodaySession({ persist: false }));
+  assert.ok(maxPanel.includes('data-mode="trueOneRm"'), 'MAX測定する/しないの2択（する）');
+  assert.ok(maxPanel.includes('data-mode="normal"'), 'MAX測定する/しないの2択（しない）');
   assert.ok(!html.includes('e1RM確認'));
   assert.ok(!html.includes('3RM'));
   assert.ok(!html.includes('5RM'));
   assert.ok(!html.includes('方法'));
-  assert.ok(html.includes('Lv1'));
-  assert.ok(html.includes('今回の強さ'), 'R4のLvセグメントカード');
+  // R4の強さ選択もオプションシートへ移動した。
+  const r4Panel = isolatedApi.renderR4AdjustmentPanel(isolatedApi.getOrCreateTodaySession({ persist: false }));
+  assert.ok(r4Panel.includes('Lv1'));
+  assert.ok(r4Panel.includes('今回の強さ'), 'R4のLvセグメントカード');
+  assert.ok(!html.includes('今回の強さ'), '調整パネルは本文に出さない');
   assert.ok(!html.includes('MAX測定以外の軽さを選びます'));
   assert.ok(!html.includes('測定結果を入力'));
   assert.ok(html.includes('chip-max'), 'MAX測定種目は金チップ');

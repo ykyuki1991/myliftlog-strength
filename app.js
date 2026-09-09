@@ -4103,6 +4103,22 @@ function renderCompletedExerciseCard(ex, exIdx) {
   `;
 }
 
+// セッションサマリー。数値は全て既存の集計から取る。新しい計算は足さない。
+// DURATION は出さない: 下書きが夜をまたぐため経過時間が意味を持たない（DESIGN.md 原則5）。
+function renderSessionMetrics({ doneExercises, totalExercises, volume, totalDoneSets }) {
+  const chip = (label, value) => `
+    <div class="metric-chip">
+      <span class="micro-label">${label}</span>
+      <span class="metric-value num">${value}</span>
+    </div>`;
+  return `
+    <div class="metric-row" aria-label="今日の集計">
+      ${chip('EXERCISES', `${doneExercises} / ${totalExercises}`)}
+      ${chip('TOTAL VOLUME', `${volume.toLocaleString('ja-JP')}<span class="metric-unit">kg</span>`)}
+      ${chip('SETS DONE', totalDoneSets)}
+    </div>`;
+}
+
 function renderToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const s = store.currentState;
@@ -4163,7 +4179,7 @@ function renderToday() {
     : '';
 
   const completedCards = completed.length
-    ? `<details class="ui-details completed-exercises" data-ui-key="completed" ${incomplete.length ? '' : 'open'}>
+    ? `<details class="ui-details completed-exercises" data-ui-key="completed">
         <summary><span>完了済み ${completed.length}件</span></summary>
         ${completed.map(({ ex, exIdx }) => renderCompletedExerciseCard(ex, exIdx)).join('')}
       </details>`
@@ -4181,10 +4197,29 @@ function renderToday() {
       </div>`
     : '';
 
+  // R4調整とMAX測定の本体はオプションシートへ移した。
+  // ただし「今日がMAX測定日」はその日の行動が変わるので、1行バナーだけ本文に残す。
+  // 判定条件は既存ロジックのまま、表示場所だけを変えている。
+  const maxTestLift = (session.isAdjustmentRotation || session.isDeload)
+    ? getDeloadMaxTestLiftForDay(session.day)
+    : null;
+  const maxTestBanner = maxTestLift
+    ? `<button class="day-banner" id="btnOpenMaxTestFromBanner">
+        <span class="chip chip-max">MAX</span>
+        <span class="day-banner-text">今日は${escapeHtml(maxTestLift.name)}のMAX測定日</span>
+        <span class="day-banner-go" aria-hidden="true">›</span>
+      </button>`
+    : '';
+
   return `
+    ${renderSessionMetrics({
+      doneExercises: completed.length,
+      totalExercises: session.exercises.length,
+      volume,
+      totalDoneSets,
+    })}
     ${draftBanner}
-    ${renderR4AdjustmentPanel(session)}
-    ${renderDeloadMaxTestPanel(session)}
+    ${maxTestBanner}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
     ${nextCard}
     ${completedCards}
@@ -4202,6 +4237,8 @@ function afterToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const viewLog = document.getElementById('btnViewWorkoutLog');
   if (viewLog) viewLog.onclick = () => navigate('log');
+  const maxBanner = document.getElementById('btnOpenMaxTestFromBanner');
+  if (maxBanner) maxBanner.onclick = openMenuSheet;
 
   const continueDraft = document.getElementById('btnContinueDraft');
   if (continueDraft) continueDraft.onclick = () => showToast('未完了トレーニングを継続します');
@@ -7603,6 +7640,8 @@ if (typeof window !== 'undefined') {
     switchBackLiftVariant,
     backLiftRowsHtml,
     menuSheetRowsHtml,
+    renderDeloadMaxTestPanel,
+    renderR4AdjustmentPanel,
     todayHeaderTitle,
     getFourMenuMainPlan,
     getMainProgressionIncrement,
