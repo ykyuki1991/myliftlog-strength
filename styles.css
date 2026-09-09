@@ -984,6 +984,12 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 }
 
 body.sheet-open .set-dock { display: none; }
+/* The keyboard covers the nav, so the nav gets out of the way -- but the dock
+   and the rest ring stay, because completing the set you just typed and seeing
+   the time you are waiting on are exactly what is needed here. */
+body.keyboard-open .bottom-nav { visibility: hidden; pointer-events: none; }
+body.keyboard-open { padding-bottom: 0; }
+body.sheet-open { overflow: hidden; }
 body.keyboard-open .set-dock { bottom: 0; }
 
 /* ==========================================================================

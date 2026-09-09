@@ -4718,7 +4718,7 @@ function afterToday() {
   });
 
   // 記録済みセット行をタップ → セット編集シート
-  document.querySelectorAll('.set-row[data-edit-ex]').forEach(row => {
+  document.querySelectorAll('.set-tr[data-edit-ex]').forEach(row => {
     row.addEventListener('click', () => {
       persistTodaySession(session);
       openSetEditSheet(parseInt(row.dataset.editEx, 10));

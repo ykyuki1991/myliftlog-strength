@@ -26,6 +26,21 @@ const server = http.createServer((req, res) => {
   } catch { res.writeHead(404); res.end(); }
 });
 
+// メニューピッカーはヘッダーのオプションシートへ移動した。
+// 「シートを開いて選ぶ」をひとまとめにしておく。
+async function selectMenu(page, key) {
+  const already = await page.locator(`[data-four-menu-select="${key}"]`).count();
+  if (!already) await page.locator('#hdOptions').click();
+  await page.locator(`[data-four-menu-select="${key}"]`).click();
+}
+
+async function menuIsSelected(page, key) {
+  await page.locator('#hdOptions').click();
+  const on = await page.locator(`[data-four-menu-select="${key}"]`).getAttribute('aria-checked');
+  await page.keyboard.press('Escape');
+  return on === 'true';
+}
+
 async function run() {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = process.env.UI_PUBLIC_URL || `http://127.0.0.1:${server.address().port}/`;
@@ -42,7 +57,7 @@ async function run() {
     page.on('pageerror', error => errors.push(error.message));
     page.on('dialog', dialog => dialog.accept());
     await page.goto(url);
-    await page.locator('[data-four-menu-select="chest"]').click();
+    await selectMenu(page, 'chest');
     await page.getByLabel('セット重量 kg', { exact: true }).fill('102.5');
     await page.getByLabel('セット回数', { exact: true }).fill('6');
     // One click after editing must complete, not get swallowed by a change rerender.
@@ -51,18 +66,19 @@ async function run() {
     check(session.exercises[0].sets[0].done && session.exercises[0].sets[0].weight === 102.5 && session.exercises[0].sets[0].reps === 6, 'direct entry + one-click completion');
     const inputTop = await page.locator('.active-set').boundingBox();
     const timerBox = await page.locator('#restTimer').boundingBox();
-    const navBox = await page.locator('.bottom-nav').boundingBox();
-    check(timerBox.y + timerBox.height <= navBox.y + 1, 'timer above nav');
+    const headerBox = await page.locator('#appHeader').boundingBox();
+    check(timerBox.y >= headerBox.y - 1 && timerBox.y < headerBox.y + headerBox.height,
+      'rest ring sits in the header');
+    await page.locator('#restRingBtn').click();
     await page.locator('#restClose').click();
     const afterClose = await page.locator('.active-set').boundingBox();
     check(Math.abs(afterClose.y - inputTop.y) < 2, 'timer does not shift recording controls');
-    await page.getByLabel('種目RPEを選択').click();
+    // RPEは入力ボックスから詳細ブロックへ移動した。一度開けば再描画をまたいで開いたまま。
+    await page.locator('details[data-ui-key^="exercise-"] > summary').first().click();
     await page.locator('[data-rpe-edit="9.5"]').click();
     check((await page.evaluate(() => getOrCreateTodaySession())).exercises[0].rpe === '9.5', 'RPE saved');
-    await page.getByLabel('種目RPEを選択').click();
     await page.locator('[data-rpe-edit="9.5"]').click();
     check((await page.evaluate(() => getOrCreateTodaySession())).exercises[0].rpe === '未入力', 'RPE deselection');
-    await page.locator('[data-ui-key^="exercise-"] > summary').click();
     await page.locator('textarea[data-field="note"]').fill('UI regression draft');
     await page.locator('.chip[data-pain="なし"]').click();
     check(await page.locator('[data-ui-key^="exercise-"]').evaluate(el => el.open), 'disclosure survives rerender');
@@ -74,11 +90,12 @@ async function run() {
     await page.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; })); finishTodaySession(); });
     const next = await page.evaluate(() => store.currentState.nextMenuKey);
     await page.locator('#btnNewTodaySession').click();
-    await page.locator('[data-four-menu-select="custom"]').click();
+    await selectMenu(page, 'custom');
+    await page.locator('#hdOptions').click();
     await page.getByRole('button', { name: '組み合わせを編集' }).click();
     await page.locator('[data-custom-menu="legs"]').check();
     await page.getByRole('button', { name: 'この組み合わせで記録' }).click();
-    check(await page.locator('[data-four-menu-select="custom"]').getAttribute('aria-pressed') === 'true', 'custom visible selected state');
+    check(await menuIsSelected(page, 'custom'), 'custom visible selected state');
     await page.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; })); finishTodaySession(); });
     check(await page.evaluate(() => store.currentState.nextMenuKey) === next, 'custom preserves normal sequence');
     check(await page.evaluate(() => new Set(store.logs.map(log => log.sessionId)).size) === 2, 'same-day separate sessions');
@@ -115,7 +132,7 @@ async function run() {
     check(await page.locator('#modal').evaluate(el => el.scrollWidth <= innerWidth), 'main editor fits 320px');
     await page.screenshot({ path: path.join(artifacts, 'main-editor-320.png'), animations: 'disabled' });
     await page.keyboard.press('Escape');
-    await page.locator('.set-row[data-edit-ex]').first().click();
+    await page.locator('.set-tr[data-edit-ex]').first().click();
     check(await page.getByRole('button', { name: '完了', exact: true }).count() > 0, 'SVG completion controls have accessible names');
     check(await page.locator('#modal [data-se-state="todo"]').first().getAttribute('aria-pressed') === 'true', 'set editor exposes current state');
     await page.screenshot({ path: path.join(artifacts, 'set-editor-320.png'), animations: 'disabled' });
@@ -161,7 +178,9 @@ async function run() {
     check(await page.locator('[data-ui-key="plan-chest"]').evaluate(el => el.open), 'plan expansion preserved across navigation');
     check(Math.abs(await page.evaluate(() => window.scrollY) - scroll) < 2, 'screen scroll restored');
     await page.locator('.nav-btn[data-screen="today"]').click();
-    await page.locator('[data-four-menu-select="custom"]').click();
+    // 「組み合わせを編集」はカスタム選択時にだけシートへ出る。
+    await selectMenu(page, 'custom');
+    await page.locator('#hdOptions').click();
     await page.getByRole('button', { name: '組み合わせを編集' }).click();
     await page.keyboard.press('Escape');
     check(await page.locator('#modal').evaluate(el => el.classList.contains('hidden')), 'Escape closes modal');
@@ -172,14 +191,14 @@ async function run() {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     check(await page.locator('.btn-primary').first().evaluate(el => parseFloat(getComputedStyle(el).transitionDuration) < 0.01), 'reduced motion');
     await page.evaluate(() => navigator.serviceWorker.ready);
-    await page.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v25'));
+    await page.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v26'));
     await page.waitForFunction(() => !!navigator.serviceWorker.controller);
     // WebKit's protocol-level offline mode aborts navigation before SW fallback.
     // Locally cut the origin connection instead, exercising the actual fetch failure.
     if (process.env.UI_BROWSER === 'webkit' && !process.env.UI_PUBLIC_URL) originOffline = true;
     else await context.setOffline(true);
     await page.reload();
-    await page.locator('[data-four-menu-select="custom"].on').waitFor();
+    await page.locator('.workout-summary, .card-ex').first().waitFor();
     check((await page.evaluate(() => getOrCreateTodaySession())).exercises[0].sets.some(set => set.weight === 105), 'offline draft preserved');
     check(errors.length === 0, errors.join('\n'));
     await context.close();
@@ -191,13 +210,15 @@ async function run() {
       const tab = await upgrade.newPage();
       await tab.goto(url);
       await tab.evaluate(() => navigator.serviceWorker.ready);
-      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v24'));
-      await tab.locator('[data-four-menu-select="custom"]').click();
+      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v25'));
+      await selectMenu(tab, 'custom');
       const old = await tab.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises[0].note = 'upgrade'; persistTodaySession(s); return JSON.stringify(store); });
       oldVersion = false;
       await tab.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
-      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v25') && !(await caches.keys()).includes('mll-strength-v24'));
+      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v26') && !(await caches.keys()).includes('mll-strength-v25'));
       await tab.reload();
+      // reload直後の evaluate は実行コンテキストの破棄と競合する。DOMが立つまで待つ。
+      await tab.locator('#appHeader').waitFor();
       const after = await tab.evaluate(() => JSON.stringify(store));
       fs.writeFileSync(path.join(artifacts, 'upgrade-before.json'), old);
       fs.writeFileSync(path.join(artifacts, 'upgrade-after.json'), after);
