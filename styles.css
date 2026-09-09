@@ -1006,11 +1006,14 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 }
 
 /* メニュー完了バナー */
-.complete-menu-banner {
+.card.complete-menu-banner {
   text-align: center;
   padding: 30px 16px;
   background: var(--ok-soft);
+  border-radius: var(--radius-card);
 }
+
+.card.incomplete-session-banner { background: var(--surface); border-radius: var(--radius-card); }
 
 .complete-menu-banner .big {
   font-size: var(--fs-22);
@@ -1431,7 +1434,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 
 /* 現在値カード（MAX/推定MAX） */
 .max-current { text-align: center; padding: 20px 14px; }
-.max-current.gold { background: var(--max-soft); }
+.card.max-current.gold { background: var(--max-soft); }
 
 .max-current .mc-label {
   font-size: var(--fs-13);
@@ -1959,6 +1962,68 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 #btnReset {
   grid-column: 1 / -1;
 }
+
+/* ==========================================================================
+   CLASSES THAT REPLACED INLINE STYLES IN app.js
+   ========================================================================== */
+
+/* Inline SVG in the same shape as the nav icons in index.html. */
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+
+.set-row .st .ck .icon { width: 15px; height: 15px; }
+.btn-primary .icon,
+.seg-opt .icon { width: 18px; height: 18px; vertical-align: -0.2em; }
+
+/* The set editor: was a flex row carrying flex/min-height/text-align inline. */
+.set-edit-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.6fr);
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 10px;
+}
+
+.set-edit-row .sn {
+  text-align: center;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.set-edit-row input {
+  min-height: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.set-edit-row .seg-opt { padding-inline: 2px; }
+
+/* Typographic utilities on the fixed scale. */
+.text-fine { font-size: var(--fs-11); }
+.text-sm { font-size: var(--fs-13); }
+.text-lead { font-size: var(--fs-17); font-weight: var(--fw-semibold); }
+.label-strong { font-size: var(--fs-13); font-weight: var(--fw-semibold); }
+.d-block { display: block; }
+.align-start { align-items: flex-start; }
+.row-tight { gap: 6px; }
+.mt-4 { margin-top: 4px; }
+
+.done-card .ex-title { font-size: var(--fs-15); }
+
+/* Calendar legend swatches. */
+.dot-accent { background: var(--accent); }
+.dot-max { background: var(--max); }
+
+/* The open rotation day. */
+.rotation-day-card.is-current { background: var(--accent-soft); }
 
 /* ==== ユーティリティ ==== */
 .hidden { display: none !important; }
