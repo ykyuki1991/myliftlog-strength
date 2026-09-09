@@ -928,6 +928,102 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 
 
 /* ==========================================================================
+   STEPPER
+   Minus, value and plus on ONE surface instead of three separate boxes plus
+   two more for the increments. The weight box used to be nearly 300px tall
+   holding a label and a number; this is 80px and holds the same information
+   with the increment controls inside it.
+
+   Full width, stacked: weight above, reps below. The value itself stays
+   directly tappable for keyboard entry.
+   ========================================================================== */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 80px;
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-control);
+}
+
+.stepper-btn {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-num);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-regular);
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+}
+
+.stepper-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  cursor: text;
+}
+
+/* The one place a centred label is right: it sits over a centred number. */
+.stepper-label { text-align: center; }
+
+.stepper-figure {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.stepper .stepper-input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-num);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  line-height: 1.05;
+}
+
+.stepper .stepper-input:focus { box-shadow: none; outline: none; }
+.stepper-value:focus-within { box-shadow: inset 0 0 0 2px var(--accent); border-radius: var(--radius-control); }
+
+.stepper-weight .stepper-input { font-size: var(--fs-56); }
+/* Reps stays at 22px so the weight keeps a 2.5x lead on the same screen. */
+.stepper-reps { height: 64px; }
+.stepper-reps .stepper-input { font-size: var(--fs-22); }
+
+.ex-rpe {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+  flex: 0 0 auto;
+}
+
+/* ==========================================================================
    SET TABLE
    Four columns, ruled rows, tabular figures. STATUS carries no words -- at
    375px "Completed" does not fit -- only an icon and a colour. The upcoming

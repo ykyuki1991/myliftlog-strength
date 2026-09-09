@@ -4017,7 +4017,6 @@ function renderActiveExerciseCard(ex, exIdx) {
   const set = ex.sets[setIdx] || {};
   const totalSets = ex.sets.length;
   const setTable = renderSetTable(ex, exIdx, setIdx);
-  const editing = todayEdit && todayEdit.exIdx === exIdx ? todayEdit.field : null;
   const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
   const previous = ex.isFourMenuMain ? previousMainSummary(ex, session) : null;
   const prFacts = ex.isFourMenuMain ? getMainPrFacts(ex) : [];
@@ -4027,10 +4026,12 @@ function renderActiveExerciseCard(ex, exIdx) {
   const hasSetReps = set.reps != null && set.reps !== '';
   const rpeVal = ex.rpe && ex.rpe !== '未入力' ? `@${ex.rpe}` : '—';
 
-  const editorHtml = editing === 'rpe' ? `
+  // RPEは入力ボックスの見た目をやめ、入力済みのときだけ小さく出す。編集は詳細ブロック。
+  const rpeEditorHtml = `
+    <div class="micro-label mt-8">RPE</div>
     <div class="vb-editor rpe-editor" aria-label="種目のRPE">
       ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<button class="chip chip-tap ${String(ex.rpe) === r ? 'on' : ''}" aria-pressed="${String(ex.rpe) === r}" data-rpe-edit="${r}" data-ex="${exIdx}">${r}</button>`).join('')}
-    </div>` : '';
+    </div>`;
 
   const activeBlock = setIdx >= 0 ? `
     <div class="active-set">
@@ -4038,29 +4039,28 @@ function renderActiveExerciseCard(ex, exIdx) {
         <span class="micro-label">SET ${setIdx + 1} / ${totalSets}</span>
         <span class="micro-label as-prev">${ex.isAccessory && ex.targetRpe ? `TARGET RPE ${ex.targetRpe}` : 'TARGET'}</span>
       </div>
-      <div class="vbox-row">
-        <label class="vbox weight-input">
-          <span class="vb-label">重量 <span>kg</span></span>
-          <input type="number" inputmode="decimal" step="0.1" min="0" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+      <div class="stepper stepper-weight">
+        <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
+        <label class="stepper-value">
+          <span class="micro-label stepper-label">WEIGHT (KG)</span>
+          <span class="stepper-figure">
+            <input class="stepper-input" type="number" inputmode="decimal" step="0.1" min="0" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+          </span>
         </label>
-        <label class="vbox">
-          <span class="vb-label">回数</span>
-          <input type="number" inputmode="numeric" step="1" min="0" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+        <button class="stepper-btn" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋</button>
+      </div>
+      <div class="stepper stepper-reps">
+        <button class="stepper-btn" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}" aria-label="回数を1減らす">−</button>
+        <label class="stepper-value">
+          <span class="micro-label stepper-label">REPS</span>
+          <span class="stepper-figure">
+            <input class="stepper-input" type="number" inputmode="numeric" step="1" min="0" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+          </span>
         </label>
-        <button class="vbox ${editing === 'rpe' ? 'selected' : ''}" data-vbox="rpe" data-ex="${exIdx}" aria-label="種目RPEを選択" aria-expanded="${editing === 'rpe'}">
-          <span class="vb-label">種目RPE</span>
-          <span class="vb-val">${rpeVal}</span>
-        </button>
+        <button class="stepper-btn" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}" aria-label="回数を1増やす">＋</button>
       </div>
-      <div class="quick-adjust" aria-label="重量を調整">
-        <button data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−${store.settings.increment || 2.5} kg</button>
-        <button data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋${store.settings.increment || 2.5} kg</button>
-        ${hasRecordedSet ? `<button class="btn-text" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
-      </div>
-      ${editorHtml}
       <div class="as-actions">
         <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">${ICON_CHECK} セット完了</button>
-        <button class="btn-ghost" data-action="skipSet" data-ex="${exIdx}">スキップ</button>
       </div>
     </div>
   ` : '';
@@ -4090,6 +4090,7 @@ function renderActiveExerciseCard(ex, exIdx) {
       <div class="ex-previous">
         <span class="micro-label">PREVIOUS</span>
         <span class="ex-previous-value num">${previous?.log ? escapeHtml(previous.text.replace(/^前回\s*/, '')) : '—'}</span>
+        ${rpeVal !== '—' ? `<span class="ex-rpe num">${rpeVal}</span>` : ''}
       </div>
       ${setTable}
       ${activeBlock}
@@ -4100,6 +4101,8 @@ function renderActiveExerciseCard(ex, exIdx) {
         ${prFacts.length ? `<div class="status-row">${prFacts.map(text => `<span class="chip chip-outline">${text}</span>`).join('')}</div>` : ''}
         ${ex.reductionCandidateWeight ? `<div class="accessory-suggestion"><span class="suggestion-label">5%減候補</span><span>${fmtW(ex.reductionCandidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptMainReduction" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
         ${ex.adjusted ? `<div class="ex-sub">調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}kg</div>` : ''}
+        ${rpeEditorHtml}
+        <div class="micro-label mt-8">PAIN</div>
         <div class="row-rpe-pain">${painChips}</div>
         <label class="field mt-8">
           <span>メモ</span>
@@ -4111,6 +4114,7 @@ function renderActiveExerciseCard(ex, exIdx) {
           ${ex.isBig3 || ex.isFourMenuMain ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">メイン種目編集</button>` : ''}
           ${ex.isAccessory ? `<button class="btn-secondary btn-small" data-action="editAccessory" data-ex="${exIdx}">補助編集</button>` : ''}
           <button class="btn-secondary btn-small" data-action="editSets" data-ex="${exIdx}">セット編集</button>
+          <button class="btn-secondary btn-small" data-action="skipSet" data-ex="${exIdx}">このセットをスキップ</button>
           ${hasRecordedSet ? `<button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
         </div>
       </details>
@@ -4302,22 +4306,6 @@ function afterToday() {
     };
     el.addEventListener('input', saveNote);
     el.addEventListener('change', saveNote);
-  });
-
-  // 値ボックス（タップで選択→エディタ開閉）
-  document.querySelectorAll('[data-vbox]').forEach(box => {
-    box.addEventListener('click', () => {
-      const exIdx = parseInt(box.dataset.ex);
-      const field = box.dataset.vbox;
-      const ex = session.exercises[exIdx];
-      if (!ex) return;
-      if (todayEdit && todayEdit.exIdx === exIdx && todayEdit.field === field) {
-        todayEdit = null; // 再タップで閉じる
-      } else {
-        todayEdit = { exIdx, field };
-      }
-      render();
-    });
   });
 
   // ステッパー（kg=設定の刻み / 回=1）
