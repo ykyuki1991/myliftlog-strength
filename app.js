@@ -2646,9 +2646,11 @@ function getExercisePrRecord(ex) {
 // 今セッションでその記録を超えたか。超えたセットの index を返す。
 function sessionPrSetIndexes(ex) {
   const record = getExercisePrRecord(ex);
-  const threshold = record?.weight ?? 0;
+  // 過去の記録がなければPRではない。破る対象がないため。
+  // 初回セッションで全種目がPRになるのを防ぐ。
+  if (!record || !Number.isFinite(record.weight)) return [];
   const out = [];
-  let running = threshold;
+  let running = record.weight;
   ex.sets.forEach((set, i) => {
     if (!set.done || set.skipped) return;
     const w = parseFloat(set.weight);
@@ -4269,6 +4271,85 @@ function renderCompletedExerciseCard(ex, exIdx) {
 
 // セッションサマリー。数値は全て既存の集計から取る。新しい計算は足さない。
 // DURATION は出さない: 下書きが夜をまたぐため経過時間が意味を持たない（DESIGN.md 原則5）。
+// 直近の別日のセッション総ボリューム。既存の store.logs から読むだけで、
+// 新しい集計やデータは持たない。
+function previousSessionVolume(excludeDate) {
+  const byDate = new Map();
+  (store.logs || []).forEach(log => {
+    if (log.isExerciseRest || log.todayOnlyDeleted) return;
+    const date = log.date;
+    if (!date || date === excludeDate) return;
+    const v = (log.sets || []).reduce((n, set) => n + (set.done && !set.skipped
+      ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0);
+    byDate.set(date, (byDate.get(date) || 0) + v);
+  });
+  if (!byDate.size) return null;
+  const latest = [...byDate.keys()].sort().pop();
+  return { date: latest, volume: byDate.get(latest) };
+}
+
+// 完了画面。アプリで唯一の感情のピークなので、ここだけ全画面を使う。
+function renderWorkoutSummary(session, { totalDoneSets, volume }) {
+  const doneExercises = session.exercises.filter(isExerciseComplete).length;
+  const prev = previousSessionVolume(session.date);
+  const delta = prev ? Math.round(volume - prev.volume) : null;
+
+  const prBlocks = session.exercises.flatMap(ex => {
+    const idx = sessionPrSetIndexes(ex);
+    if (!idx.length) return [];
+    const set = ex.sets[idx[idx.length - 1]];
+    return [{ name: displayExerciseName(ex.key, ex.name), weight: set.weight, reps: set.reps }];
+  });
+
+  const bestRows = session.exercises.map(ex => {
+    const done = ex.sets.filter(set => set.done && !set.skipped);
+    if (!done.length) return '';
+    const best = done.reduce((acc, set) => {
+      const w = parseFloat(set.weight);
+      return Number.isFinite(w) && w > (acc?.w ?? -1) ? { w, reps: set.reps } : acc;
+    }, null);
+    if (!best) return '';
+    return `
+      <div class="summary-best-row">
+        <span class="summary-best-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
+        <span class="summary-best-value num">${fmtW(best.w)}<span class="summary-unit">kg</span> × ${best.reps ?? '-'}</span>
+      </div>`;
+  }).filter(Boolean).join('');
+
+  return `
+    <section class="workout-summary card" aria-label="トレーニング完了">
+      <span class="micro-label summary-eyebrow">TOTAL VOLUME</span>
+      <div class="summary-volume num">${volume.toLocaleString('ja-JP')}<span class="summary-volume-unit">kg</span></div>
+      ${delta != null ? `
+        <div class="summary-delta ${delta >= 0 ? 'up' : 'down'} num">
+          ${delta >= 0 ? '+' : '−'}${Math.abs(delta).toLocaleString('ja-JP')} kg
+          <span class="summary-delta-note">vs ${fmtDateShort(prev.date)}</span>
+        </div>` : ''}
+
+      <div class="summary-figures">
+        <div><span class="micro-label">SETS DONE</span><span class="summary-figure num">${totalDoneSets}</span></div>
+        <div><span class="micro-label">EXERCISES</span><span class="summary-figure num">${doneExercises}</span></div>
+      </div>
+
+      ${prBlocks.length ? `
+        <div class="summary-pr">
+          <span class="micro-label">NEW PR</span>
+          ${prBlocks.map(pr => `
+            <div class="summary-pr-row">
+              <span class="summary-pr-name">${escapeHtml(pr.name)}</span>
+              <span class="summary-pr-value num">${fmtW(pr.weight)}<span class="summary-unit">kg</span> × ${pr.reps ?? '-'}</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+      ${bestRows ? `<div class="summary-best"><span class="micro-label">BEST SET</span>${bestRows}</div>` : ''}
+
+      <div class="btn-pair mt-12">
+        <button class="btn-primary" id="btnViewWorkoutLog">記録を見る</button>
+        <button class="btn-sec" id="btnCloseSummary">閉じる</button>
+      </div>
+    </section>`;
+}
+
 function renderSessionMetrics({ doneExercises, totalExercises, volume, totalDoneSets }) {
   const chip = (label, value) => `
     <div class="metric-chip">
@@ -4322,11 +4403,7 @@ function renderToday() {
   const totalDoneSets = session.exercises.reduce((acc, ex) => acc + ex.sets.filter(s2 => s2.done).length, 0);
   const volume = session.exercises.reduce((sum, ex) => sum + ex.sets.reduce((n, set) => n + (set.done && !set.skipped ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0), 0);
   const allDoneBanner = !incomplete.length
-    ? `<div class="card flat complete-menu-banner">
-        <div class="big">${ICON_CHECK} 今日のメニュー完了</div>
-        <div class="workout-metrics"><div><strong>${totalDoneSets}</strong><span>完了セット</span></div><div><strong>${volume.toLocaleString('ja-JP')}</strong><span>総ボリューム kg</span></div></div>
-        ${session.completed ? '<button class="btn-text btn-block" id="btnViewWorkoutLog">記録を見る</button>' : ''}
-      </div>`
+    ? renderWorkoutSummary(session, { totalDoneSets, volume })
     : '';
 
   const nextCard = upNext.length
@@ -4376,12 +4453,12 @@ function renderToday() {
     : '';
 
   return `
-    ${renderSessionMetrics({
+    ${incomplete.length ? renderSessionMetrics({
       doneExercises: completed.length,
       totalExercises: session.exercises.length,
       volume,
       totalDoneSets,
-    })}
+    }) : ''}
     ${draftBanner}
     ${maxTestBanner}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
@@ -4407,6 +4484,8 @@ function afterToday() {
   if (viewLog) viewLog.onclick = () => navigate('log');
   const maxBanner = document.getElementById('btnOpenMaxTestFromBanner');
   if (maxBanner) maxBanner.onclick = openMenuSheet;
+  const closeSummary = document.getElementById('btnCloseSummary');
+  if (closeSummary) closeSummary.onclick = () => navigate('block');
 
   const continueDraft = document.getElementById('btnContinueDraft');
   if (continueDraft) continueDraft.onclick = () => showToast('未完了トレーニングを継続します');

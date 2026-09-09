@@ -2573,6 +2573,144 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 .rotation-day-card.is-current { background: var(--accent-soft); }
 
 /* ==========================================================================
+   WORKOUT SUMMARY
+   The one screen that gets the extravagance. Everything else in this app is
+   restrained so that this can be loud: the session volume at --fs-56, the
+   change against the last session, and the personal bests. A drop is
+   --text-3, never red -- a lighter day is not an error.
+   ========================================================================== */
+.workout-summary {
+  padding: var(--space-6) var(--space-4) var(--space-5);
+  text-align: center;
+}
+
+.summary-eyebrow { text-align: center; }
+
+.summary-volume {
+  font-size: var(--fs-56);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-num);
+  line-height: 1.02;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.summary-volume-unit {
+  font-size: var(--fs-17);
+  color: var(--text-3);
+  margin-left: 4px;
+  letter-spacing: 0;
+}
+
+.summary-delta {
+  margin-top: var(--space-2);
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+}
+
+.summary-delta.up { color: var(--ok); }
+.summary-delta.down { color: var(--text-3); }
+
+.summary-delta-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-regular);
+  color: var(--text-3);
+  letter-spacing: var(--tracking-label);
+}
+
+.summary-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.summary-figures > div {
+  padding: var(--space-3) var(--space-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-control);
+}
+
+.summary-figures .micro-label { text-align: center; }
+
+.summary-figure {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+
+.summary-pr {
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--max-soft);
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+
+.summary-pr .micro-label { color: var(--max); }
+
+.summary-pr-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: 4px;
+}
+
+.summary-pr-name {
+  font-size: var(--fs-15);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-pr-value {
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-num);
+  color: var(--max);
+  white-space: nowrap;
+}
+
+.summary-best {
+  margin-top: var(--space-5);
+  text-align: left;
+}
+
+.summary-best-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 36px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.summary-best-row:last-child { border-bottom: 0; }
+
+.summary-best-name {
+  font-size: var(--fs-15);
+  color: var(--text-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-best-value {
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.summary-unit { font-size: var(--fs-11); color: var(--text-3); margin-left: 1px; }
+
+/* ==========================================================================
    MOTION
    Four cues, no more. Each marks a state change the user caused; nothing
    animates on its own. All of it is switched off under
