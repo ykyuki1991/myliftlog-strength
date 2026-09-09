@@ -2629,6 +2629,91 @@ function getMainPrFacts(ex) {
   return facts;
 }
 
+// 既存の記録から、この種目の自己ベスト（完了セットの最大重量）を返す。
+// 新しいデータは足さない。store.logs の完了セットを読むだけ。
+function getExercisePrRecord(ex) {
+  const logs = (store.logs || []).filter(log => log.exerciseKey === ex.key && !log.isExerciseRest && !log.todayOnlyDeleted);
+  const doneSets = logs.flatMap(log => (log.sets || []).filter(set => set.done));
+  if (!doneSets.length) return null;
+  const best = doneSets.reduce((acc, set) => {
+    const w = parseFloat(set.weight);
+    if (!Number.isFinite(w)) return acc;
+    return w > (acc?.weight ?? -1) ? { weight: w, reps: parseInt(set.reps, 10) || null } : acc;
+  }, null);
+  return best;
+}
+
+// 今セッションでその記録を超えたか。超えたセットの index を返す。
+function sessionPrSetIndexes(ex) {
+  const record = getExercisePrRecord(ex);
+  const threshold = record?.weight ?? 0;
+  const out = [];
+  let running = threshold;
+  ex.sets.forEach((set, i) => {
+    if (!set.done || set.skipped) return;
+    const w = parseFloat(set.weight);
+    if (Number.isFinite(w) && w > running) { out.push(i); running = w; }
+  });
+  return out;
+}
+
+function renderPrBadge(ex) {
+  const record = getExercisePrRecord(ex);
+  const prIdx = sessionPrSetIndexes(ex);
+  const live = prIdx.length ? parseFloat(ex.sets[prIdx[prIdx.length - 1]].weight) : null;
+  const weight = live ?? record?.weight ?? null;
+  if (!Number.isFinite(weight)) return '';
+  const reps = live != null ? ex.sets[prIdx[prIdx.length - 1]].reps : record?.reps;
+  return `
+    <span class="pr-badge ${live != null ? 'pr-badge-new' : ''}" role="img" aria-label="自己ベスト ${fmtW(weight)}キロ${reps ? ` ${reps}回` : ''}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6"/><path d="M12 13v7"/></svg>
+      <span class="micro-label pr-badge-tag">PR</span>
+      <span class="pr-badge-value num">${fmtW(weight)}</span>
+    </span>`;
+}
+
+// プレート計算: 20kgバー前提で片側の内訳を出す。
+// バーベルを使わない種目、判定できない種目では出さない。
+const PLATE_STEPS = [20, 15, 10, 5, 2.5, 1.25];
+const BARBELL_LIFT_KEYS = new Set(['bench', 'squat', 'halfDead', 'floorDead', 'deadlift', 'ohp', 'militaryPress', 'row', 'barbellRow']);
+
+function usesBarbell(ex) {
+  if (!ex) return false;
+  if (ex.isBig3 || ex.isFourMenuMain) return true;
+  if (BARBELL_LIFT_KEYS.has(ex.key)) return true;
+  return false;
+}
+
+function platesPerSide(totalWeight, barWeight = 20) {
+  const total = parseFloat(totalWeight);
+  if (!Number.isFinite(total) || total <= barWeight) return null;
+  let side = (total - barWeight) / 2;
+  const plates = [];
+  for (const step of PLATE_STEPS) {
+    while (side >= step - 1e-9 && plates.length < 12) {
+      plates.push(step);
+      side = Math.round((side - step) * 1000) / 1000;
+    }
+  }
+  return { plates, remainder: Math.round(side * 100) / 100 };
+}
+
+function renderPlateBreakdown(ex, weight) {
+  if (!usesBarbell(ex)) return '';
+  const result = platesPerSide(weight);
+  if (!result || !result.plates.length) return '';
+  const bars = result.plates.map(p => {
+    const h = Math.round(10 + (p / 20) * 18);
+    return `<span class="plate" style="--plate-h:${h}px" data-plate="${p}"><span class="plate-w num">${p}</span></span>`;
+  }).join('');
+  return `
+    <div class="plate-strip" aria-label="片側のプレート ${result.plates.join('、')}キロ">
+      <span class="micro-label plate-side">PER SIDE</span>
+      <span class="plate-bar">${bars}</span>
+      ${result.remainder > 0 ? `<span class="plate-remainder num">+${result.remainder}kg</span>` : ''}
+    </div>`;
+}
+
 function buildFourMenuMainExercise(menuKey, settings = store.settings, selectedBackLiftKey = null) {
   const liftKey = menuKey === 'back'
     ? (normalizeBackLiftKey(selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState()))
@@ -3870,7 +3955,7 @@ function setRowState(set, setIdx, activeIdx) {
   return setIdx === activeIdx ? 'active' : 'todo';
 }
 
-function renderSetTableRow(set, setIdx, state, editExIdx) {
+function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false) {
   const weight = set.weight != null && set.weight !== '' ? fmtW(set.weight) : '—';
   const reps = set.reps != null && set.reps !== '' ? set.reps : '—';
   const editAttr = editExIdx != null
@@ -3881,13 +3966,14 @@ function renderSetTableRow(set, setIdx, state, editExIdx) {
       <span class="set-td set-td-n num">${setIdx + 1}</span>
       <span class="set-td set-td-w num">${weight}</span>
       <span class="set-td set-td-r num">${reps}</span>
-      <span class="set-td set-td-s">${setStatusCell(state)}</span>
+      <span class="set-td set-td-s">${isPr ? '<span class="pr-tag">PR</span>' : ''}${setStatusCell(state)}</span>
     </div>`;
 }
 
 function renderSetTable(ex, exIdx, activeIdx) {
+  const prRows = new Set(sessionPrSetIndexes(ex));
   const rows = ex.sets
-    .map((set, i) => renderSetTableRow(set, i, setRowState(set, i, activeIdx), exIdx))
+    .map((set, i) => renderSetTableRow(set, i, setRowState(set, i, activeIdx), exIdx, prRows.has(i)))
     .join('');
   return `
     <div class="set-table" role="table" aria-label="セット履歴">
@@ -4049,6 +4135,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         </label>
         <button class="stepper-btn" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋</button>
       </div>
+      ${renderPlateBreakdown(ex, currentWeight)}
       <div class="stepper stepper-reps">
         <button class="stepper-btn" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}" aria-label="回数を1減らす">−</button>
         <label class="stepper-value">
@@ -4059,9 +4146,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         </label>
         <button class="stepper-btn" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}" aria-label="回数を1増やす">＋</button>
       </div>
-      <div class="as-actions">
-        <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">${ICON_CHECK} セット完了</button>
-      </div>
+
     </div>
   ` : '';
 
@@ -4091,6 +4176,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         <span class="micro-label">PREVIOUS</span>
         <span class="ex-previous-value num">${previous?.log ? escapeHtml(previous.text.replace(/^前回\s*/, '')) : '—'}</span>
         ${rpeVal !== '—' ? `<span class="ex-rpe num">${rpeVal}</span>` : ''}
+        ${renderPrBadge(ex)}
       </div>
       ${setTable}
       ${activeBlock}
@@ -4269,6 +4355,10 @@ function renderToday() {
     ${draftBanner}
     ${maxTestBanner}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
+    ${active && firstPendingSetIndex(active.ex) >= 0 ? `
+      <div class="set-dock">
+        <button class="btn-primary set-dock-btn" data-action="completeSet" data-ex="${active.exIdx}">${ICON_CHECK} セット完了</button>
+      </div>` : ''}
     ${nextCard}
     ${completedCards}
     ${pausedRows}

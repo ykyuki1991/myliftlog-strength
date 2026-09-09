@@ -537,6 +537,7 @@ body[data-header-variant="compact"] .rest-ring-caption { display: none; }
 
 /* The ring lives in the header, so the page no longer reserves bar space. */
 body.timer-visible #main { padding-bottom: 22px; }
+body:has(.set-dock) #main { padding-bottom: 84px; }
 
 .sec-label {
   font-size: var(--fs-13);
@@ -878,7 +879,7 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 }
 
 .status-ok { background: var(--ok-soft); color: var(--ok); }
-.status-caution { background: var(--max-soft); color: var(--max); }
+.status-caution { background: var(--surface-2); color: var(--text-2); }
 .status-danger { background: var(--danger-soft); color: var(--danger-bright); }
 .status-low { background: var(--surface-2); color: var(--text-3); }
 
@@ -955,6 +956,119 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 .custom-menu-options input { width: 20px; height: 20px; }
 
 
+
+/* ==========================================================================
+   SET DOCK
+   In a gym one hand is usually holding something. The primary action sits
+   above the bottom nav, within thumb reach, and does not depend on scroll
+   position. It stays put while the keyboard is open -- the nav hides, the
+   dock does not, because the whole point is to complete the set you just
+   typed.
+   ========================================================================== */
+.set-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  z-index: 42;
+  padding: var(--space-2) 16px;
+  background: linear-gradient(to top, var(--bg) 62%, transparent);
+  pointer-events: none;
+}
+
+.set-dock-btn {
+  display: block;
+  max-width: 720px;
+  margin: 0 auto;
+  pointer-events: auto;
+}
+
+body.sheet-open .set-dock { display: none; }
+body.keyboard-open .set-dock { bottom: 0; }
+
+/* ==========================================================================
+   PR
+   The most important moment in a training app was a chip among other chips.
+   It is now the only warm thing on the screen: --max belongs to a personal
+   best and to nothing else. Caution states moved off it, onto --text-3 and
+   an icon, so amber always means the same thing.
+   ========================================================================== */
+.pr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-control);
+  background: var(--max-soft);
+  box-shadow: inset 0 0 0 1px var(--max);
+  color: var(--max);
+  flex: 0 0 auto;
+}
+
+.pr-badge svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.pr-badge-tag { color: var(--max); display: inline; }
+
+.pr-badge-value {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--max);
+  white-space: nowrap;
+}
+
+/* The row that set it carries the same mark, so the table and the header
+   agree about which set it was. */
+.pr-tag {
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  color: var(--max);
+  background: var(--max-soft);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-right: 6px;
+}
+
+/* ==========================================================================
+   PLATE STRIP
+   What is on one side of the bar, as stacked rectangles sized by weight.
+   Greyscale on purpose: real IPF plate colours are far more saturated than
+   anything else in this palette and would pull the eye off the number.
+   ========================================================================== */
+.plate-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  margin: -2px 0 var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.plate-side { flex: 0 0 auto; }
+.plate-bar { display: flex; align-items: center; gap: 3px; min-width: 0; flex-wrap: wrap; }
+
+.plate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: var(--plate-h, 20px);
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+
+.plate[data-plate="20"], .plate[data-plate="15"] { background: var(--surface-3); }
+.plate[data-plate="10"], .plate[data-plate="5"] { background: var(--surface-2); }
+.plate[data-plate="2.5"], .plate[data-plate="1.25"] { background: var(--surface-2); }
+
+.plate-w {
+  font-size: 9px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+  line-height: 1;
+}
+
+.plate-remainder { font-size: var(--fs-11); color: var(--text-3); flex: 0 0 auto; }
 
 /* ==========================================================================
    STEPPER
@@ -1167,10 +1281,15 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 
 .ex-previous {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
-  margin-top: 2px;
+  margin-top: 4px;
+  min-height: 26px;
 }
+
+/* The badge sits on the PREVIOUS row rather than beside the name: a long
+   Japanese exercise name needs the full width and must not wrap around it. */
+.ex-previous .pr-badge { margin-left: auto; }
 
 .ex-previous-value {
   font-size: var(--fs-13);
@@ -2237,8 +2356,8 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 }
 
 .load-warning-caution {
-  background: var(--max-soft);
-  color: var(--max);
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 
 .load-warning-caution span { background: var(--max-soft); }
@@ -2473,7 +2592,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 }
 .text-center { text-align: center; }
 .text-success { color: var(--ok); }
-.text-warn { color: var(--max); }
+.text-warn { color: var(--text-2); }
 .text-danger { color: var(--danger-bright); }
 .text-rest { color: var(--max); }
 .text-accent { color: var(--accent-bright); }
