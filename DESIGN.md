@@ -1,4 +1,31 @@
-# Quiet Performance
+# Precision Strength
+
+The tool a person who handles 150kg reaches for. Apple Watch Ultra, high-end
+strength equipment, the precision of powerlifting. No muscle photography, no
+flame, no neon, no showy gradients.
+
+## Audit (2026-09-09)
+
+Public baseline: PR #42 / 70cf64a, the Quiet Performance redesign. Measured
+rather than described, because the previous pass read as a dark admin console
+and adjectives had not caught why.
+
+- Surface contrast: bg to surface was 1.10:1 and surface to surface-2 1.15:1,
+  while surface to line was 1.91:1. Structure was carried by hairlines, not
+  planes, so the app read as a wireframe.
+- Accent saturation: OKLCH chroma was 0.058 for accent, 0.094 for ok and 0.107
+  for max. Apple's system colors sit at 0.17-0.22, two to three and a half
+  times higher.
+- Role lightness: accent, ok, max and danger were clustered inside nine L*
+  points (79-88), so four roles read as one pastel set.
+- Neutral temperature: background hues ran H220-237 while text hues ran
+  H178-181. Low chroma hid it individually; together they muddied.
+- Type: sixteen font sizes and five weights. The recorded weight was 32px/500
+  under an exercise name at 24px/600, so the number carried less visual weight
+  than its label.
+- Compatibility debt: fourteen legacy token aliases in :root, seventy inline
+  style attributes in app.js, and five semantically different classes sharing
+  one chip rule.
 
 ## Audit (2026-09-08)
 
@@ -14,12 +41,75 @@ Public baseline: PR #41 / 5d9386b. Reviewed Today, Log, Plan and Settings in an 
 
 ## Principles
 
-1. Record first. Direct weight/reps inputs, adjacent previous record, one dominant completion action.
-2. One surface per exercise. No decorative card within a card. Neutral graphite, mint for actions, green for completion, amber for records/caution, red only for destructive/error states.
-3. Numbers are instruments: system font, tabular numerals, regular/medium weights for data, restrained bold for hierarchy.
-4. Four/eight-pixel spacing; 8px maximum surface radius; 44px minimum primary touch target; no paid assets, fonts, remote runtime libraries or analytics.
-5. Analysis after training: actual completed sets and volume in the finish summary; no fabricated PR or active-training duration (elapsed time may include overnight drafts).
-6. Preserve all routines, custom composition, overrides, paused exercises, historical data, MAX approval and backup formats. UI state stays outside the persistent training store.
+These are constraints with numbers, not moods. A change that cannot be checked
+against them has not been made.
+
+1. **Record first.** Direct weight/reps inputs, adjacent previous record, one
+   dominant completion action.
+
+2. **Neutrals are one family.** Every neutral token is OKLCH hue 250, with no
+   exceptions, at chroma 0.003-0.012. Tokens are declared as hex and restated
+   in OKLCH inside `@supports (color: oklch(...))`, because 8-bit sRGB cannot
+   express hue 250 at chroma 0.008 and the hue lock has to be exact on the
+   device this app is actually used on.
+
+       --bg        L* 14   --text    L* 97
+       --surface   L* 23   --text-2  L* 78
+       --surface-2 L* 32   --text-3  L* 69
+       --surface-3 L* 40   --line    L* 46
+
+3. **Three surfaces, and depth is lightness.** page (`--bg`), raised
+   (`--surface`), inset (`--surface-2`), at least 8 L* apart. `--surface-3` is
+   the pressed/track/toast state of an inset, not a fourth plane. Every card
+   variant maps onto one of the three. A 1px border is used only where two
+   planes cannot be stacked -- a transparent button, and separators between
+   peer rows or sections -- and those separators are drawn in `--surface-2`
+   or `--surface-3`, never in `--line`.
+
+4. **Radius is by purpose.** 16px cards, 12px controls, 999px pills. There is
+   no global maximum. (This replaces the previous "8px maximum surface radius",
+   which is what forced every plane to look like the same rectangle.)
+
+5. **Role colors are saturated, separated and exclusive.** OKLCH chroma at or
+   above 0.15 where the sRGB gamut allows, and at least 6 L* between roles. No
+   role color is borrowed for another purpose.
+
+       --accent  #006ef4  L* 57  current / in progress / primary action
+       --ok      #20c45f  L* 72  completion only
+       --max     #ffb225  L* 82  PR / personal best / caution only
+       --danger  #ef4747  L* 64  destructive action / error only
+
+   `--accent` at L*57 is a fill, not a text color: filled blue buttons carry
+   white text, and thin blue text on a dark plane uses `--accent-bright`.
+   `--danger-bright` plays the same role for red. Body text, `--text-2` and
+   `--text-3` clear 4.5:1 on every surface they are used on.
+
+6. **Numbers are instruments.** Seven sizes -- 11/13/15/17/22/34/56 -- and two
+   weights, 400 and 600. Letter spacing is zero to keep numerical labels
+   and Japanese text uncompressed. The recorded weight is at least 2.2x
+   every other string that can appear on the same screen; the exercise name is
+   17/400/`--text-2`. System font, tabular numerals.
+
+7. **Four/eight-pixel spacing**; 44px minimum touch target; no paid assets,
+   fonts, remote runtime libraries or analytics. Dark only: `color-scheme: dark`
+   stays, and there is no light mode.
+
+8. **No compatibility layer.** No aliased tokens kept alive to avoid rewriting
+   the rules that use them, no inline `style` attributes in `app.js`, and no
+   single rule serving classes that mean different things. Character glyphs
+   used as icons are inline SVG in the same shape as the nav icons.
+
+9. **Analysis after training:** actual completed sets and volume in the finish
+   summary; no fabricated PR or active-training duration (elapsed time may
+   include overnight drafts).
+
+10. **Preserve all data.** Routines, custom composition, overrides, paused
+    exercises, historical data, MAX approval and backup formats are preserved,
+    and UI state stays outside the persistent training store. This is a
+    guarantee about stored data and behaviour only -- it does not preserve any
+    particular visual treatment, and it is not a reason to keep an existing
+    style. (This replaces the previous principle 6, which read as a mandate to
+    preserve the UI as well.)
 
 ## Research
 
@@ -38,4 +128,4 @@ Protect existing unit tests, add DOM interaction tests for direct editing/comple
 
 `node test_ui.js` uses an independently installed Playwright and a disposable browser profile, not live user data. Set `CHROME_PATH` for a local Chrome executable, or `UI_BROWSER=webkit` with `PLAYWRIGHT_BROWSERS_PATH` for Playwright WebKit. `NODE_PATH` can point to the bundled Playwright modules. No browser testing dependency is loaded by the production app.
 
-The suite checks 134 assertions locally, including all four log views and narrow edit sheets. Chromium uses protocol-level offline mode; local WebKit tests disconnect the HTTP origin because protocol-level offline navigation fails inside the WebKit test runtime. Both exercise service-worker fallback and the v23-to-v24 cache upgrade. `UI_PUBLIC_URL` runs the same isolated regression against the published site in Chromium (excluding the local old-version upgrade fixture).
+The suite checks all four log views, narrow edit sheets and accessible set-state controls. Chromium uses protocol-level offline mode; local WebKit tests disconnect the HTTP origin because protocol-level offline navigation fails inside the WebKit test runtime. Both exercise service-worker fallback and the v24-to-v25 cache upgrade. Color contrast uses canvas sRGB conversion so OKLCH colors are measured correctly. `UI_PUBLIC_URL` runs the same isolated regression against the published site in Chromium (excluding the local old-version upgrade fixture).

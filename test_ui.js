@@ -18,7 +18,7 @@ const server = http.createServer((req, res) => {
   const file = decodeURIComponent(new URL(req.url, 'http://localhost').pathname).slice(1) || 'index.html';
   if (file.includes('..')) { res.writeHead(400); res.end(); return; }
   try {
-    const body = oldVersion ? execFileSync('git', ['show', `5d9386b:${file}`], { cwd: root }) : fs.readFileSync(path.join(root, file));
+    const body = oldVersion ? execFileSync('git', ['show', `70cf64a:${file}`], { cwd: root }) : fs.readFileSync(path.join(root, file));
     const types = { '.js': 'application/javascript', '.html': 'text/html', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
     res.setHeader('Content-Type', types[path.extname(file)] || 'application/octet-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -115,6 +115,11 @@ async function run() {
     check(await page.locator('#modal').evaluate(el => el.scrollWidth <= innerWidth), 'main editor fits 320px');
     await page.screenshot({ path: path.join(artifacts, 'main-editor-320.png'), animations: 'disabled' });
     await page.keyboard.press('Escape');
+    await page.locator('.set-row[data-edit-ex]').first().click();
+    check(await page.getByRole('button', { name: '完了', exact: true }).count() > 0, 'SVG completion controls have accessible names');
+    check(await page.locator('#modal [data-se-state="todo"]').first().getAttribute('aria-pressed') === 'true', 'set editor exposes current state');
+    await page.screenshot({ path: path.join(artifacts, 'set-editor-320.png'), animations: 'disabled' });
+    await page.keyboard.press('Escape');
     await page.locator('.nav-btn[data-screen="block"]').click();
     await page.locator('[data-ui-key="plan-chest"] > summary').click();
     await page.locator('[data-ui-key="plan-chest"] [data-edit-four-accessory]').first().click();
@@ -128,7 +133,12 @@ async function run() {
     await page.locator('.nav-btn[data-screen="today"]').click();
     const contrast = await page.locator('[data-action="completeSet"]').evaluate(el => {
       const lum = color => {
-        const rgb = color.match(/\d+/g).slice(0, 3).map(Number).map(n => { const c = n / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d', { colorSpace: 'srgb' });
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 1, 1);
+        const rgb = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(n => { const c = n / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
         return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
       };
       const c = getComputedStyle(el), a = lum(c.color), b = lum(c.backgroundColor);
@@ -162,7 +172,7 @@ async function run() {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     check(await page.locator('.btn-primary').first().evaluate(el => parseFloat(getComputedStyle(el).transitionDuration) < 0.01), 'reduced motion');
     await page.evaluate(() => navigator.serviceWorker.ready);
-    await page.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v24'));
+    await page.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v25'));
     await page.waitForFunction(() => !!navigator.serviceWorker.controller);
     // WebKit's protocol-level offline mode aborts navigation before SW fallback.
     // Locally cut the origin connection instead, exercising the actual fetch failure.
@@ -181,12 +191,12 @@ async function run() {
       const tab = await upgrade.newPage();
       await tab.goto(url);
       await tab.evaluate(() => navigator.serviceWorker.ready);
-      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v23'));
+      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v24'));
       await tab.locator('[data-four-menu-select="custom"]').click();
       const old = await tab.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises[0].note = 'upgrade'; persistTodaySession(s); return JSON.stringify(store); });
       oldVersion = false;
       await tab.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
-      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v24') && !(await caches.keys()).includes('mll-strength-v23'));
+      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v25') && !(await caches.keys()).includes('mll-strength-v24'));
       await tab.reload();
       const after = await tab.evaluate(() => JSON.stringify(store));
       fs.writeFileSync(path.join(artifacts, 'upgrade-before.json'), old);
@@ -198,7 +208,7 @@ async function run() {
         assert.ok(actual.daySessions[key].updatedAt >= expected.daySessions[key].updatedAt);
         actual.daySessions[key].updatedAt = expected.daySessions[key].updatedAt;
       });
-      assert.deepStrictEqual(actual, expected, 'v23 to v24 preserves all data under existing migration');
+      assert.deepStrictEqual(actual, expected, 'v24 to v25 preserves all data under existing migration');
       checks++;
       await upgrade.close();
     }

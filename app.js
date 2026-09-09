@@ -1617,8 +1617,8 @@ function renderEstimatedMaxHistory(limit = 6) {
       <div class="suggestion-row emax-row">
         <div>
           <div class="name">${displayExerciseName(entry.liftKey, entry.liftName)}推定MAX: ${entry.estimatedMax}kg <span class="status-pill ${statusKind === 'candidate' ? 'status-ok' : statusKind === 'reference' ? 'status-caution' : 'status-low'}">${statusLabel}</span></div>
-          <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.maxUseReason || '判定'} / 現MAX差 ${entry.diff > 0 ? '+' : ''}${entry.diff}kg / ${entry.date}</div>
-          <div class="muted" style="font-size:12px;">MAX更新候補: ${candidate ? `${candidate.candidate}kg (${candidate.diff > 0 ? '+' : ''}${candidate.diff}kg)` : 'なし・様子見'}</div>
+          <div class="muted">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.maxUseReason || '判定'} / 現MAX差 ${entry.diff > 0 ? '+' : ''}${entry.diff}kg / ${entry.date}</div>
+          <div class="muted">MAX更新候補: ${candidate ? `${candidate.candidate}kg (${candidate.diff > 0 ? '+' : ''}${candidate.diff}kg)` : 'なし・様子見'}</div>
           ${entry.trendWarning ? `<div class="load-warning load-warning-caution"><span>注意</span>${entry.trendWarning}</div>` : ''}
         </div>
         ${candidate && !entry.adopted ? `<button class="btn-success btn-small" data-adopt-emax="${entry.id}">採用</button>` : entry.adopted ? '<span class="status-pill status-ok">採用済み</span>' : ''}
@@ -1642,7 +1642,7 @@ function renderMaxTestHistory(limit = 10, liftKey = null) {
         </span>
         ${test.adopted ? '<span class="chip chip-max-fill">採用中</span>' : ''}
         ${success && test.failedAttemptWeight ? `<span class="chip chip-pause">✗ ${fmtW(test.failedAttemptWeight)}</span>` : ''}
-        <span class="chip ${success ? 'chip-ok' : 'chip-pause'}" title="${success ? '実測MAX' : 'MAX挑戦'}">${success ? `✓ ${fmtW(test.measuredMaxWeight)}kg 成功` : `✗ ${fmtW(weight)}kg 失敗`}</span>
+        <span class="chip ${success ? 'chip-ok' : 'chip-pause'}" title="${success ? '実測MAX' : 'MAX挑戦'}">${success ? `${ICON_CHECK} ${fmtW(test.measuredMaxWeight)}kg 成功` : `✗ ${fmtW(weight)}kg 失敗`}</span>
       </div>
     `;
   }).join('');
@@ -1672,7 +1672,7 @@ function renderEstimatedMaxSummary() {
       <div class="suggestion-row emax-summary-row">
         <div>
           <div class="name">${lift.name}推定MAX: ${entry.estimatedMax}kg</div>
-          <div class="muted" style="font-size:12px;">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.date}</div>
+          <div class="muted">${entry.sourceWeight}kg×${entry.sourceReps}回@RPE${entry.rpe} / ${entry.date}</div>
         </div>
         <span class="status-pill ${candidate ? 'status-caution' : statusKind === 'candidate' ? 'status-ok' : statusKind === 'reference' ? 'status-caution' : 'status-low'}">${candidate ? 'MAX更新候補あり' : statusLabel}</span>
         ${candidate && !entry.adopted ? `<button class="btn-success btn-small" data-adopt-emax="${entry.id}">採用</button>` : entry.adopted ? '<span class="status-pill status-ok">採用済み</span>' : ''}
@@ -1886,7 +1886,7 @@ function renderDeloadMaxTestPanel(session) {
   return `
     <div class="card r4-max-card">
       <div class="sec-label">MAX測定</div>
-      <div class="row" style="margin-bottom:10px;">
+      <div class="row mb-12">
         <span class="chip chip-max">MAX</span>
         <span class="muted">${lift.name}</span>
       </div>
@@ -3717,12 +3717,14 @@ function exercisePlanText(ex) {
 }
 
 // 記録済みセット行（done / skip / todo）。editExIdx指定時はタップでセット編集
+const ICON_CHECK = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
+
 function renderStaticSetRow(set, setIdx, editExIdx = null) {
   const stateClass = set.done ? 'set-row-done' : (set.skipped ? 'set-row-skip' : '');
   const value = set.skipped && !set.done
     ? '<span class="chip chip-pause">スキップ</span>'
     : `${fmtW(set.weight)}<span class="u">kg</span> × ${set.reps ?? '-'}`;
-  const check = set.done ? '<span class="ck">✓</span>' : '<span class="ck"></span>';
+  const check = set.done ? `<span class="ck">${ICON_CHECK}</span>` : '<span class="ck"></span>';
   const editAttr = editExIdx != null ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"` : '';
   return `
     <div class="set-row ${stateClass}"${editAttr}>
@@ -3760,16 +3762,16 @@ function openSetEditSheet(exIdx) {
   let draftRpe = ex.rpe || '未入力';
 
   const stateBtn = (idx, state, label) =>
-    `<button class="seg-opt ${draft[idx].state === state ? (state === 'skip' ? 'on-pause' : 'on') : ''}" data-se-state="${state}" data-se-idx="${idx}">${label}</button>`;
+    `<button class="seg-opt ${draft[idx].state === state ? (state === 'skip' ? 'on-pause' : 'on') : ''}" aria-label="${state === 'done' ? '完了' : state === 'skip' ? 'スキップ' : '未完了'}" aria-pressed="${draft[idx].state === state}" data-se-state="${state}" data-se-idx="${idx}">${label}</button>`;
 
   const body = () => `
     <div class="sec-label">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>
     ${draft.map((d, i) => `
-      <div class="row" style="gap:8px;margin-bottom:10px;align-items:center;">
-        <span class="sn" style="flex:0 0 22px;text-align:center;color:var(--text-3);font-weight:800;">${i + 1}</span>
-        <input type="number" inputmode="decimal" step="0.5" value="${d.weight}" placeholder="kg" data-se-field="weight" data-se-idx="${i}" style="flex:1.2;min-height:44px;text-align:center;" />
-        <input type="number" inputmode="numeric" value="${d.reps}" placeholder="回" data-se-field="reps" data-se-idx="${i}" style="flex:1;min-height:44px;text-align:center;" />
-        <div class="seg" style="flex:1.6;">${stateBtn(i, 'done', '✓')}${stateBtn(i, 'skip', 'スキップ')}${stateBtn(i, 'todo', '—')}</div>
+      <div class="set-edit-row">
+        <span class="sn">${i + 1}</span>
+        <input type="number" inputmode="decimal" step="0.5" value="${d.weight}" placeholder="kg" data-se-field="weight" data-se-idx="${i}" />
+        <input type="number" inputmode="numeric" value="${d.reps}" placeholder="回" data-se-field="reps" data-se-idx="${i}" />
+        <div class="seg">${stateBtn(i, 'done', ICON_CHECK)}${stateBtn(i, 'skip', 'スキップ')}${stateBtn(i, 'todo', '—')}</div>
       </div>
     `).join('')}
     <div class="sec-label mt-8">RPE</div>
@@ -3887,7 +3889,7 @@ function renderActiveExerciseCard(ex, exIdx) {
       </div>
       ${editorHtml}
       <div class="as-actions">
-        <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">✓ セット完了</button>
+        <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">${ICON_CHECK} セット完了</button>
         <button class="btn-ghost" data-action="skipSet" data-ex="${exIdx}">スキップ</button>
       </div>
     </div>
@@ -3951,12 +3953,12 @@ function renderCompletedExerciseCard(ex, exIdx) {
   return `
     <div class="card done-card exercise-card-complete" data-ex="${exIdx}">
       <div class="dn-row">
-        <span class="ex-title" style="font-size:15px;">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
-        <span class="chip chip-ok">✓ 完了</span>
+        <span class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
+        <span class="chip chip-ok">${ICON_CHECK} 完了</span>
       </div>
       <div class="dn-row mt-8">
         <span class="dn-best">${bestText}</span>
-        <span class="row" style="gap:6px;">
+        <span class="row row-tight">
           <button class="btn-ghost btn-small" data-action="editSets" data-ex="${exIdx}">編集</button>
           <button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">戻す</button>
         </span>
@@ -4010,7 +4012,7 @@ function renderToday() {
   const volume = session.exercises.reduce((sum, ex) => sum + ex.sets.reduce((n, set) => n + (set.done && !set.skipped ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0), 0);
   const allDoneBanner = !incomplete.length
     ? `<div class="card flat complete-menu-banner">
-        <div class="big">✓ 今日のメニュー完了</div>
+        <div class="big">${ICON_CHECK} 今日のメニュー完了</div>
         <div class="workout-metrics"><div><strong>${totalDoneSets}</strong><span>完了セット</span></div><div><strong>${volume.toLocaleString('ja-JP')}</strong><span>総ボリューム kg</span></div></div>
         ${session.completed ? '<button class="btn-text btn-block" id="btnViewWorkoutLog">記録を見る</button>' : ''}
       </div>`
@@ -4060,7 +4062,7 @@ function renderToday() {
     ${pausedRows}
     <div class="btn-pair mt-12">
       <button class="btn-sec" id="btnAddTodayAccessory">＋補助種目を追加</button>
-      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession" style="${incomplete.length ? '' : 'min-height:56px;'}">トレーニング完了</button>
+      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">トレーニング完了</button>
     </div>
     ${session.completed ? '<button class="btn-text btn-block" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
   `;
@@ -4422,7 +4424,7 @@ function openAdjustModal(exIdx) {
       <button class="btn-secondary" id="adj-today">今日だけ変更</button>
       <button class="btn-warn" id="adj-future">今後にも反映</button>
     </div>
-    <div class="muted mt-8" style="font-size:12px;">「今後にも反映」は同じ${session.fourMenuRotation ? 'メニュー' : 'Day'}・種目に保存します。</div>
+    <div class="muted mt-8">「今後にも反映」は同じ${session.fourMenuRotation ? 'メニュー' : 'Day'}・種目に保存します。</div>
   `, () => {
     document.querySelectorAll('[data-adjust-quick]').forEach(btn => {
       btn.onclick = () => {
@@ -5678,7 +5680,7 @@ function renderBlock() {
       r === 4 ? 'deload' : '',
       r === s.rotation ? 'actual-current' : '',
     ].filter(Boolean).join(' ');
-    return `<button class="rotation-cell ${cls}" data-block-rotation="${r}">R${r}${r === s.rotation ? '<br><span class="status-pill status-ok">現在</span>' : ''}${r === 4 ? '<br><span class="muted" style="font-size:11px;">調整</span>' : ''}</button>`;
+    return `<button class="rotation-cell ${cls}" data-block-rotation="${r}">R${r}${r === s.rotation ? '<br><span class="status-pill status-ok">現在</span>' : ''}${r === 4 ? '<br><span class="muted text-fine">調整</span>' : ''}</button>`;
   }).join('');
 
   const suggestion = computeNextBlockSuggestion();
@@ -5689,7 +5691,7 @@ function renderBlock() {
       <div class="suggestion-row">
         <div>
           <div class="name">${s.name}</div>
-          <div class="muted" style="font-size:12px;">${s.reason}</div>
+          <div class="muted">${s.reason}</div>
         </div>
         <div class="delta">${s.delta > 0 ? '+' : ''}${s.delta}kg</div>
         <div>→ ${s.newMax}kg</div>
@@ -5699,19 +5701,19 @@ function renderBlock() {
 
   // 未完了時は「参考提案」バナーを表示し、採用系ボタンを無効化
   const referenceBanner = !blockComplete
-    ? `<div class="deload-banner" style="background:var(--accent-soft);border-color:var(--accent-soft);border-left-color:var(--accent);">
-         <div class="label" style="color:var(--accent);">参考提案</div>
+    ? `<div class="deload-banner deload-banner-accent">
+         <div class="label">参考提案</div>
          <div class="muted">参考表示</div>
        </div>`
-    : `<div class="deload-banner" style="background:var(--success-soft);border-color:var(--success-soft);border-left-color:var(--success);">
-         <div class="label" style="color:var(--success);">ブロック完了</div>
+    : `<div class="deload-banner deload-banner-ok">
+         <div class="label">ブロック完了</div>
          <div class="muted">採用で次ブロックへ</div>
        </div>`;
 
-  const acceptBtnAttr = blockComplete ? '' : 'disabled style="opacity:0.45;cursor:not-allowed;"';
+  const acceptBtnAttr = blockComplete ? '' : 'disabled';
   const acceptHelp = blockComplete
     ? ''
-    : '<div class="muted mt-8" style="font-size:12px;">完了後に採用可</div>';
+    : '<div class="muted mt-8">完了後に採用可</div>';
 
   // 1ローテ予定一覧（選択中ローテの8日分）
   const rotationOverview = [1,2,3,4,5,6,7,8].map(d => {
@@ -5719,27 +5721,27 @@ function renderBlock() {
     const isCurrent = viewRotation === s.rotation && d === s.day;
     let summary;
     if (m.isRest) {
-      summary = '<div class="muted" style="font-size:12px;">休み</div>';
+      summary = '<div class="muted">休み</div>';
     } else {
       const exItems = m.exercises.map(e => {
         const detail = e.plannedWeight != null
           ? `${e.plannedWeight}kg × ${e.plannedReps} × ${e.plannedSets}`
           : `${e.plannedReps} × ${e.plannedSets}`;
-        return `<li><span class="ex-name" style="font-size:12px;">${e.name}</span> <span class="muted" style="font-size:11px;">${detail}</span></li>`;
+        return `<li><span class="ex-name">${e.name}</span> <span class="muted text-fine">${detail}</span></li>`;
       }).join('');
-      summary = `<ul class="exercise-list" style="margin:4px 0 0;">${exItems}</ul>`;
+      summary = `<ul class="exercise-list mt-4">${exItems}</ul>`;
     }
     return `
-      <details class="rotation-day-card ui-details" ${isCurrent ? 'open' : ''} style="${isCurrent ? 'border-color:var(--accent);background:rgba(79,110,247,0.06);' : ''}">
+      <details class="rotation-day-card ui-details ${isCurrent ? 'is-current' : ''}" ${isCurrent ? 'open' : ''}>
         <summary>
           <span>
-            <span style="font-size:13px;font-weight:600;">Day${d}${isCurrent ? ' <span class="text-warn" style="font-size:10px;">(現在)</span>' : ''}</span>
-            <span class="muted" style="font-size:11px;">${m.name}</span>
+            <span class="label-strong">Day${d}${isCurrent ? ' <span class="text-warn text-fine">(現在)</span>' : ''}</span>
+            <span class="muted text-fine">${m.name}</span>
           </span>
         </summary>
-        <div class="row between" style="align-items:center;margin-bottom:6px;">
-          <span class="muted" style="font-size:12px;">${m.isRest ? '休息日' : 'メニュー'}</span>
-          <button class="btn-secondary btn-small" data-set-day="${d}" ${isCurrent ? 'disabled style="opacity:0.45;"' : ''}>このDayに設定</button>
+        <div class="row between mb-8">
+          <span class="muted">${m.isRest ? '休息日' : 'メニュー'}</span>
+          <button class="btn-secondary btn-small" data-set-day="${d}" ${isCurrent ? 'disabled' : ''}>このDayに設定</button>
         </div>
         ${summary}
       </details>
@@ -5761,7 +5763,7 @@ function renderBlock() {
 
     <div class="section">
       <h2>8日分の予定（R${viewRotation}）${viewRotation === s.rotation ? '<span class="status-pill status-ok">現在</span>' : ''}</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+      <div class="muted mb-8">
         8日分の予定
       </div>
       ${rotationOverview}
@@ -5770,7 +5772,7 @@ function renderBlock() {
     ${blockAccessoryEditor}
 
     <div class="section">
-      <h2>次ブロック重量提案 ${blockComplete ? '<span class="text-success" style="font-size:12px;">[正式]</span>' : '<span class="text-warn" style="font-size:12px;">[参考]</span>'}</h2>
+      <h2>次ブロック重量提案 ${blockComplete ? '<span class="text-success">[正式]</span>' : '<span class="text-warn">[参考]</span>'}</h2>
       ${referenceBanner}
       ${sugHtml}
       <div class="btn-row mt-12">
@@ -5790,7 +5792,7 @@ function renderBlock() {
       <h2>次ブロックへ進む</h2>
       <div class="muted mb-8">手動で次ブロック先頭(R1/D1)へ進めます</div>
       <button class="btn-primary" id="btnNextBlock" ${acceptBtnAttr}>次ブロックへ進む</button>
-      ${blockComplete ? '' : '<div class="muted mt-8" style="font-size:12px;">※ 4ローテ目Day8完了後に使用できます</div>'}
+      ${blockComplete ? '' : '<div class="muted mt-8">※ 4ローテ目Day8完了後に使用できます</div>'}
     </div>
   `;
 }
@@ -6334,8 +6336,8 @@ function renderLogDetail(logs) {
         </div>
         ${setRows}
         <div class="muted">@${log.rpe && log.rpe !== '未入力' ? log.rpe : '-'}${(log.pains || []).filter(p => p !== 'なし').length ? ` ・ ${(log.pains || []).filter(p => p !== 'なし').join('・')}` : ''}</div>
-        ${maxAttempt ? `<div class="row" style="gap:6px;"><span class="chip ${maxAttempt.challengeSucceeded ? 'chip-max' : 'chip-pause'}">${maxAttempt.challengeSucceeded ? '実測MAX' : 'MAX挑戦'}</span><span class="muted">${maxAttempt.challengeSucceeded ? `${fmtW(maxAttempt.measuredMaxWeight)}kg ✓成功` : `${fmtW(maxAttempt.attemptedWeight)}kg ✗失敗`}</span></div>` : ''}
-        ${emax ? `<div class="row" style="gap:6px;"><span class="chip chip-outline">推定 ${fmtW(emax.estimatedMax)}</span><span class="muted">${emax.maxUseLabel} ・ ${emax.maxUseReason}</span></div>` : ''}
+        ${maxAttempt ? `<div class="row row-tight"><span class="chip ${maxAttempt.challengeSucceeded ? 'chip-max' : 'chip-pause'}">${maxAttempt.challengeSucceeded ? '実測MAX' : 'MAX挑戦'}</span><span class="muted">${maxAttempt.challengeSucceeded ? `${fmtW(maxAttempt.measuredMaxWeight)}kg ${ICON_CHECK}成功` : `${fmtW(maxAttempt.attemptedWeight)}kg ✗失敗`}</span></div>` : ''}
+        ${emax ? `<div class="row row-tight"><span class="chip chip-outline">推定 ${fmtW(emax.estimatedMax)}</span><span class="muted">${emax.maxUseLabel} ・ ${emax.maxUseReason}</span></div>` : ''}
         ${log.note ? `<div class="muted">メモ: ${escapeHtml(log.note)}</div>` : ''}
       </div>
     `;
@@ -6358,14 +6360,14 @@ function renderDailyLogView(logMap = logsByDate()) {
     const summaryRows = logs.slice(0, 4).map(log => {
       if (log.isExerciseRest || log.todayOnlyDeleted) return '';
       const best = bestSetText(log);
-      return `<span class="muted" style="font-size:12px;">${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}${best ? ` ${best}` : ''}</span>`;
+      return `<span class="muted">${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}${best ? ` ${best}` : ''}</span>`;
     }).filter(Boolean).join(' ・ ');
     return `
       <details class="section ui-details log-card" data-ui-key="log-${escapeHtml(date)}">
         <summary>
           <span>
             <span class="log-card-title">${fmtDateShort(date)} ${logGroupHeaderMeta(first)}</span>
-            <span class="muted" style="display:block;font-size:12px;">${summaryRows || summary.mainNames}</span>
+            <span class="muted d-block">${summaryRows || summary.mainNames}</span>
           </span>
           <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}
         </summary>
@@ -6435,8 +6437,8 @@ function renderMonthlyLogView() {
         ${cells}
       </div>
       <div class="cal-legend">
-        <span><span class="dot" style="background:var(--accent);"></span>トレ</span>
-        <span><span class="dot" style="background:var(--max);"></span>MAX測定</span>
+        <span><span class="dot dot-accent"></span>トレ</span>
+        <span><span class="dot dot-max"></span>MAX測定</span>
       </div>
       ${selLine}
     </div>
@@ -6698,12 +6700,12 @@ function renderAccessoryLoadCheck(context = 'full') {
       ? attentionRows.map(row => `<div class="load-warning ${row.status.className === 'status-danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${row.status.label}</span>${row.label}: ${row.status.label}</div>`).join('')
       : warnings.slice(0, 3).map(w => `<div class="load-warning ${w.level === 'danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${w.level === 'danger' ? '危険' : '注意'}</span>${w.message}</div>`).join('');
   const body = `
-    <div class="muted" style="font-size:12px;margin-bottom:8px;">胸・背中・肩・腕・脚</div>
+    <div class="muted mb-8">胸・背中・肩・腕・脚</div>
     ${conclusion}
     <div class="mt-8">${warnHtml}</div>
     <details class="ui-details">
       <summary>詳細数値</summary>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">細かいカテゴリ・疲労タグ</div>
+      <div class="muted mb-8">細かいカテゴリ・疲労タグ</div>
       ${rows}
       <div class="mt-8">${warnings.length ? warnings.map(w => `<div class="load-warning ${w.level === 'danger' ? 'load-warning-danger' : 'load-warning-caution'}"><span>${w.level === 'danger' ? '危険' : '注意'}</span>${w.message}</div>`).join('') : '<div class="muted">詳細警告なし</div>'}</div>
     </details>
@@ -6742,12 +6744,12 @@ function renderAccessorySlotEditor(context = 'settings') {
     ? 'Day別に補助種目を管理'
     : '今後の基本プログラムを編集';
   const body = `
-    <div class="muted" style="font-size:12px;margin-bottom:8px;">${intro}</div>
+    <div class="muted mb-8">${intro}</div>
     ${selectedDay !== String(store.currentState.day) ? `<button class="btn-secondary btn-small mb-8" data-current-accessory-day="1">現在Dayへ戻る</button>` : ''}
     <details class="ui-details compact-details">
       <summary>候補を確認</summary>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">カテゴリ: ${ACCESSORY_CATEGORIES.join('、')}</div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">疲労タグ: ${ACCESSORY_FATIGUE_TAGS.join('、')}</div>
+      <div class="muted mb-8">カテゴリ: ${ACCESSORY_CATEGORIES.join('、')}</div>
+      <div class="muted mb-8">疲労タグ: ${ACCESSORY_FATIGUE_TAGS.join('、')}</div>
     </details>
     ${Object.keys(dayLabels).map(day => `
       <details class="subsection ui-details accessory-day-details" data-accessory-day="${day}" ${day === selectedDay ? 'open' : ''}>
@@ -6755,26 +6757,26 @@ function renderAccessorySlotEditor(context = 'settings') {
           <span>${dayLabels[day]}</span>
           <span class="status-pill status-ok">${(slots[day] || []).length}種目</span>
         </summary>
-        <div class="row between" style="align-items:center;gap:8px;margin-bottom:8px;">
-          <span class="muted" style="font-size:12px;">Day${day}</span>
+        <div class="row between mb-8">
+          <span class="muted">Day${day}</span>
           <button class="btn-ghost btn-small" data-reset-slot-day="${day}">初期おすすめに戻す</button>
         </div>
-        ${(slots[day] || []).length === 0 ? '<div class="muted mb-8" style="font-size:12px;">補助種目なし</div>' : ''}
+        ${(slots[day] || []).length === 0 ? '<div class="muted mb-8">補助種目なし</div>' : ''}
         ${(slots[day] || []).map((slot, idx, list) => `
-          <div class="suggestion-row" style="align-items:flex-start;">
+          <div class="suggestion-row align-start">
             <div class="name">
               <div class="strong">${slot.slotName}: ${slot.name}</div>
-              <div class="muted" style="font-size:12px;">${slot.setsText || slot.plannedSets}セット / ${slot.reps}回 / 目標RPE${slot.targetRpe}</div>
+              <div class="muted">${slot.setsText || slot.plannedSets}セット / ${slot.reps}回 / 目標RPE${slot.targetRpe}</div>
               <details class="ui-details compact-details">
                 <summary>詳細</summary>
-                <div class="accessory-meta" style="margin:6px 0 0;">
+                <div class="accessory-meta mt-8">
                   ${(slot.categories || []).slice(0, 3).map(c => `<span class="accessory-chip">${c}</span>`).join('')}
                   ${(slot.fatigueTags || []).slice(0, 2).map(t => `<span class="accessory-chip accessory-chip-fatigue">${t}</span>`).join('')}
                 </div>
               </details>
             </div>
-            <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="-1" ${idx === 0 ? 'disabled style="opacity:0.45;"' : ''}>上へ</button>
-            <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="1" ${idx === list.length - 1 ? 'disabled style="opacity:0.45;"' : ''}>下へ</button>
+            <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="-1" ${idx === 0 ? 'disabled' : ''}>上へ</button>
+            <button class="btn-ghost btn-small" data-move-slot-day="${day}" data-move-slot-id="${slot.slotId}" data-move-dir="1" ${idx === list.length - 1 ? 'disabled' : ''}>下へ</button>
             <button class="btn-secondary btn-small" data-edit-slot-day="${day}" data-edit-slot-id="${slot.slotId}">編集</button>
             <button class="btn-danger btn-small" data-delete-slot-day="${day}" data-delete-slot-id="${slot.slotId}">削除</button>
           </div>
@@ -6824,16 +6826,16 @@ function renderExerciseRestSettings() {
             ? '<span class="chip chip-outline">終了</span>'
             : '<span class="chip chip-outline">予定</span>';
         return `
-          <div class="card" style="margin-bottom:8px;">
+          <div class="card mb-8">
             <div class="row between">
-              <span style="font-size:17px;font-weight:700;">${escapeHtml(target)}</span>
+              <span class="text-lead">${escapeHtml(target)}</span>
               ${chip}
             </div>
             <div class="muted mt-8">${restPeriodText(rest)}</div>
-            ${rest.note ? `<div class="muted" style="font-size:12px;">${escapeHtml(rest.note)}</div>` : ''}
+            ${rest.note ? `<div class="muted">${escapeHtml(rest.note)}</div>` : ''}
             <div class="btn-pair mt-8">
               <button class="btn-sec btn-small" data-edit-exercise-rest="${rest.id}">編集</button>
-              <button class="btn-sec btn-small" data-end-exercise-rest="${rest.id}" ${rest.ended ? 'disabled style="opacity:0.45;"' : ''}>終了</button>
+              <button class="btn-sec btn-small" data-end-exercise-rest="${rest.id}" ${rest.ended ? 'disabled' : ''}>終了</button>
               <button class="btn-ghost btn-small" data-delete-exercise-rest="${rest.id}">削除</button>
             </div>
           </div>
@@ -6892,14 +6894,14 @@ function openExerciseRestSheet(editId = null) {
       ${periods.map(p => `<button class="seg-opt ${state.period === p.key ? 'on-pause' : ''}" data-rest-period="${p.key}">${p.label}</button>`).join('')}
     </div>
     <label class="field"><span>メモ（任意）</span><input type="text" id="exercise-rest-note" value="${editing ? escapeHtml(editing.note || '') : ''}" placeholder="例: 肩の違和感" /></label>
-    <div class="card flat" id="restSheetPreview" style="display:${state.targets.size ? '' : 'none'};">
+    <div class="card flat ${state.targets.size ? '' : 'hidden'}" id="restSheetPreview">
       <div class="sec-label">今日画面では</div>
       <div class="next-row pause-row">
         <span class="nx-name" id="restSheetPreviewName">${escapeHtml(initialTargets.join('・'))}</span>
         <span class="chip chip-pause">休止中</span>
       </div>
     </div>
-    <button class="btn-primary mt-8" id="btnConfirmExerciseRest" ${state.targets.size ? '' : 'style="opacity:0.4;" disabled'}>${editing ? '保存' : '追加'}</button>
+    <button class="btn-primary mt-8" id="btnConfirmExerciseRest" ${state.targets.size ? '' : 'disabled'}>${editing ? '保存' : '追加'}</button>
     <button class="btn-text btn-block" id="btnCancelExerciseRest">キャンセル</button>
   `, () => {
     const refresh = () => {
@@ -6907,11 +6909,8 @@ function openExerciseRestSheet(editId = null) {
       const preview = document.getElementById('restSheetPreview');
       const previewName = document.getElementById('restSheetPreviewName');
       const has = state.targets.size > 0;
-      if (confirmBtn) {
-        confirmBtn.disabled = !has;
-        if (confirmBtn.style) confirmBtn.style.opacity = has ? '1' : '0.4';
-      }
-      if (preview?.style) preview.style.display = has ? '' : 'none';
+      if (confirmBtn) confirmBtn.disabled = !has;
+      if (preview) preview.classList.toggle('hidden', !has);
       if (previewName) previewName.textContent = [...state.targets].join('・');
     };
     document.querySelectorAll('[data-rest-target]').forEach(chip => {
@@ -7009,10 +7008,10 @@ function renderSettings() {
   const accEditHtml = accKeys.map(k => {
     const def = accDefaults[k] || {};
     const dispName = ACCESSORY_DISPLAY_NAMES[k] || k;
-    const noteHtml = def.note ? `<span class="muted" style="font-size:11px;"> ${def.note}</span>` : '';
+    const noteHtml = def.note ? `<span class="muted text-fine"> ${def.note}</span>` : '';
     return `
       <div class="acc-edit-row">
-        <div style="font-size:13px;">${dispName}${noteHtml}</div>
+        <div class="text-sm">${dispName}${noteHtml}</div>
         <input type="number" step="0.5" data-acc-key="${k}" data-acc-field="weight" value="${def.weight ?? ''}" placeholder="重量" />
         <input type="text" data-acc-key="${k}" data-acc-field="reps" value="${def.reps ?? ''}" placeholder="回数" />
         <input type="number" min="1" data-acc-key="${k}" data-acc-field="sets" value="${def.sets ?? ''}" placeholder="セット" />
@@ -7046,7 +7045,7 @@ function renderSettings() {
       </details>
       <details class="ui-details compact-details">
         <summary>補足</summary>
-        <div class="muted" style="font-size:12px;">4メニューでは各メイン種目の初期重量計算に使用します。MAX値は自動更新しません。</div>
+        <div class="muted">4メニューでは各メイン種目の初期重量計算に使用します。MAX値は自動更新しません。</div>
       </details>
     </div>
 
@@ -7063,14 +7062,14 @@ function renderSettings() {
         <label class="volume-mode-option ${strengthMode === 'highIntensity' ? 'active' : ''}">
           <input type="radio" name="strengthMode" value="highIntensity" ${strengthMode === 'highIntensity' ? 'checked' : ''} />
           <div>
-            <div class="opt-title">高強度モード <span class="text-warn" style="font-size:11px;">(初期値)</span></div>
+            <div class="opt-title">高強度モード <span class="text-warn text-fine">(初期値)</span></div>
             <div class="muted opt-desc">メイン高強度</div>
           </div>
         </label>
       </div>
       <details class="ui-details compact-details mt-8">
         <summary>補足</summary>
-        <div class="muted" style="font-size:12px;">
+        <div class="muted">
         ※ 4ローテ目（疲労抜き）は両モードとも同じ縮小ボリューム（モード切替の影響を受けません）。<br>
         ※ Day7デッドリフトはハーフデッド強化の補助・フォーム維持目的のため高強度モードでも変更されません。<br>
         ※ モード変更後、未実施の今後メニューに自動反映されます。<br>
@@ -7092,14 +7091,14 @@ function renderSettings() {
         <label class="volume-mode-option ${volumeMode === 'high' ? 'active' : ''}">
           <input type="radio" name="volumeMode" value="high" ${volumeMode === 'high' ? 'checked' : ''} />
           <div>
-            <div class="opt-title">高ボリュームモード <span class="text-warn" style="font-size:11px;">(推奨)</span></div>
+            <div class="opt-title">高ボリュームモード <span class="text-warn text-fine">(推奨)</span></div>
             <div class="muted opt-desc">補助多め</div>
           </div>
         </label>
       </div>
       <details class="ui-details compact-details mt-8">
         <summary>補足</summary>
-        <div class="muted" style="font-size:12px;">
+        <div class="muted">
         ※ 4ローテ目（疲労抜き）は両モードとも同じ縮小ボリュームです。<br>
         ※ モード変更後、未実施の今後メニューに自動反映されます。今日のメニューは「再計算」を押した時のみ更新されます（実施済みセットは保持）。<br>
         ※ 過去ログは書き換わりません。
@@ -7126,7 +7125,7 @@ function renderSettings() {
       <div class="status-row"><span class="status-pill status-ok">1RM</span></div>
       <details class="ui-details compact-details">
         <summary>補足</summary>
-        <div class="muted" style="font-size:12px;">R4では測定する/しないだけ選びます。</div>
+        <div class="muted">R4では測定する/しないだけ選びます。</div>
       </details>
     </div>
 
@@ -7138,7 +7137,7 @@ function renderSettings() {
       <h2>補助種目の初期重量・回数・セット</h2>
       <details class="ui-details compact-details">
         <summary>補足</summary>
-        <div class="muted" style="font-size:12px;margin-bottom:8px;">空欄は重量未設定として扱います。</div>
+        <div class="muted mb-8">空欄は重量未設定として扱います。</div>
       </details>
       <div class="acc-edit-header">
         <div>種目</div><div>重量(kg)</div><div>回数</div><div>セット</div>
@@ -7168,7 +7167,7 @@ function renderSettings() {
       <details class="ui-details compact-details mt-8">
         <summary>再計算・初期値の詳細</summary>
         <button class="btn-danger" id="btnReset">初期値に戻す</button>
-        <div class="muted" style="font-size:12px;">
+        <div class="muted">
         ※ MAX変更後、未実施の今後メニューは新MAXで自動計算されます。<br>
         ※ 過去ログは書き換えません。<br>
         ※ 今日のメニューは「再計算」を押した時のみ更新されます（実施済みセットは保持）。
@@ -7181,7 +7180,7 @@ function renderSettings() {
       ${adjList.length === 0 ? '<div class="muted">調整なし</div>' :
         adjList.map(([k, v]) => `
           <div class="suggestion-row">
-            <div class="name" style="font-size:13px;">${k}</div>
+            <div class="name">${k}</div>
             <div class="delta">${v > 0 ? '+' : ''}${v}kg</div>
             <button class="btn-ghost btn-small" data-clear-adj="${k}">解除</button>
           </div>
@@ -7200,7 +7199,7 @@ function renderSettings() {
       </div>
       <details class="ui-details compact-details mt-8">
         <summary>詳細</summary>
-        <div class="muted" style="font-size:12px;">
+        <div class="muted">
         ストレージキー: ${STORAGE_KEY}<br>
         バージョン: ${APP_VERSION}
         </div>
