@@ -431,6 +431,45 @@ function testVolumeTrendComparesEqualPeriods() {
   assert.ok(html.includes('trend-note'), '比較している期間を明示する');
 }
 
+// 完了画面の「NEW PR」が一度も出なかった不具合の回帰テスト。
+// 完了時に自分のセットが store.logs へ入るため、自己ベストが自分自身になっていた。
+function testPrCountsOnlyEarlierSessions() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  store.logs = [{
+    id: 'past', sessionId: 'session-past', date: '2026-08-01', exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス', sets: [{ weight: 100, reps: 5, done: true }],
+  }];
+  const ex = { key: 'bench', name: 'ベンチプレス', sets: [{ weight: 110, reps: 3, done: true }] };
+
+  // 進行中（自分のログはまだ無い）: PRとして検出される
+  assert.deepStrictEqual(api.sessionPrSetIndexes(ex, null).join(','), '0', '過去の記録を超えたセットはPR');
+
+  // 完了後（自分のログが保存済み）: それでも同じ判定になる
+  store.logs.push({
+    id: 'today', sessionId: 'session-today', date: '2026-09-10', exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス', sets: [{ weight: 110, reps: 3, done: true }],
+  });
+  const session = { sessionId: 'session-today' };
+  assert.strictEqual(api.sessionPrSetIndexes(ex, session).join(','), '0', '保存後も自セッションを除いて判定する');
+  assert.strictEqual(api.getExercisePrRecord(ex, session).weight, 100, '自己ベストは過去のセッションから取る');
+  assert.strictEqual(api.getExercisePrRecord(ex, null).weight, 110, 'セッション指定なしなら全ログが対象');
+}
+
+// 破損したJSONを取り込むと設定画面が Object.entries(null) で落ちていた不具合の回帰テスト
+function testMigrationFixesContainerTypes() {
+  const { api } = createHarness();
+  const broken = api.migrateStoreData({ manualAdjustments: null, blockSuggestions: 'x' });
+  assert.strictEqual(typeof broken.manualAdjustments, 'object');
+  assert.ok(broken.manualAdjustments && !Array.isArray(broken.manualAdjustments));
+  assert.strictEqual(Object.keys(broken.manualAdjustments).length, 0);
+  assert.ok(Array.isArray(broken.blockSuggestions));
+  // 中身のある値は壊さない
+  const kept = api.migrateStoreData({ manualAdjustments: { '1-bench-main': 2.5 }, blockSuggestions: [{ ts: 1 }] });
+  assert.strictEqual(kept.manualAdjustments['1-bench-main'], 2.5);
+  assert.strictEqual(kept.blockSuggestions.length, 1);
+}
+
 // MAXタブに推定MAXを統合したときに、同じ数字とピッカーが二重に出た不具合の回帰テスト
 function testMaxTabShowsEachNumberOnce() {
   const { api } = createHarness();
@@ -741,6 +780,14 @@ function testRotationFlowAndMaxRecordsFromSession() {
   assert.strictEqual(isolatedStore.settings.maxes.bench, 122.5, 'MAXは自動採用される');
   assert.strictEqual(isolatedApi.undoAutoApplied(finishedKey, applied.indexOf(emaxApplied)), true);
   assert.strictEqual(isolatedStore.settings.maxes.bench, 120, '取り消すと旧値に戻る');
+  // 取り消したのに、同じセッションを保存し直すと黙って再適用されていた
+  isolatedApi.autoApplySuggestions(isolatedStore.daySessions[finishedKey]);
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, '取り消した提案は保存し直しても戻らない');
+  assert.strictEqual(
+    (isolatedStore.daySessions[finishedKey].autoApplied || []).some(item => item.kind === 'emax' && item.maxKey === 'bench'),
+    false,
+    '取り消した項目が一覧に復活してはいけない'
+  );
 
   const failedLog = big3Log({
     id: 'failed-max-log',
@@ -2487,6 +2534,8 @@ testMaxUpdateAndRotationProgressionAreCapped();
 testBodyWeightAndVolumeTrend();
 testVolumeTrendComparesEqualPeriods();
 testMaxTabShowsEachNumberOnce();
+testPrCountsOnlyEarlierSessions();
+testMigrationFixesContainerTypes();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
 testAdaptiveR4ProposalAndSelection();

@@ -476,6 +476,12 @@ function migrateStoreData(parsed = {}) {
     estimatedMaxHistory: Array.isArray(parsed.estimatedMaxHistory) ? parsed.estimatedMaxHistory : [],
     maxTestResults: Array.isArray(parsed.maxTestResults) ? parsed.maxTestResults : [],
     daySessions: parsed.daySessions && typeof parsed.daySessions === 'object' ? parsed.daySessions : {},
+    // 器の型だけは必ず揃える。壊れたJSONを取り込んだとき、設定画面や重量編集が
+    // Object.entries(null) で落ちて、原因の見えないクラッシュになっていた。
+    manualAdjustments: parsed.manualAdjustments && typeof parsed.manualAdjustments === 'object' && !Array.isArray(parsed.manualAdjustments)
+      ? parsed.manualAdjustments
+      : {},
+    blockSuggestions: Array.isArray(parsed.blockSuggestions) ? parsed.blockSuggestions : [],
     bodyWeights,
   };
 }
@@ -2667,8 +2673,12 @@ function getMainPrFacts(ex) {
 
 // 既存の記録から、この種目の自己ベスト（完了セットの最大重量）を返す。
 // 新しいデータは足さない。store.logs の完了セットを読むだけ。
-function getExercisePrRecord(ex) {
-  const logs = (store.logs || []).filter(log => log.exerciseKey === ex.key && !log.isExerciseRest && !log.todayOnlyDeleted);
+// 今セッションのログは除く。完了時に自分のセットが store.logs へ入るため、
+// 除かないと「自分の記録を自分で超える」ことになり、完了画面のPRが一度も出なかった。
+function getExercisePrRecord(ex, session = store.daySessions?.[todaySessionKey()]) {
+  const sessionId = session?.sessionId || null;
+  const logs = (store.logs || []).filter(log => log.exerciseKey === ex.key && !log.isExerciseRest && !log.todayOnlyDeleted
+    && (!sessionId || log.sessionId !== sessionId));
   const doneSets = logs.flatMap(log => (log.sets || []).filter(set => set.done));
   if (!doneSets.length) return null;
   const best = doneSets.reduce((acc, set) => {
@@ -2680,8 +2690,8 @@ function getExercisePrRecord(ex) {
 }
 
 // 今セッションでその記録を超えたか。超えたセットの index を返す。
-function sessionPrSetIndexes(ex) {
-  const record = getExercisePrRecord(ex);
+function sessionPrSetIndexes(ex, session = undefined) {
+  const record = session === undefined ? getExercisePrRecord(ex) : getExercisePrRecord(ex, session);
   // 過去の記録がなければPRではない。破る対象がないため。
   // 初回セッションで全種目がPRになるのを防ぐ。
   if (!record || !Number.isFinite(record.weight)) return [];
@@ -2733,9 +2743,9 @@ function lastSetDelta(ex, setIdx) {
   return delta === 0 ? null : delta;
 }
 
-function renderPrBadge(ex, justSet = false) {
-  const record = getExercisePrRecord(ex);
-  const prIdx = sessionPrSetIndexes(ex);
+function renderPrBadge(ex, justSet = false, session = undefined) {
+  const record = session === undefined ? getExercisePrRecord(ex) : getExercisePrRecord(ex, session);
+  const prIdx = sessionPrSetIndexes(ex, session);
   const live = prIdx.length ? parseFloat(ex.sets[prIdx[prIdx.length - 1]].weight) : null;
   const weight = live ?? record?.weight ?? null;
   if (!Number.isFinite(weight)) return '';
@@ -4081,8 +4091,8 @@ function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false, cueType 
     </div>`;
 }
 
-function renderSetTable(ex, exIdx, activeIdx, cue = null) {
-  const prRows = new Set(sessionPrSetIndexes(ex));
+function renderSetTable(ex, exIdx, activeIdx, cue = null, session = undefined) {
+  const prRows = new Set(sessionPrSetIndexes(ex, session));
   const rows = ex.sets
     .map((set, i) => renderSetTableRow(
       set, i, setRowState(set, i, activeIdx), exIdx, prRows.has(i),
@@ -4217,7 +4227,7 @@ function renderActiveExerciseCard(ex, exIdx) {
   const setIdx = firstPendingSetIndex(ex);
   const set = ex.sets[setIdx] || {};
   const totalSets = ex.sets.length;
-  const setTable = renderSetTable(ex, exIdx, setIdx, cue);
+  const setTable = renderSetTable(ex, exIdx, setIdx, cue, session);
   const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
   const previous = ex.isFourMenuMain ? previousMainSummary(ex, session) : null;
   const prFacts = ex.isFourMenuMain ? getMainPrFacts(ex) : [];
@@ -4296,7 +4306,7 @@ function renderActiveExerciseCard(ex, exIdx) {
           const e1rm = sessionEstimatedMax(ex);
           return e1rm ? `<span class="ex-e1rm"><span class="micro-label">E1RM</span><span class="num">${fmtW(e1rm)}</span></span>` : '';
         })()}
-        ${renderPrBadge(ex, cue && cue.type === 'pr' && cue.exIdx === exIdx)}
+        ${renderPrBadge(ex, cue && cue.type === 'pr' && cue.exIdx === exIdx, session)}
       </div>
       ${setTable}
       ${restState.running && setIdx >= 0 ? `
@@ -4387,7 +4397,7 @@ function renderWorkoutSummary(session, { totalDoneSets, volume }) {
   const delta = prev ? Math.round(volume - prev.volume) : null;
 
   const prBlocks = session.exercises.flatMap(ex => {
-    const idx = sessionPrSetIndexes(ex);
+    const idx = sessionPrSetIndexes(ex, session);
     if (!idx.length) return [];
     const set = ex.sets[idx[idx.length - 1]];
     return [{ name: displayExerciseName(ex.key, ex.name), weight: set.weight, reps: set.reps }];
@@ -5688,7 +5698,7 @@ function bodyWeightDelta(days = 30) {
 // dayLimit を渡すと各月の「1日〜dayLimit日」だけを集計する。
 // 月初にいる今月と、終わった先月をそのまま比べると必ず大幅減に見えるため。
 // 対象月の選定は日数で絞る前の記録で行うので、月がずれることはない。
-function monthlyVolumeByMenu(monthsBack = 2, dayLimit = null) {
+function monthlyVolumeByMenu(monthsBack = 2, dayLimit = null, endMonth = null) {
   const all = new Map();
   const capped = new Map();
   (store.logs || []).forEach(log => {
@@ -5706,7 +5716,9 @@ function monthlyVolumeByMenu(monthsBack = 2, dayLimit = null) {
       capped.get(month)[menu] = (capped.get(month)[menu] || 0) + volume;
     }
   });
-  const months = [...all.keys()].sort().reverse().slice(0, monthsBack);
+  const months = [...all.keys()]
+    .filter(month => !endMonth || month <= endMonth)
+    .sort().reverse().slice(0, monthsBack);
   const source = dayLimit == null ? all : capped;
   return months.map(month => ({ month, byMenu: source.get(month) || {} }));
 }
@@ -5750,10 +5762,11 @@ function renderVolumeTrend() {
   const today = todayStr();
   const day = parseInt(today.slice(8, 10), 10) || 1;
   const daysInMonth = new Date(parseInt(today.slice(0, 4), 10), parseInt(today.slice(5, 7), 10), 0).getDate();
-  const first = monthlyVolumeByMenu(2)[0];
+  // カレンダーで見ている月に合わせる。7月を開いているのに9月の集計が出ていた
+  const endMonth = selectedLogMonth();
   // 今月がまだ途中なら、先月も同じ日数までで揃えて比べる
-  const toDate = !!first && first.month === today.slice(0, 7) && day < daysInMonth;
-  const months = toDate ? monthlyVolumeByMenu(2, day) : monthlyVolumeByMenu(2);
+  const toDate = endMonth === today.slice(0, 7) && day < daysInMonth;
+  const months = monthlyVolumeByMenu(2, toDate ? day : null, endMonth);
   if (!months.length) return '';
   const [current, previous] = months;
   const keys = [...new Set([...Object.keys(current.byMenu), ...Object.keys(previous?.byMenu || {})])];
@@ -5784,14 +5797,24 @@ function renderVolumeTrend() {
 // ===== 自動採用 =====
 // 過去の記録から一意に決まる推奨値は、その場で採用して結果だけ残す。
 // 完了画面に一覧と取り消しを出すので、違うと思えば戻せる。
+// 取り消した提案の識別子。取り消しは「この提案は要らない」という意思表示なので、
+// 同じセッションを保存し直したときに黙って戻ってはいけない。
+function autoApplyIdentity(item) {
+  if (!item) return '';
+  if (item.kind === 'accessory') return `accessory:${item.menuKey}:${item.slotId}`;
+  return `${item.kind}:${item.id}`;
+}
+
 function autoApplySuggestions(session) {
   const applied = [];
   const liftKeys = new Set((session.exercises || []).map(ex => ex.key));
+  const undone = new Set(session.autoUndoneKeys || []);
 
   // 1. ローテーション進行（メイン種目の次回重量）
   (store.rotationProgressions || []).forEach(p => {
     if (p.status !== 'suggested' || p.appliedAt || !p.delta) return;
     if (!liftKeys.has(p.liftKey)) return;
+    if (undone.has(`rotation:${p.id}`)) return;
     if (!adoptRotationProgression(p.id)) return;
     applied.push({
       kind: 'rotation',
@@ -5805,14 +5828,20 @@ function autoApplySuggestions(session) {
   // 2. 推定MAXの更新候補
   (store.estimatedMaxHistory || []).forEach(entry => {
     if (entry.adopted || !liftKeys.has(entry.liftKey)) return;
+    if (undone.has(`emax:${entry.id}`)) return;
     const candidate = getMaxUpdateCandidate(entry);
     if (!candidate) return;
     const before = store.settings.maxes?.[entry.maxKey];
+    // MAX採用は同じ種目の保留中ローテーション進行を却下する。取り消しで戻せるよう控えておく
+    const dismissed = (store.rotationProgressions || [])
+      .filter(p => p.liftKey === entry.liftKey && ['suggested', 'accepted'].includes(p.status) && !p.appliedAt)
+      .map(p => ({ id: p.id, status: p.status }));
     if (!adoptEstimatedMax(entry.id)) return;
     applied.push({
       kind: 'emax',
       id: entry.id,
       maxKey: entry.maxKey,
+      dismissed,
       before,
       label: `${displayExerciseName(entry.liftKey)} MAX`,
       detail: `${fmtW(before)} → ${fmtW(candidate.candidate)}kg`,
@@ -5826,6 +5855,7 @@ function autoApplySuggestions(session) {
     if (!candidate) return;
     const menuKey = normalizeFourMenuKey(ex?.fourMenuKey || session?.performedSplitKey || session?.selectedSplitKey);
     if (!FOUR_MENU_LABELS[menuKey] || !ex.slotId) return;
+    if (undone.has(`accessory:${menuKey}:${ex.slotId}`)) return;
     const before = candidate.currentWeight;
     if (!applyAccessoryProgressionCandidate(session, ex)) return;
     applied.push({
@@ -5839,7 +5869,11 @@ function autoApplySuggestions(session) {
     });
   });
 
-  session.autoApplied = applied;
+  // 保存し直しでも、前回適用して取り消していない項目は一覧に残す（取り消せる状態を保つ）
+  const prior = (session.autoApplied || [])
+    .filter(item => !undone.has(autoApplyIdentity(item)))
+    .filter(item => !applied.some(next => autoApplyIdentity(next) === autoApplyIdentity(item)));
+  session.autoApplied = [...prior, ...applied];
   return applied;
 }
 
@@ -5855,6 +5889,14 @@ function undoAutoApplied(sessionKey, index) {
     const entry = (store.estimatedMaxHistory || []).find(x => x.id === item.id);
     if (entry) { entry.adopted = false; delete entry.adoptedAt; delete entry.adoptedMax; }
     if (item.before != null) store.settings.maxes[item.maxKey] = item.before;
+    // 採用の巻き添えで却下したローテーション進行も戻す
+    (item.dismissed || []).forEach(({ id, status }) => {
+      const p = (store.rotationProgressions || []).find(x => x.id === id);
+      if (p && p.status === 'dismissed' && p.dismissedReason === 'max-updated') {
+        p.status = status;
+        delete p.dismissedReason;
+      }
+    });
   } else if (item.kind === 'accessory') {
     const slot = getFourMenuAccessorySlots(item.menuKey).find(x => x.slotId === item.slotId);
     if (slot) updateFourMenuAccessorySlot(item.menuKey, item.slotId, { ...slot, plannedWeight: item.before });
@@ -5862,6 +5904,7 @@ function undoAutoApplied(sessionKey, index) {
 
   session.autoApplied.splice(index, 1);
   session.autoUndone = [...(session.autoUndone || []), item.label];
+  session.autoUndoneKeys = [...new Set([...(session.autoUndoneKeys || []), autoApplyIdentity(item)])];
   saveStore();
   return true;
 }
@@ -6774,6 +6817,7 @@ function computeNextBlockSuggestion() {
 
 // ===== ログ画面 =====
 let logFilter = { type: 'daily', maxLift: 'bench', emaxLift: 'bench', month: null, selDate: null, menu: 'all', role: 'all', query: '' };
+let logQueryTimer = null; // 検索欄の再描画を少し待つためのタイマー
 
 function completedFourMenuSessionGroups(limit = 8) {
   const groups = new Map();
@@ -6866,7 +6910,7 @@ function renderLog() {
   `;
 
   const body = logFilter.type === 'monthly'
-    ? `${renderVolumeTrend()}${renderBodyWeightCard()}${renderMonthlyLogView()}`
+    ? `${renderMonthlyLogView()}${renderVolumeTrend()}${renderBodyWeightCard()}`
     : (logFilter.type === 'max' || logFilter.type === 'emax')
       ? renderMaxLogTab()
       : renderDailyLogView();
@@ -6935,13 +6979,15 @@ function renderMaxLogTab() {
 function estimatedMaxHistoryRows(liftKey) {
   return collectEstimatedMaxEntries(liftKey).slice(0, 14).map(entry => {
     const kind = entry.adopted ? 'adopted' : (entry.maxUseKind || 'excluded');
+    // 候補には印を付けない。全ての行に付くラベルは何も区別していない。
+    // 採用ボタンの有無がその行が候補であることを示している。
     const chip = kind === 'adopted'
       ? '<span class="chip chip-adopted">採用済み</span>'
-      : kind === 'candidate'
-        ? '<span class="chip chip-outline">候補</span>'
-        : kind === 'reference'
-          ? '<span class="chip chip-pause">参考</span>'
-          : '<span class="chip chip-pause">除外</span>';
+      : kind === 'reference'
+        ? '<span class="chip chip-pause">参考</span>'
+        : kind === 'excluded'
+          ? '<span class="chip chip-pause">除外</span>'
+          : '';
     const candidate = !entry.adopted && !entry.derivedFromLog ? getMaxUpdateCandidate(entry) : null;
     return `
       <div class="hist-row ${kind === 'excluded' ? 'excluded' : ''}">
@@ -6986,6 +7032,14 @@ function renderEmaxLogTab(forcedLiftKey = null) {
       ${rows || '<div class="muted">履歴なし</div>'}
     </div>
   `;
+}
+
+// 月別タブがいま見ている月。カレンダーとボリューム推移が別々の月を出さないよう、
+// どちらもこの1か所から取る。
+function selectedLogMonth() {
+  if (/^\d{4}-\d{2}$/.test(logFilter.month || '')) return logFilter.month;
+  const dates = [...logsByDate().keys()].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  return dates.length ? dates[dates.length - 1].slice(0, 7) : todayStr().slice(0, 7);
 }
 
 function logsByDate() {
@@ -7084,8 +7138,7 @@ function renderDailyLogView(logMap = logsByDate()) {
 function renderMonthlyLogView() {
   const dateMap = logsByDate();
   const dates = [...dateMap.keys()].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
-  const fallbackMonth = dates.length ? dates[dates.length - 1].slice(0, 7) : todayStr().slice(0, 7);
-  const month = /^\d{4}-\d{2}$/.test(logFilter.month || '') ? logFilter.month : fallbackMonth;
+  const month = selectedLogMonth();
   logFilter.month = month; // 月送り操作の基準を常に保持する
   const [y, m] = month.split('-').map(Number);
   const firstDow = new Date(y, m - 1, 1).getDay();
@@ -7235,7 +7288,22 @@ function afterLog() {
   const roleFilter = document.getElementById('log-role-filter');
   if (roleFilter) roleFilter.onchange = () => { logFilter.role = roleFilter.value; render(); };
   const queryFilter = document.getElementById('log-query-filter');
-  if (queryFilter) queryFilter.onchange = () => { logFilter.query = queryFilter.value; render(); };
+  if (queryFilter) {
+    // 入力のたびに絞り込む。change だけだと欄から離れるまで何も起きず、検索が壊れて見えた。
+    // 再描画でフォーカスとカーソル位置が飛ぶので、描き直したあとに戻す。
+    queryFilter.oninput = () => {
+      logFilter.query = queryFilter.value;
+      const pos = queryFilter.selectionStart;
+      clearTimeout(logQueryTimer);
+      logQueryTimer = setTimeout(() => {
+        render();
+        const next = document.getElementById('log-query-filter');
+        if (!next) return;
+        next.focus();
+        try { next.setSelectionRange(pos, pos); } catch (e) { /* type=search が選択位置を持たない環境 */ }
+      }, 180);
+    };
+  }
   const logExport = document.getElementById('btnExport');
   if (logExport) logExport.onclick = exportData;
   const logImport = document.getElementById('btnImport');
@@ -8256,6 +8324,10 @@ if (typeof window !== 'undefined') {
     backLiftRowsHtml,
     menuSheetRowsHtml,
     undoAutoApplied,
+    autoApplySuggestions,
+    sessionPrSetIndexes,
+    getExercisePrRecord,
+    selectedLogMonth,
     recordBodyWeight,
     latestBodyWeight,
     migrateStoreData,
