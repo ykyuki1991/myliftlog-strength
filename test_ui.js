@@ -240,6 +240,58 @@ async function run() {
       checks++;
       await upgrade.close();
     }
+    // レストタイマーの回帰: 完了で止まること、鳴り終わったあとの ±30 が動き出すこと、
+    // 手で止めたタイマーは ±30 で勝手に再開しないこと。
+    {
+      const timerCtx = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true });
+      timerCtx.on('page', pg => pg.on('dialog', d => d.accept()));
+      const timerTab = await timerCtx.newPage();
+      timerTab.on('dialog', d => d.accept());
+      await timerTab.goto(url);
+      await timerTab.locator('#appHeader').waitFor();
+      const finish = await timerTab.evaluate(() => {
+        const t = window.__mllTest;
+        const s = getOrCreateTodaySession();
+        s.exercises.forEach(ex => {
+          ex.rpe = ex.rpe || '8';
+          ex.pains = ['なし'];
+          ex.sets = ex.sets.map(set => ({ ...set, weight: set.weight || 30, reps: set.reps || 5, done: true }));
+        });
+        persistTodaySession(s);
+        t.startRestTimer(180, 'test');
+        const running = t.getRestState().running;
+        finishTodaySession();
+        return { running, after: t.getRestState().running, persisted: !!store.restTimerState };
+      });
+      check(finish.running && !finish.after && !finish.persisted, 'finishing a session stops the rest timer');
+
+      const expiry = await timerTab.evaluate(async () => {
+        const t = window.__mllTest;
+        t.startRestTimer(1, 'test');
+        await new Promise(res => setTimeout(res, 2600));
+        t.syncRestTimer({ persist: false, alert: false });
+        const expired = { ...t.getRestState() };
+        t.adjustRestTimer(30);
+        const resumed = { ...t.getRestState() };
+        await new Promise(res => setTimeout(res, 1200));
+        t.syncRestTimer({ persist: false, alert: false });
+        return { expired, resumed, later: t.getRestState().remaining };
+      });
+      check(!expiry.expired.running && expiry.expired.remaining === 0, 'an expired timer reads zero, not the full duration');
+      check(expiry.resumed.running && expiry.resumed.remaining === 30 && expiry.later < 30, '+30 after the alarm restarts the countdown');
+
+      const paused = await timerTab.evaluate(() => {
+        const t = window.__mllTest;
+        t.startRestTimer(120, 'test');
+        document.getElementById('restToggle').click();
+        const stopped = t.getRestState().running;
+        t.adjustRestTimer(30);
+        return { stopped, after: t.getRestState().running };
+      });
+      check(!paused.stopped && !paused.after, 'a hand-paused timer is not resumed by ±30');
+      await timerTab.close();
+      await timerCtx.close();
+    }
     console.log(`test_ui.js: ${checks} checks passed. Screenshots: ${artifacts}`);
   } finally { await browser.close(); server.close(); }
 }

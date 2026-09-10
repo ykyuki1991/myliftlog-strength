@@ -2335,12 +2335,18 @@ function roundToIncrement(weight, increment = 2.5) {
   return Math.round(weight / increment) * increment;
 }
 
-function todayStr() {
-  const d = new Date();
+// Date を「その端末の暦の日付」として YYYY-MM-DD にする。
+// toISOString はUTCに直すので、JST（UTC+9）では常に前日になる。
+function dateToLocalStr(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function todayStr() {
+  return dateToLocalStr(new Date());
 }
 
 function fmtDate(s) {
@@ -2598,7 +2604,7 @@ function getFourMenuMainPlan(liftKey, menuKey, settings = store.settings) {
       sets: parseInt(override.plannedSets, 10) || 3,
       reason: '手動設定',
       reasonCode: 'manual_override',
-      referenceDate: override.updatedAt ? fmtDateShort(new Date(override.updatedAt).toISOString().slice(0, 10)) : '記録なし',
+      referenceDate: override.updatedAt ? fmtDateShort(dateToLocalStr(new Date(override.updatedAt))) : '記録なし',
     };
   }
 
@@ -2792,11 +2798,14 @@ function renderPlateBreakdown(ex, weight) {
     const h = Math.round(10 + (p / 20) * 18);
     return `<span class="plate" style="--plate-h:${h}px" data-plate="${p}"><span class="plate-w num">${p}</span></span>`;
   }).join('');
+  // 端数は必ず最小プレート(1.25kg)未満になるので、1.25以上という条件では一度も出なかった。
+  // 0.25kg刻みの増量設定を使うと普通に端数が出る。足りない分は書く。
+  const short = result.remainder >= 0.25;
   return `
-    <div class="plate-strip" aria-label="片側のプレート ${result.plates.join('、')}キロ">
+    <div class="plate-strip" aria-label="片側のプレート ${result.plates.join('、')}キロ${short ? `。片側 ${result.remainder}キロ足りません` : ''}">
       <span class="micro-label plate-side">PER SIDE</span>
       <span class="plate-bar">${bars}</span>
-      ${result.remainder >= 1.25 ? `<span class="plate-remainder num">+${result.remainder}kg</span>` : ''}
+      ${short ? `<span class="plate-remainder num">+${result.remainder}kg</span>` : ''}
     </div>`;
 }
 
@@ -5687,7 +5696,7 @@ function bodyWeightDelta(days = 30) {
   const latest = list[0];
   const cutoff = new Date(`${latest.date}T00:00:00`);
   cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const cutoffStr = dateToLocalStr(cutoff);
   const older = list.find(item => item.date <= cutoffStr) || list[list.length - 1];
   if (!older || older.date === latest.date) return null;
   return { from: older, to: latest, delta: Math.round((latest.weight - older.weight) * 10) / 10 };
@@ -5799,6 +5808,13 @@ function renderVolumeTrend() {
 // 完了画面に一覧と取り消しを出すので、違うと思えば戻せる。
 // 取り消した提案の識別子。取り消しは「この提案は要らない」という意思表示なので、
 // 同じセッションを保存し直したときに黙って戻ってはいけない。
+// トレーニングを終えたらインターバルも終わり。止めないとリングが回り続け、
+// アプリを閉じたあとに鳴り、次に開いたときにまた復元されていた。
+function stopRestTimerAfterFinish() {
+  if (!restState.running && !restState.restEndAt && !store.restTimerState) return;
+  closeRestTimer();
+}
+
 function autoApplyIdentity(item) {
   if (!item) return '';
   if (item.kind === 'accessory') return `accessory:${item.menuKey}:${item.slotId}`;
@@ -6065,6 +6081,7 @@ function finishTodaySession() {
       render();
       return;
     }
+    stopRestTimerAfterFinish();
     showToast(wasCompleted ? '記録を更新しました' : 'お疲れさま！記録を保存しました');
     navigate('today');
     return;
@@ -6075,6 +6092,7 @@ function finishTodaySession() {
     render();
     return;
   }
+  stopRestTimerAfterFinish();
   showToast('お疲れさま！記録を保存しました');
 
   // 4ローテD8（最後／休み）終了時のみ、次ブロック提案を表示
@@ -6159,6 +6177,9 @@ function getRestRemainingSec(now = nowMs()) {
   if (restState.running) {
     return Math.max(0, Math.ceil((restState.restEndAt - now) / 1000));
   }
+  // 鳴り終わって止まっている状態。停止中の式は「止めた時点の残り」を返すが、
+  // 自然終了では開始・終了時刻が元のままなので、同期のたびに満タンに戻って見えていた。
+  if (restState.alertedAt && restState.restEndAt <= now) return 0;
   return Math.max(0, Math.ceil((restState.restEndAt - restState.restStartedAt) / 1000));
 }
 
@@ -6342,13 +6363,16 @@ function setupRestTimerControls() {
 
 function adjustRestTimer(deltaSec) {
   syncRestTimer({ persist: false, alert: false });
+  // 鳴り終わったあとの「+30」は、時間を足したのに止まったままだった。
+  // 自然に0になった状態（alertedAtあり）と、自分で止めた状態は別物として扱う。
+  const wasExpired = !restState.running && restState.remaining <= 0 && !!restState.alertedAt;
   const remaining = Math.max(0, restState.remaining + deltaSec);
   const now = nowMs();
   restState.restStartedAt = now;
   restState.restEndAt = now + remaining * 1000;
   restState.remaining = remaining;
   restState.alertedAt = remaining > 0 ? null : (restState.alertedAt || now);
-  restState.running = remaining > 0 ? restState.running : false;
+  restState.running = remaining > 0 ? (restState.running || wasExpired) : false;
   setRestTimerAlarm(remaining <= 0);
   setRestToggleText();
   scheduleRestTick();
@@ -7312,7 +7336,10 @@ function afterLog() {
 }
 
 function exportData() {
-  store.settings.lastExportedAt = new Date().toISOString();
+  // 端末の暦で持つ。UTCのままだと JST の午前中に取ったバックアップが前日扱いになり、
+  // 「最終バックアップ」の表示も30日警告も1日ずれる。
+  const now = new Date();
+  store.settings.lastExportedAt = `${dateToLocalStr(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   saveStore();
   const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -7578,7 +7605,7 @@ function renderAccessorySlotEditor(context = 'settings') {
 function addDaysStr(dateStr, days) {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return dateToLocalStr(d);
 }
 
 // 休止期間の表示「6/2 – 6/16」（未定なら「6/2 – 未定」）
@@ -8328,6 +8355,10 @@ if (typeof window !== 'undefined') {
     sessionPrSetIndexes,
     getExercisePrRecord,
     selectedLogMonth,
+    addDaysStr,
+    dateToLocalStr,
+    platesPerSide,
+    renderPlateBreakdown,
     recordBodyWeight,
     latestBodyWeight,
     migrateStoreData,

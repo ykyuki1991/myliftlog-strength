@@ -431,6 +431,31 @@ function testVolumeTrendComparesEqualPeriods() {
   assert.ok(html.includes('trend-note'), '比較している期間を明示する');
 }
 
+// 日付をUTCに直していたせいで、JST（UTC+9）では休止期間が1日早く終わっていた回帰テスト。
+// 端末のタイムゾーンに関係なく同じ答えになるべき。
+function testLocalDateArithmetic() {
+  const { api } = createHarness();
+  assert.strictEqual(api.addDaysStr('2026-09-10', 7), '2026-09-17', '7日後は素直に7日後');
+  assert.strictEqual(api.addDaysStr('2026-09-10', 30), '2026-10-10');
+  assert.strictEqual(api.addDaysStr('2026-12-31', 1), '2027-01-01', '年をまたいでもずれない');
+  assert.strictEqual(api.addDaysStr('2026-03-01', -1), '2026-02-28');
+  assert.strictEqual(api.dateToLocalStr(new Date(2026, 8, 10, 0, 30)), '2026-09-10', '深夜でもその日の日付');
+  assert.strictEqual(api.dateToLocalStr(new Date(2026, 8, 10, 23, 30)), '2026-09-10');
+  assert.strictEqual(api.dateToLocalStr(new Date('nonsense')), '');
+}
+
+// プレート内訳の「足りない分」が構造上一度も表示されなかった不具合の回帰テスト
+function testPlateRemainderIsReachable() {
+  const { api } = createHarness();
+  const exact = api.platesPerSide(100);
+  assert.strictEqual(exact.remainder, 0, '2.5kg刻みなら端数は出ない');
+  const odd = api.platesPerSide(101.25);
+  assert.ok(odd.remainder >= 0.25 && odd.remainder < 1.25, '端数は最小プレート未満（' + odd.remainder + '）');
+  const html = api.renderPlateBreakdown({ key: 'bench', isBig3: true }, 101.25);
+  assert.ok(html.includes('plate-remainder'), '足りない分を表示する');
+  assert.ok(!api.renderPlateBreakdown({ key: 'bench', isBig3: true }, 100).includes('plate-remainder'), 'ちょうど組めるときは出さない');
+}
+
 // 完了画面の「NEW PR」が一度も出なかった不具合の回帰テスト。
 // 完了時に自分のセットが store.logs へ入るため、自己ベストが自分自身になっていた。
 function testPrCountsOnlyEarlierSessions() {
@@ -2535,6 +2560,8 @@ testBodyWeightAndVolumeTrend();
 testVolumeTrendComparesEqualPeriods();
 testMaxTabShowsEachNumberOnce();
 testPrCountsOnlyEarlierSessions();
+testLocalDateArithmetic();
+testPlateRemainderIsReachable();
 testMigrationFixesContainerTypes();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
