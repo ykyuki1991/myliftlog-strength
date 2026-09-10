@@ -10,39 +10,62 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=20260909-precision-strength" />
+  <link rel="preload" href="fonts/archivo-narrow-600.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="styles.css?v=20260909-precision-today" />
   <title>MyLiftLog Strength Planner</title>
 </head>
 <body>
-  <!-- レストタイマーバー（動作中のみ表示） -->
-  <div id="restTimer" class="rest-bar hidden">
-    <div class="rest-bar-row">
-      <div class="rest-time-group"><span class="rest-caption">レスト</span><span class="rest-bar-time" id="restTimerDisplay" role="timer">00:00</span></div>
-      <div class="rest-bar-track"><div class="rest-bar-fill" id="restBarFill"></div></div>
-      <details class="timer-options"><summary>調整</summary><div><button id="restMinus30" aria-label="30秒減らす">−30秒</button><button id="restPlus30" aria-label="30秒増やす">＋30秒</button><button id="restReset" aria-label="リセット">↺</button></div></details>
-      <button id="restToggle">停止</button>
-      <button id="restClose">スキップ</button>
+  <header id="appHeader" class="app-header" data-variant="compact">
+    <div class="app-header-inner">
+      <div class="hd-text">
+        <span class="micro-label hd-eyebrow" id="hdEyebrow"></span>
+        <h1 class="hd-title" id="hdTitle"></h1>
+      </div>
+      <div class="hd-actions">
+        <div id="restTimer" class="rest-ring hidden">
+          <button id="restRingBtn" class="rest-ring-btn" aria-label="レストタイマーの操作">
+            <svg class="rest-ring-svg" viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="rest-ring-track" cx="50" cy="50" r="44" pathLength="100" />
+              <circle class="rest-ring-prog" id="restBarFill" cx="50" cy="50" r="44" pathLength="100" />
+            </svg>
+            <span class="rest-ring-inner">
+              <span class="rest-ring-time" id="restTimerDisplay" role="timer">00:00</span>
+              <span class="micro-label rest-ring-caption">REST</span>
+            </span>
+          </button>
+          <div class="rest-pop hidden" id="restPop" role="group" aria-label="レストタイマー">
+            <button id="restToggle">停止</button>
+            <button id="restMinus30" aria-label="30秒減らす">−30秒</button>
+            <button id="restPlus30" aria-label="30秒増やす">＋30秒</button>
+            <button id="restReset" aria-label="リセット">リセット</button>
+            <button id="restClose">スキップ</button>
+          </div>
+        </div>
+        <button id="hdOptions" class="hd-icon-btn hidden" aria-label="メニューと調整を開く">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+        </button>
+      </div>
     </div>
-  </div>
+  </header>
 
   <main id="main"></main>
 
   <nav class="bottom-nav" aria-label="メインナビゲーション">
     <button class="nav-btn" data-screen="today">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M3 9v6"/><path d="M21 9v6"/><path d="M6.5 12h11"/></svg></span>
-      <span class="nav-label">今日</span>
+      <span class="nav-label">TODAY</span>
     </button>
     <button class="nav-btn" data-screen="log">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3.5-4 3 2.5L19 7"/></svg></span>
-      <span class="nav-label">ログ</span>
+      <span class="nav-label">LOG</span>
     </button>
     <button class="nav-btn" data-screen="block">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/><path d="M8 2v4"/><path d="M16 2v4"/></svg></span>
-      <span class="nav-label">計画</span>
+      <span class="nav-label">PLAN</span>
     </button>
     <button class="nav-btn" data-screen="settings">
       <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>
-      <span class="nav-label">設定</span>
+      <span class="nav-label">SETTINGS</span>
     </button>
   </nav>
 
@@ -60,6 +83,6 @@
   <!-- トースト -->
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=20260909-precision-strength"></script>
+  <script src="app.js?v=20260909-precision-today"></script>
 </body>
 </html>

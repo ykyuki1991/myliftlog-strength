@@ -240,11 +240,12 @@ function testAccessoryProgression() {
 
 function testTodayScreenRenders() {
   let html = api.renderToday();
-  assert.ok(html.includes('トレーニング') || html.includes('休み'));
+  // 目につくクロームは英語になった（種目名・ログ本文は日本語のまま）。
+  assert.ok(html.includes('FINISH') || html.includes('休み'));
   if (!html.includes('今日は休み')) {
-    assert.ok(html.includes('＋補助種目を追加'));
+    assert.ok(html.includes('ADD EXERCISE'));
     assert.ok(html.includes('active-set'), 'first incomplete exercise should expand as the active card');
-    assert.ok(html.includes('次の種目'), 'remaining exercises should collapse into the up-next list');
+    assert.ok(html.includes('UP NEXT'), 'remaining exercises should collapse into the up-next list');
     assert.ok(html.includes('メイン種目編集'), 'active main card should expose the edit action without a BIG3-only label');
     assert.ok(!html.includes('膝負荷'), 'today accessory cards should not show fatigue tags by default');
     assert.ok(!html.includes('脚補助'), 'today accessory cards should keep category details out of the card');
@@ -252,7 +253,7 @@ function testTodayScreenRenders() {
     const session = Object.values(store.daySessions).at(-1);
     session.exercises[0].sets.forEach(set => { set.done = true; });
     html = api.renderToday();
-    assert.ok(html.includes('完了済み 1件'));
+    assert.ok(html.includes('COMPLETED 1'));
     assert.ok(html.includes('completed-exercises'));
   }
 }
@@ -271,12 +272,14 @@ function testSetCompletionAndMainSetEdit() {
   assert.strictEqual(ex.sets[0].done, true);
 
   let html = api.renderToday();
-  assert.ok(html.includes('set-row-done'), 'done sets should render with green row class');
+  // セット行は4カラムテーブルになった。完了行のクラスは set-tr-done。
+  assert.ok(html.includes('set-tr-done'), 'done sets should render as a completed table row');
+  assert.ok(html.includes('st-done'), 'completed status marker');
 
   ex.sets.forEach(set => { set.done = true; });
   assert.strictEqual(api.isExerciseComplete(ex), true);
   html = api.renderToday();
-  assert.ok(html.includes('完了済み 1件'));
+  assert.ok(html.includes('COMPLETED 1'));
   assert.ok(html.includes('exercise-card-complete'));
 
   result = api.toggleNextSetCompletion(session, exIdx);

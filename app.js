@@ -8,7 +8,7 @@
 const STORAGE_KEY = 'mll_strength_planner_v1';
 const RECOVERY_KEY_PREFIX = `${STORAGE_KEY}_recovery_`;
 const APP_VERSION = '1.0.0';
-const DATA_SCHEMA_VERSION = 2;
+const DATA_SCHEMA_VERSION = 3;
 
 const DEFAULT_SETTINGS = {
   programMode: 'fourMenu',
@@ -152,6 +152,22 @@ const FOUR_MENU_LABELS = {
   custom: 'カスタム',
   rest: '休み',
 };
+// 画面上部の見出しなど「目につくクローム」だけ英語にする。
+// 保存データ・種目名・ログ本文には一切触れない。
+const FOUR_MENU_LABELS_EN = {
+  shoulder_arm: 'SHOULDER & ARM',
+  legs: 'LEGS',
+  chest: 'CHEST',
+  back: 'BACK',
+  custom: 'CUSTOM',
+  rest: 'REST DAY',
+};
+
+function fourMenuLabelEn(key) {
+  if (key === 'rest') return FOUR_MENU_LABELS_EN.rest;
+  return FOUR_MENU_LABELS_EN[normalizeFourMenuKey(key)] || FOUR_MENU_LABELS_EN.shoulder_arm;
+}
+
 const FOUR_MENU_MAIN_LIFTS = {
   shoulderPress: { key: 'shoulderPress', maxKey: 'shoulderPress', name: 'ミリタリープレス', fallbackWeight: 65 },
   squat: { key: 'squat', maxKey: 'squat', name: 'スクワット', fallbackWeight: 145 },
@@ -383,12 +399,24 @@ function defaultStore() {
     estimatedMaxHistory: [],  // BIG3推定MAX履歴
     maxTestResults: [],       // デロード/MAX測定結果
     daySessions: {},         // key: "YYYY-MM-DD" → セッションデータ
+    bodyWeights: [],         // {date, weight, ts} ボリュームだけでは強さの変化が読めないため
     restTimerState: null,     // {restStartedAt, restDurationSec, restEndAt, running, targetName, alertedAt}
   };
 }
 
 function migrateStoreData(parsed = {}) {
   const def = defaultStore();
+  // schema 3: 体重履歴の器と、ダンベルの片手/両手表記。
+  // どちらも既存の値の意味を変えない。dumbbellSide は未設定のままなら何も表示しない。
+  const bodyWeights = Array.isArray(parsed.bodyWeights)
+    ? parsed.bodyWeights
+      .map(item => ({
+        date: String(item?.date || ''),
+        weight: Number(item?.weight),
+        ts: Number(item?.ts) || 0,
+      }))
+      .filter(item => item.date && Number.isFinite(item.weight) && item.weight > 0)
+    : [];
   const mergedAccDefaults = { ...def.settings.accessoryDefaults };
   const userAccDefaults = parsed.settings?.accessoryDefaults || {};
   for (const key of Object.keys(userAccDefaults)) {
@@ -448,6 +476,13 @@ function migrateStoreData(parsed = {}) {
     estimatedMaxHistory: Array.isArray(parsed.estimatedMaxHistory) ? parsed.estimatedMaxHistory : [],
     maxTestResults: Array.isArray(parsed.maxTestResults) ? parsed.maxTestResults : [],
     daySessions: parsed.daySessions && typeof parsed.daySessions === 'object' ? parsed.daySessions : {},
+    // 器の型だけは必ず揃える。壊れたJSONを取り込んだとき、設定画面や重量編集が
+    // Object.entries(null) で落ちて、原因の見えないクラッシュになっていた。
+    manualAdjustments: parsed.manualAdjustments && typeof parsed.manualAdjustments === 'object' && !Array.isArray(parsed.manualAdjustments)
+      ? parsed.manualAdjustments
+      : {},
+    blockSuggestions: Array.isArray(parsed.blockSuggestions) ? parsed.blockSuggestions : [],
+    bodyWeights,
   };
 }
 
@@ -684,7 +719,14 @@ function r4AdjustmentKey(block = store.currentState.block) {
 
 function getSelectedR4AdjustmentMode(settings = store.settings, block = store.currentState.block) {
   const mode = settings.r4AdjustmentModes?.[r4AdjustmentKey(block)];
-  return R4_ADJUSTMENT_MODES[mode] ? mode : 'normalDeload';
+  if (R4_ADJUSTMENT_MODES[mode]) return mode;
+  // 手で選ばれていなければ推奨値を使う。過去の記録から一意に決まるものを
+  // 毎ブロック聞かない、という方針（DESIGN.md 原則15）。
+  try {
+    const recommended = getR4AdjustmentProposal().recommendedMode;
+    if (R4_ADJUSTMENT_MODES[recommended]) return recommended;
+  } catch (e) { /* 提案が組めない場合は既定へ */ }
+  return 'normalDeload';
 }
 
 function getR4AdjustmentProfile(mode = 'normalDeload') {
@@ -2293,12 +2335,18 @@ function roundToIncrement(weight, increment = 2.5) {
   return Math.round(weight / increment) * increment;
 }
 
-function todayStr() {
-  const d = new Date();
+// Date を「その端末の暦の日付」として YYYY-MM-DD にする。
+// toISOString はUTCに直すので、JST（UTC+9）では常に前日になる。
+function dateToLocalStr(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function todayStr() {
+  return dateToLocalStr(new Date());
 }
 
 function fmtDate(s) {
@@ -2556,7 +2604,7 @@ function getFourMenuMainPlan(liftKey, menuKey, settings = store.settings) {
       sets: parseInt(override.plannedSets, 10) || 3,
       reason: '手動設定',
       reasonCode: 'manual_override',
-      referenceDate: override.updatedAt ? fmtDateShort(new Date(override.updatedAt).toISOString().slice(0, 10)) : '記録なし',
+      referenceDate: override.updatedAt ? fmtDateShort(dateToLocalStr(new Date(override.updatedAt))) : '記録なし',
     };
   }
 
@@ -2627,6 +2675,138 @@ function getMainPrFacts(ex) {
   if (Number.isFinite(planned) && planned > bestFive) facts.push('5回PR候補');
   else if (Number.isFinite(planned) && planned === bestFive) facts.push('5回過去最高と同重量');
   return facts;
+}
+
+// 既存の記録から、この種目の自己ベスト（完了セットの最大重量）を返す。
+// 新しいデータは足さない。store.logs の完了セットを読むだけ。
+// 今セッションのログは除く。完了時に自分のセットが store.logs へ入るため、
+// 除かないと「自分の記録を自分で超える」ことになり、完了画面のPRが一度も出なかった。
+function getExercisePrRecord(ex, session = store.daySessions?.[todaySessionKey()]) {
+  const sessionId = session?.sessionId || null;
+  const logs = (store.logs || []).filter(log => log.exerciseKey === ex.key && !log.isExerciseRest && !log.todayOnlyDeleted
+    && (!sessionId || log.sessionId !== sessionId));
+  const doneSets = logs.flatMap(log => (log.sets || []).filter(set => set.done));
+  if (!doneSets.length) return null;
+  const best = doneSets.reduce((acc, set) => {
+    const w = parseFloat(set.weight);
+    if (!Number.isFinite(w)) return acc;
+    return w > (acc?.weight ?? -1) ? { weight: w, reps: parseInt(set.reps, 10) || null } : acc;
+  }, null);
+  return best;
+}
+
+// 今セッションでその記録を超えたか。超えたセットの index を返す。
+function sessionPrSetIndexes(ex, session = undefined) {
+  const record = session === undefined ? getExercisePrRecord(ex) : getExercisePrRecord(ex, session);
+  // 過去の記録がなければPRではない。破る対象がないため。
+  // 初回セッションで全種目がPRになるのを防ぐ。
+  if (!record || !Number.isFinite(record.weight)) return [];
+  const out = [];
+  let running = record.weight;
+  ex.sets.forEach((set, i) => {
+    if (!set.done || set.skipped) return;
+    const w = parseFloat(set.weight);
+    if (Number.isFinite(w) && w > running) { out.push(i); running = w; }
+  });
+  return out;
+}
+
+// 今セッションの完了セットから e1RM を出す。既存の estimateMaxFromSet を使うだけで
+// 新しい計算式は足さない。RPE未入力なら出さない。
+function sessionEstimatedMax(ex) {
+  if (!isBig3Key(ex?.key) && !ex?.isFourMenuMain) return null;
+  const done = (ex.sets || []).filter(set => set.done && !set.skipped && set.weight && set.reps);
+  if (!done.length) return null;
+  const best = done.reduce((acc, set) => {
+    const est = estimateMaxFromSet(set.weight, set.reps, ex.rpe);
+    if (est.value == null) return acc;
+    return est.value > (acc?.value ?? -1) ? est : acc;
+  }, null);
+  return best?.value ?? null;
+}
+
+// 直近の同種目ログの最大重量。前回比の基準に使う。
+function previousMainLogWeight(ex) {
+  const logs = (store.logs || [])
+    .filter(log => log.exerciseKey === ex.key && !log.isExerciseRest && !log.todayOnlyDeleted)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  for (const log of logs) {
+    const done = (log.sets || []).filter(set => set.done && !set.skipped);
+    if (!done.length) continue;
+    const best = Math.max(...done.map(set => parseFloat(set.weight) || 0));
+    if (best > 0) return best;
+  }
+  return null;
+}
+
+function lastSetDelta(ex, setIdx) {
+  const set = ex?.sets?.[setIdx];
+  const prev = previousMainLogWeight(ex);
+  if (!set || prev == null) return null;
+  const w = parseFloat(set.weight);
+  if (!Number.isFinite(w)) return null;
+  const delta = Math.round((w - prev) * 10) / 10;
+  return delta === 0 ? null : delta;
+}
+
+function renderPrBadge(ex, justSet = false, session = undefined) {
+  const record = session === undefined ? getExercisePrRecord(ex) : getExercisePrRecord(ex, session);
+  const prIdx = sessionPrSetIndexes(ex, session);
+  const live = prIdx.length ? parseFloat(ex.sets[prIdx[prIdx.length - 1]].weight) : null;
+  const weight = live ?? record?.weight ?? null;
+  if (!Number.isFinite(weight)) return '';
+  const reps = live != null ? ex.sets[prIdx[prIdx.length - 1]].reps : record?.reps;
+  return `
+    <span class="pr-badge ${live != null ? 'pr-badge-new' : ''}${justSet ? ' pr-badge-pop' : ''}" role="img" aria-label="自己ベスト ${fmtW(weight)}キロ${reps ? ` ${reps}回` : ''}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6"/><path d="M12 13v7"/></svg>
+      <span class="micro-label pr-badge-tag">PR</span>
+      <span class="pr-badge-value num">${fmtW(weight)}</span>
+    </span>`;
+}
+
+// プレート計算: 20kgバー前提で片側の内訳を出す。
+// バーベルを使わない種目、判定できない種目では出さない。
+const PLATE_STEPS = [20, 15, 10, 5, 2.5, 1.25];
+const BARBELL_LIFT_KEYS = new Set(['bench', 'squat', 'halfDead', 'floorDead', 'deadlift', 'ohp', 'militaryPress', 'row', 'barbellRow']);
+
+function usesBarbell(ex) {
+  if (!ex) return false;
+  if (ex.isBig3 || ex.isFourMenuMain) return true;
+  if (BARBELL_LIFT_KEYS.has(ex.key)) return true;
+  return false;
+}
+
+function platesPerSide(totalWeight, barWeight = 20) {
+  const total = parseFloat(totalWeight);
+  if (!Number.isFinite(total) || total <= barWeight) return null;
+  let side = (total - barWeight) / 2;
+  const plates = [];
+  for (const step of PLATE_STEPS) {
+    while (side >= step - 1e-9 && plates.length < 12) {
+      plates.push(step);
+      side = Math.round((side - step) * 1000) / 1000;
+    }
+  }
+  return { plates, remainder: Math.round(side * 100) / 100 };
+}
+
+function renderPlateBreakdown(ex, weight) {
+  if (!usesBarbell(ex)) return '';
+  const result = platesPerSide(weight);
+  if (!result || !result.plates.length) return '';
+  const bars = result.plates.map(p => {
+    const h = Math.round(10 + (p / 20) * 18);
+    return `<span class="plate" style="--plate-h:${h}px" data-plate="${p}"><span class="plate-w num">${p}</span></span>`;
+  }).join('');
+  // 端数は必ず最小プレート(1.25kg)未満になるので、1.25以上という条件では一度も出なかった。
+  // 0.25kg刻みの増量設定を使うと普通に端数が出る。足りない分は書く。
+  const short = result.remainder >= 0.25;
+  return `
+    <div class="plate-strip" aria-label="片側のプレート ${result.plates.join('、')}キロ${short ? `。片側 ${result.remainder}キロ足りません` : ''}">
+      <span class="micro-label plate-side">PER SIDE</span>
+      <span class="plate-bar">${bars}</span>
+      ${short ? `<span class="plate-remainder num">+${result.remainder}kg</span>` : ''}
+    </div>`;
 }
 
 function buildFourMenuMainExercise(menuKey, settings = store.settings, selectedBackLiftKey = null) {
@@ -3434,7 +3614,7 @@ function selectFourMenuForToday(menuKey, options = {}) {
   const exerciseDrafts = oldSession?.exerciseDrafts || {};
   (oldSession?.exercises || []).forEach(ex => { exerciseDrafts[`${ex.key}:${ex.menuType}`] = cloneWorkoutExercise(ex); });
   const menuDrafts = oldSession?.menuDrafts || {};
-  if (oldSession) menuDrafts[oldSession.selectedSplitKey] = JSON.parse(JSON.stringify({ exercises: oldSession.exercises, deletedAccessories: oldSession.deletedAccessories || [], skippedRestExercises: oldSession.skippedRestExercises || [], customMenuKeys: oldSession.customMenuKeys }));
+  if (oldSession) menuDrafts[oldSession.selectedSplitKey] = JSON.parse(JSON.stringify({ exercises: oldSession.exercises, deletedAccessories: oldSession.deletedAccessories || [], deletedMains: oldSession.deletedMains || [], skippedRestExercises: oldSession.skippedRestExercises || [], customMenuKeys: oldSession.customMenuKeys }));
   const restored = !options.customMenuKeys ? menuDrafts[selected] : null;
   const state = getFourMenuState();
   const sessionDate = oldSession?.date || todayStr();
@@ -3450,6 +3630,7 @@ function selectFourMenuForToday(menuKey, options = {}) {
     exerciseDrafts,
     customMenuKeys: restored?.customMenuKeys || menu.customMenuKeys || null,
     deletedAccessories: restored?.deletedAccessories || [],
+    deletedMains: restored?.deletedMains || [],
     status: 'inProgress',
     createdAt: oldSession?.createdAt || oldSession?.ts || now,
     updatedAt: now,
@@ -3548,7 +3729,15 @@ function recalculateTodaySession() {
     }
   }
 
-  const newExercises = menu.exercises.map(newEx => {
+  // 今日だけ削除したものは、再計算で黙って戻ってこない。
+  // 補助種目も同じで、休止設定を変えただけで消したはずの種目が復活していた。
+  const deletedToday = new Set([
+    ...(oldSession.deletedMains || []).map(entry => `${entry.exerciseKey}:${entry.menuType || ''}`),
+    ...(oldSession.deletedAccessories || []).map(entry => `${entry.exerciseKey}:${entry.slotId || ''}`),
+  ]);
+  const isDeletedToday = ex => deletedToday.has(`${ex.key}:${ex.menuType || ''}`) || deletedToday.has(`${ex.key}:${ex.slotId || ''}`);
+
+  const newExercises = menu.exercises.filter(newEx => !isDeletedToday(newEx)).map(newEx => {
     const oldEx = oldSession.exercises.find(e => e.key === newEx.key && e.menuType === newEx.menuType);
     if (oldEx && oldSession.fourMenuRotation && oldEx.isFourMenuMain) {
       const hasInput = oldEx.todayEdited || oldEx.note || (oldEx.pains || []).some(p => p !== 'なし') ||
@@ -3681,21 +3870,191 @@ function render() {
   updateHeader();
 }
 
-function updateHeader() {
+// 4画面共通ヘッダー。今日画面だけエディトリアル版に広がり、スクロールで44pxに縮む。
+const SCREEN_TITLES = { today: 'TODAY', log: 'LOG', block: 'PLAN', settings: 'SETTINGS' };
+
+function todayHeaderTitle(session) {
   const s = store.currentState;
-  const el = document.getElementById('headerStatus');
-  if (!el) return;
   if (isFourMenuMode()) {
-    el.textContent = '';
+    const key = session?.selectedSplitKey || session?.scheduledSplitKey || s.nextMenuKey;
+    if (key === 'custom') {
+      const parts = (session?.customMenuKeys || []).map(fourMenuLabelEn).filter(Boolean);
+      return parts.length ? parts.join(' + ') : 'CUSTOM';
+    }
+    return fourMenuLabelEn(key) || 'TODAY';
+  }
+  return `DAY ${s.day}`;
+}
+
+function updateHeader() {
+  const header = document.getElementById('appHeader');
+  const eyebrow = document.getElementById('hdEyebrow');
+  const title = document.getElementById('hdTitle');
+  const options = document.getElementById('hdOptions');
+  if (!header || !eyebrow || !title) return;
+
+  const isToday = currentScreen === 'today';
+  header.dataset.screen = currentScreen;
+  if (options?.classList) options.classList.toggle('hidden', !isToday);
+
+  if (isToday) {
+    const session = getOrCreateTodaySession({ persist: false });
+    const s = store.currentState;
+    eyebrow.textContent = 'WORKOUT';
+    title.textContent = todayHeaderTitle(session);
+    // 長いメニュー名はスケールを一段落とす。リング表示時に見出しが切れないため。
+    title.dataset.long = title.textContent.length > 8 ? 'true' : 'false';
+    title.title = isFourMenuMode() ? '' : `B${s.block} / R${s.rotation} / Day${s.day}`;
+    setHeaderVariant((window.scrollY || 0) > 24 ? 'compact' : 'editorial');
+  } else {
+    eyebrow.textContent = '';
+    title.textContent = SCREEN_TITLES[currentScreen] || '';
+    setHeaderVariant('compact');
+  }
+}
+
+function setHeaderVariant(variant) {
+  const header = document.getElementById('appHeader');
+  if (header?.dataset) header.dataset.variant = variant;
+  if (document.body?.dataset) document.body.dataset.headerVariant = variant;
+}
+
+// スクロールでエディトリアル版 → コンパクト版。高さの補間のみで transform は使わない。
+function setupHeaderScroll() {
+  const header = document.getElementById('appHeader');
+  if (!header || typeof window.addEventListener !== 'function') return;
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(() => {
+      ticking = false;
+      if (currentScreen !== 'today') return;
+      setHeaderVariant((window.scrollY || 0) > 24 ? 'compact' : 'editorial');
+    });
+  }, { passive: true });
+}
+
+// ===== メニュー切替・調整シート =====
+// 5分割セグメントを本文トップから外し、ここに集約する。
+// 選択中は塗りではなく左端3pxバー+チェックで示す（大面積の青塗りを画面から消すため）。
+function menuSheetRowsHtml(session) {
+  const scheduled = session.scheduledSplitKey || store.currentState.nextMenuKey;
+  const selected = session.selectedSplitKey || scheduled;
+  return SELECTABLE_MENUS.map(key => `
+    <button class="menu-row ${selected === key ? 'on' : ''}" role="menuitemradio" aria-checked="${selected === key}" ${session.completed ? 'disabled' : ''} data-four-menu-select="${key}">
+      <span class="menu-row-name">${fourMenuLabelEn(key)}<span class="menu-row-sub">${fourMenuLabel(key)}</span></span>
+      ${key === scheduled ? '<span class="micro-label menu-row-note">SCHEDULED</span>' : ''}
+      <span class="menu-row-check" aria-hidden="true">${selected === key ? ICON_CHECK : ''}</span>
+    </button>
+  `).join('');
+}
+
+function backLiftRowsHtml(session) {
+  if (normalizeFourMenuKey(session.selectedSplitKey || session.performedSplitKey) !== 'back') return '';
+  normalizeBackSessionState(session);
+  const selected = normalizeBackLiftKey(session.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState());
+  const row = (key, label) => `
+    <button class="menu-row ${selected === key ? 'on' : ''}" role="menuitemradio" aria-checked="${selected === key}" data-back-lift-select="${key}">
+      <span class="menu-row-name">${label}</span>
+      <span class="menu-row-check" aria-hidden="true">${selected === key ? ICON_CHECK : ''}</span>
+    </button>`;
+  return `
+    <div class="micro-label sheet-group-label">BACK MAIN LIFT</div>
+    <div class="menu-list">${row('halfDead', 'ハーフデッド')}${row('floorDead', 'デッドリフト')}</div>`;
+}
+
+function openMenuSheet() {
+  const session = getOrCreateTodaySession({ persist: false });
+  if (!session?.fourMenuRotation) {
+    openModal('調整', `${renderR4AdjustmentPanel(session)}${renderDeloadMaxTestPanel(session)}` || '<div class="muted">調整項目はありません</div>', () => bindMenuSheetControls(session));
     return;
   }
-  el.innerHTML =
-    `B${s.block} / <span class="${Number(s.rotation) === 4 ? 'pos-r4' : ''}">R${s.rotation}</span> / Day${s.day}`;
+  const selected = session.selectedSplitKey || session.scheduledSplitKey || store.currentState.nextMenuKey;
+  openModal('MENU', `
+    <div class="micro-label sheet-group-label">TODAY'S MENU</div>
+    <div class="menu-list" role="menu">${menuSheetRowsHtml(session)}</div>
+    ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '種目を追加'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>組み合わせを編集</button></div>` : ''}
+    ${backLiftRowsHtml(session)}
+    ${renderR4AdjustmentPanel(session)}
+    ${renderDeloadMaxTestPanel(session)}
+    ${session.completed ? '<button class="btn-text btn-block mt-12" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
+  `, () => bindMenuSheetControls(session));
+}
+
+// メニュー選択系の束縛。本文から出したのでシートのマウント時に張る。
+function bindMenuSheetControls(session) {
+  const newSessionBtn = document.getElementById('btnNewTodaySession');
+  if (newSessionBtn) newSessionBtn.onclick = () => {
+    closeModal();
+    if (startNewTodaySession()) render();
+  };
+
+  document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
+    btn.onclick = () => {
+      if (btn.dataset.fourMenuSelect === session.selectedSplitKey) { closeModal(); return; }
+      if (!selectFourMenuForToday(btn.dataset.fourMenuSelect)) { showToast('メニューを保存できませんでした'); return; }
+      closeModal();
+      render();
+    };
+  });
+
+  document.querySelectorAll('[data-back-lift-select]').forEach(btn => {
+    btn.onclick = () => {
+      if (switchBackLiftVariant(session, btn.dataset.backLiftSelect)) {
+        todayEdit = null;
+        closeModal();
+        render();
+      }
+    };
+  });
+
+  const customEditor = document.getElementById('editCustomMenu');
+  if (customEditor) customEditor.onclick = () => openModal('組み合わせ', `
+    <div class="custom-menu-options">${FOUR_MENU_ORDER.map(key => `<label><input type="checkbox" data-custom-menu="${key}" ${(session.customMenuKeys || []).includes(key) ? 'checked' : ''}>${fourMenuLabel(key)}</label>`).join('')}</div>
+    <button class="btn-primary" id="saveCustomMenu">この組み合わせで記録</button>
+  `, () => {
+    document.getElementById('saveCustomMenu').onclick = () => {
+      const keys = [...document.querySelectorAll('[data-custom-menu]:checked')].map(el => el.dataset.customMenu);
+      if (!keys.length) { showToast('メニューを1つ以上選んでください'); return; }
+      const removed = session.exercises.filter(ex => !keys.includes(ex.fourMenuKey));
+      if (removed.some(ex => ex.sets?.some(set => set.done || set.skipped) || ex.note || ex.rpe !== '未入力') && !confirm('入力済みの種目が組み合わせから外れます。変更しますか？')) return;
+      if (!selectFourMenuForToday('custom', { customMenuKeys: keys })) { showToast('保存できませんでした'); return; }
+      store.settings.customMenuKeys = keys;
+      saveStore(); closeModal(); render();
+    };
+  });
 }
 
 // ===== 今日のトレーニング画面 =====
 // 今日画面の編集状態（アクティブセットの値ボックス選択）
 let todayEdit = null; // { exIdx, field: 'kg' | 'reps' | 'rpe' }
+
+// 演出は4つだけ。prefers-reduced-motion では全て無効化し、状態変化のみ即時反映する。
+// 触覚も同じ設定に従わせる（動きを減らしたい人に振動だけ残さない）。
+let motionCue = null; // { type: 'setDone' | 'weight' | 'pr', exIdx, setIdx }
+
+function prefersReducedMotion() {
+  try {
+    return typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) { return false; }
+}
+
+function haptic(pattern) {
+  if (prefersReducedMotion()) return;
+  try { if (navigator && 'vibrate' in navigator) navigator.vibrate(pattern); } catch (e) { /* 非対応は無視 */ }
+}
+
+function cueMotion(cue) {
+  motionCue = prefersReducedMotion() ? null : cue;
+}
+
+function consumeMotionCue() {
+  const cue = motionCue;
+  motionCue = null;
+  return cue;
+}
 
 // 強度/役割チップ（状態は色・強度は文字）
 function exerciseRoleChipHtml(ex) {
@@ -3719,20 +4078,60 @@ function exercisePlanText(ex) {
 // 記録済みセット行（done / skip / todo）。editExIdx指定時はタップでセット編集
 const ICON_CHECK = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
 
-function renderStaticSetRow(set, setIdx, editExIdx = null) {
-  const stateClass = set.done ? 'set-row-done' : (set.skipped ? 'set-row-skip' : '');
-  const value = set.skipped && !set.done
-    ? '<span class="chip chip-pause">スキップ</span>'
-    : `${fmtW(set.weight)}<span class="u">kg</span> × ${set.reps ?? '-'}`;
-  const check = set.done ? `<span class="ck">${ICON_CHECK}</span>` : '<span class="ck"></span>';
-  const editAttr = editExIdx != null ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"` : '';
+// セット履歴は SET / WEIGHT / REPS / STATUS の4カラムテーブル。
+// 桁は tabular-nums で揃え、行間は罫線で区切る。
+// STATUS は文字を入れない: 375px幅に Completed / In progress は収まらない。
+function setStatusCell(state) {
+  if (state === 'done') return `<span class="st-dot st-done" role="img" aria-label="完了">${ICON_CHECK}</span>`;
+  if (state === 'active') return '<span class="st-dot st-active" role="img" aria-label="進行中"></span>';
+  if (state === 'skip') return '<span class="st-dot st-skip" role="img" aria-label="スキップ"></span>';
+  return '<span class="st-dot st-todo" role="img" aria-label="予定"></span>';
+}
+
+function setRowState(set, setIdx, activeIdx) {
+  if (set.done) return 'done';
+  if (set.skipped) return 'skip';
+  return setIdx === activeIdx ? 'active' : 'todo';
+}
+
+function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false, cueType = null) {
+  const weight = set.weight != null && set.weight !== '' ? fmtW(set.weight) : '—';
+  const reps = set.reps != null && set.reps !== '' ? set.reps : '—';
+  const editAttr = editExIdx != null
+    ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"`
+    : ' role="row"';
   return `
-    <div class="set-row ${stateClass}"${editAttr}>
-      <div class="sn">${setIdx + 1}</div>
-      <div class="sv">${value}</div>
-      <div class="st">${check}</div>
-    </div>
-  `;
+    <div class="set-tr set-tr-${state}${cueType === 'setDone' || cueType === 'pr' ? ' set-tr-just-done' : ''}"${editAttr}>
+      <span class="set-td set-td-n num">${setIdx + 1}</span>
+      <span class="set-td set-td-w num">${weight}</span>
+      <span class="set-td set-td-r num">${reps}</span>
+      <span class="set-td set-td-s">${isPr ? '<span class="pr-tag">PR</span>' : ''}${setStatusCell(state)}</span>
+    </div>`;
+}
+
+function renderSetTable(ex, exIdx, activeIdx, cue = null, session = undefined) {
+  const prRows = new Set(sessionPrSetIndexes(ex, session));
+  const rows = ex.sets
+    .map((set, i) => renderSetTableRow(
+      set, i, setRowState(set, i, activeIdx), exIdx, prRows.has(i),
+      cue && cue.exIdx === exIdx && cue.setIdx === i ? cue.type : null,
+    ))
+    .join('');
+  return `
+    <div class="set-table" role="table" aria-label="セット履歴">
+      <div class="set-thead" role="row">
+        <span class="micro-label set-td-n" role="columnheader">SET</span>
+        <span class="micro-label set-td-w" role="columnheader">WEIGHT</span>
+        <span class="micro-label set-td-r" role="columnheader">REPS</span>
+        <span class="micro-label set-td-s" role="columnheader">STATUS</span>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+// 旧APIの互換: 単一行を返す呼び出しが残っている場合に備える
+function renderStaticSetRow(set, setIdx, editExIdx = null) {
+  return renderSetTableRow(set, setIdx, setRowState(set, setIdx, -1), editExIdx);
 }
 
 // その日の実施順だけ入れ替える（ローテ・予定は変更しない）
@@ -3841,13 +4240,12 @@ function openSetEditSheet(exIdx) {
 
 // 進行中の種目カード（アクティブセットブロック入り）
 function renderActiveExerciseCard(ex, exIdx) {
+  const cue = consumeMotionCue();
   const session = store.daySessions[todaySessionKey()];
   const setIdx = firstPendingSetIndex(ex);
   const set = ex.sets[setIdx] || {};
   const totalSets = ex.sets.length;
-  const doneRows = ex.sets.slice(0, setIdx).map((s2, i) => renderStaticSetRow(s2, i, exIdx)).join('');
-  const todoRows = ex.sets.slice(setIdx + 1).map((s2, i) => renderStaticSetRow(s2, setIdx + 1 + i, exIdx)).join('');
-  const editing = todayEdit && todayEdit.exIdx === exIdx ? todayEdit.field : null;
+  const setTable = renderSetTable(ex, exIdx, setIdx, cue, session);
   const hasRecordedSet = ex.sets.some(s2 => s2.done || s2.skipped);
   const previous = ex.isFourMenuMain ? previousMainSummary(ex, session) : null;
   const prFacts = ex.isFourMenuMain ? getMainPrFacts(ex) : [];
@@ -3857,48 +4255,49 @@ function renderActiveExerciseCard(ex, exIdx) {
   const hasSetReps = set.reps != null && set.reps !== '';
   const rpeVal = ex.rpe && ex.rpe !== '未入力' ? `@${ex.rpe}` : '—';
 
-  const editorHtml = editing === 'rpe' ? `
+  // RPEは入力ボックスの見た目をやめ、入力済みのときだけ小さく出す。編集は詳細ブロック。
+  const rpeEditorHtml = `
+    <div class="micro-label mt-8">RPE</div>
     <div class="vb-editor rpe-editor" aria-label="種目のRPE">
       ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<button class="chip chip-tap ${String(ex.rpe) === r ? 'on' : ''}" aria-pressed="${String(ex.rpe) === r}" data-rpe-edit="${r}" data-ex="${exIdx}">${r}</button>`).join('')}
-    </div>` : '';
+    </div>`;
 
   const activeBlock = setIdx >= 0 ? `
     <div class="active-set">
       <div class="as-head">
-        <span class="as-title">セット ${setIdx + 1} / ${totalSets}</span>
-        <span class="as-prev">${ex.isAccessory && ex.targetRpe ? `目標 RPE ${ex.targetRpe}` : '今回の記録'}</span>
+        <span class="micro-label">SET ${setIdx + 1} / ${totalSets}</span>
+        <span class="micro-label as-prev">TARGET ${ex.isAccessory && ex.targetRpe
+          ? `RPE ${ex.targetRpe}`
+          : `${fmtW(ex.plannedWeight)} × ${escapeHtml(String(ex.plannedReps ?? '—'))}`}</span>
       </div>
-      <div class="vbox-row">
-        <label class="vbox weight-input">
-          <span class="vb-label">重量 <span>kg</span></span>
-          <input type="number" inputmode="decimal" step="0.1" min="0" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+      <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
+        <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
+        <label class="stepper-value">
+          <span class="micro-label stepper-label">WEIGHT (KG)${ex.weightType === 'dumbbell' ? ' ・ PER HAND' : ''}</span>
+          <span class="stepper-figure">
+            <input class="stepper-input" type="number" inputmode="decimal" step="0.1" min="0" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+          </span>
         </label>
-        <label class="vbox">
-          <span class="vb-label">回数</span>
-          <input type="number" inputmode="numeric" step="1" min="0" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+        <button class="stepper-btn" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋</button>
+      </div>
+      ${renderPlateBreakdown(ex, currentWeight)}
+      <div class="stepper stepper-reps">
+        <button class="stepper-btn" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}" aria-label="回数を1減らす">−</button>
+        <label class="stepper-value">
+          <span class="micro-label stepper-label">REPS</span>
+          <span class="stepper-figure">
+            <input class="stepper-input" type="number" inputmode="numeric" step="1" min="0" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+          </span>
         </label>
-        <button class="vbox ${editing === 'rpe' ? 'selected' : ''}" data-vbox="rpe" data-ex="${exIdx}" aria-label="種目RPEを選択" aria-expanded="${editing === 'rpe'}">
-          <span class="vb-label">種目RPE</span>
-          <span class="vb-val">${rpeVal}</span>
-        </button>
+        <button class="stepper-btn" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}" aria-label="回数を1増やす">＋</button>
       </div>
-      <div class="quick-adjust" aria-label="重量を調整">
-        <button data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−${store.settings.increment || 2.5} kg</button>
-        <button data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋${store.settings.increment || 2.5} kg</button>
-        ${hasRecordedSet ? `<button class="btn-text" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
-      </div>
-      ${editorHtml}
-      <div class="as-actions">
-        <button class="btn-primary" data-action="completeSet" data-ex="${exIdx}">${ICON_CHECK} セット完了</button>
-        <button class="btn-ghost" data-action="skipSet" data-ex="${exIdx}">スキップ</button>
-      </div>
+
     </div>
   ` : '';
 
-  const rotationProgression = ex.isBig3 ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
-  const progressionNote = ex.isBig3 && rotationProgression?.status === 'suggested' && rotationProgression.delta
-    ? `<div class="accessory-suggestion"><span class="suggestion-label">次回候補</span><span>${rotationProgression.message}</span><button class="btn-secondary btn-small" data-action="adoptRotation" data-progression-id="${rotationProgression.id}">採用</button></div>`
-    : '';
+  // 次回候補・5%減候補・推定MAX更新は完了時に自動採用する。
+  // セット間に判断を挟まない（DESIGN.md 原則15）。
+  const progressionNote = '';
 
   const painChips = PAIN_OPTIONS.map(p => `
     <button class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" aria-pressed="${ex.pains.includes(p)}" data-ex="${exIdx}" data-pain="${p}">${p}</button>
@@ -3907,20 +4306,42 @@ function renderActiveExerciseCard(ex, exIdx) {
   return `
     <div class="card card-ex active ${ex.isFourMenuMain || ex.isBig3 ? 'card-main' : 'card-accessory'}" data-ex="${exIdx}">
       <div class="ex-head">
-        <div><div class="exercise-eyebrow">${ex.isFourMenuMain || ex.isBig3 ? 'メイン' : '補助'}</div><h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1></div>
-        <button class="btn-ghost btn-small" data-action="${ex.isBig3 || ex.isFourMenuMain ? 'editMainSet' : 'editAccessory'}" data-ex="${exIdx}">編集</button>
+        <div class="ex-head-text">
+          <div class="micro-label">${ex.isFourMenuMain || ex.isBig3 ? 'MAIN' : 'ACCESSORY'}</div>
+          <h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1>
+        </div>
+        <div class="ex-head-actions">
+          <button class="hd-icon-btn ex-detail-btn" data-action="${ex.isBig3 || ex.isFourMenuMain ? 'editMainSet' : 'editAccessory'}" data-ex="${exIdx}" aria-label="${escapeHtml(displayExerciseName(ex.key, ex.name))}の詳細を開く">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+          </button>
+        </div>
       </div>
-      ${previous ? `<div class="ex-sub previous-performance">${escapeHtml(previous.text)}</div>` : ''}
-      ${doneRows}
+      <div class="ex-previous">
+        <span class="micro-label">PREVIOUS</span>
+        <span class="ex-previous-value num">${previous?.log ? escapeHtml(previous.text.replace(/^前回\s*/, '')) : '—'}</span>
+        ${rpeVal !== '—' ? `<span class="ex-rpe num">${rpeVal}</span>` : ''}
+        ${(() => {
+          const e1rm = sessionEstimatedMax(ex);
+          return e1rm ? `<span class="ex-e1rm"><span class="micro-label">E1RM</span><span class="num">${fmtW(e1rm)}</span></span>` : '';
+        })()}
+        ${renderPrBadge(ex, cue && cue.type === 'pr' && cue.exIdx === exIdx, session)}
+      </div>
+      ${setTable}
+      ${restState.running && setIdx >= 0 ? `
+        <div class="up-next-set">
+          <span class="micro-label">NEXT SET</span>
+          <span class="up-next-set-value num">${fmtW(currentWeight)}<span class="up-next-unit">kg</span> × ${hasSetReps ? set.reps : escapeHtml(String(ex.plannedReps ?? '—'))}</span>
+        </div>` : ''}
       ${activeBlock}
-      ${todoRows}
       ${progressionNote}
       <details class="ui-details compact-details mt-8" data-ui-key="exercise-${ex.key}-${ex.menuType}">
-        <summary>メモ・状態・調整</summary>
+        <summary>DETAILS</summary>
         <div class="ex-sub">予定 ${exercisePlanText(ex)} ・ ${escapeHtml(ex.progressionReason || '予定重量')}${ex.pctNote ? ` ・ ${escapeHtml(ex.pctNote)}` : ''}</div>
         ${prFacts.length ? `<div class="status-row">${prFacts.map(text => `<span class="chip chip-outline">${text}</span>`).join('')}</div>` : ''}
         ${ex.reductionCandidateWeight ? `<div class="accessory-suggestion"><span class="suggestion-label">5%減候補</span><span>${fmtW(ex.reductionCandidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptMainReduction" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
         ${ex.adjusted ? `<div class="ex-sub">調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}kg</div>` : ''}
+        ${rpeEditorHtml}
+        <div class="micro-label mt-8">PAIN</div>
         <div class="row-rpe-pain">${painChips}</div>
         <label class="field mt-8">
           <span>メモ</span>
@@ -3932,6 +4353,7 @@ function renderActiveExerciseCard(ex, exIdx) {
           ${ex.isBig3 || ex.isFourMenuMain ? `<button class="btn-secondary btn-small" data-action="editMainSet" data-ex="${exIdx}">メイン種目編集</button>` : ''}
           ${ex.isAccessory ? `<button class="btn-secondary btn-small" data-action="editAccessory" data-ex="${exIdx}">補助編集</button>` : ''}
           <button class="btn-secondary btn-small" data-action="editSets" data-ex="${exIdx}">セット編集</button>
+          <button class="btn-secondary btn-small" data-action="skipSet" data-ex="${exIdx}">このセットをスキップ</button>
           ${hasRecordedSet ? `<button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">1つ戻す</button>` : ''}
         </div>
       </details>
@@ -3949,12 +4371,11 @@ function renderCompletedExerciseCard(ex, exIdx) {
   const bestText = best
     ? `ベスト ${fmtW(best.w)}kg ×${best.reps ?? '-'}${ex.rpe && ex.rpe !== '未入力' ? ` @${ex.rpe}` : ''}`
     : 'スキップのみ';
-  const accessoryCandidate = getAccessoryProgressionCandidate(ex);
   return `
     <div class="card done-card exercise-card-complete" data-ex="${exIdx}">
       <div class="dn-row">
         <span class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
-        <span class="chip chip-ok">${ICON_CHECK} 完了</span>
+        <span class="chip chip-ok">${ICON_CHECK} DONE</span>
       </div>
       <div class="dn-row mt-8">
         <span class="dn-best">${bestText}</span>
@@ -3963,16 +4384,127 @@ function renderCompletedExerciseCard(ex, exIdx) {
           <button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">戻す</button>
         </span>
       </div>
-      ${accessoryCandidate ? `<div class="accessory-suggestion"><span class="suggestion-label">次回候補</span><span>${fmtW(accessoryCandidate.candidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptAccessoryCandidate" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
+
     </div>
   `;
+}
+
+// セッションサマリー。数値は全て既存の集計から取る。新しい計算は足さない。
+// DURATION は出さない: 下書きが夜をまたぐため経過時間が意味を持たない（DESIGN.md 原則5）。
+// 直近の別日のセッション総ボリューム。既存の store.logs から読むだけで、
+// 新しい集計やデータは持たない。
+function previousSessionVolume(excludeDate) {
+  const byDate = new Map();
+  (store.logs || []).forEach(log => {
+    if (log.isExerciseRest || log.todayOnlyDeleted) return;
+    const date = log.date;
+    if (!date || date === excludeDate) return;
+    const v = (log.sets || []).reduce((n, set) => n + (set.done && !set.skipped
+      ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0);
+    byDate.set(date, (byDate.get(date) || 0) + v);
+  });
+  if (!byDate.size) return null;
+  const latest = [...byDate.keys()].sort().pop();
+  return { date: latest, volume: byDate.get(latest) };
+}
+
+// 完了画面。アプリで唯一の感情のピークなので、ここだけ全画面を使う。
+function renderWorkoutSummary(session, { totalDoneSets, volume }) {
+  const doneExercises = session.exercises.filter(isExerciseComplete).length;
+  const prev = previousSessionVolume(session.date);
+  const delta = prev ? Math.round(volume - prev.volume) : null;
+
+  const prBlocks = session.exercises.flatMap(ex => {
+    const idx = sessionPrSetIndexes(ex, session);
+    if (!idx.length) return [];
+    const set = ex.sets[idx[idx.length - 1]];
+    return [{ name: displayExerciseName(ex.key, ex.name), weight: set.weight, reps: set.reps }];
+  });
+
+  const bestRows = session.exercises.map(ex => {
+    const done = ex.sets.filter(set => set.done && !set.skipped);
+    if (!done.length) return '';
+    const best = done.reduce((acc, set) => {
+      const w = parseFloat(set.weight);
+      return Number.isFinite(w) && w > (acc?.w ?? -1) ? { w, reps: set.reps } : acc;
+    }, null);
+    if (!best) return '';
+    return `
+      <div class="summary-best-row">
+        <span class="summary-best-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}${ex.weightType === 'dumbbell' ? '<span class="summary-best-note">片手</span>' : ''}</span>
+        <span class="summary-best-value num">${fmtW(best.w)}<span class="summary-unit">kg</span> × ${best.reps ?? '-'}</span>
+      </div>`;
+  }).filter(Boolean).join('');
+
+  return `
+    <section class="workout-summary card" aria-label="トレーニング完了">
+      <span class="micro-label summary-eyebrow">TOTAL VOLUME</span>
+      <div class="summary-volume num">${volume.toLocaleString('ja-JP')}<span class="summary-volume-unit">kg</span></div>
+      ${delta != null ? `
+        <div class="summary-delta ${delta >= 0 ? 'up' : 'down'} num">
+          ${delta >= 0 ? '+' : '−'}${Math.abs(delta).toLocaleString('ja-JP')} kg
+          <span class="summary-delta-note">vs ${fmtDateShort(prev.date)}</span>
+        </div>` : ''}
+
+      <div class="summary-figures">
+        <div><span class="micro-label">SETS DONE</span><span class="summary-figure num">${totalDoneSets}</span></div>
+        <div><span class="micro-label">EXERCISES</span><span class="summary-figure num">${doneExercises}</span></div>
+      </div>
+
+      ${prBlocks.length ? `
+        <div class="summary-pr">
+          <span class="micro-label">NEW PR</span>
+          ${prBlocks.map(pr => `
+            <div class="summary-pr-row">
+              <span class="summary-pr-name">${escapeHtml(pr.name)}</span>
+              <span class="summary-pr-value num">${fmtW(pr.weight)}<span class="summary-unit">kg</span> × ${pr.reps ?? '-'}</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+      ${(session.autoApplied || []).length ? `
+        <div class="summary-auto">
+          <span class="micro-label">APPLIED AUTOMATICALLY</span>
+          ${session.autoApplied.map((item, i) => `
+            <div class="summary-auto-row">
+              <span class="summary-auto-text">
+                <span class="summary-auto-name">${escapeHtml(item.label)}</span>
+                <span class="summary-auto-reason">${escapeHtml(item.reason || '')}</span>
+              </span>
+              <span class="summary-auto-value num">${escapeHtml(item.detail)}</span>
+              <button class="btn-ghost btn-small" data-undo-auto="${i}">戻す</button>
+            </div>`).join('')}
+        </div>` : ''}
+
+      ${bestRows ? `<div class="summary-best"><span class="micro-label">BEST SET</span>${bestRows}</div>` : ''}
+
+      <div class="btn-pair mt-12">
+        <button class="btn-primary" id="btnViewWorkoutLog">記録を見る</button>
+        <button class="btn-sec" id="btnCloseSummary">閉じる</button>
+      </div>
+    </section>`;
+}
+
+function renderSessionMetrics({ doneExercises, totalExercises, volume, totalDoneSets }) {
+  const chip = (label, value) => `
+    <div class="metric-chip">
+      <span class="micro-label">${label}</span>
+      <span class="metric-value num">${value}</span>
+    </div>`;
+  // 未着手の値は 0 ではなく — で出す。何もないことを大きく出さない。
+  const zeroable = (n, suffix = '') => (n > 0 ? `${n.toLocaleString('ja-JP')}${suffix}` : '—');
+  return `
+    <div class="metric-row" aria-label="今日の集計">
+      ${chip('EXERCISES', `${doneExercises} / ${totalExercises}`)}
+      ${chip('TOTAL VOLUME', volume > 0
+        ? `${volume.toLocaleString('ja-JP')}<span class="metric-unit">kg</span>`
+        : '—')}
+      ${chip('SETS DONE', zeroable(totalDoneSets))}
+    </div>`;
 }
 
 function renderToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const s = store.currentState;
-  const fourMenuPicker = renderFourMenuTodayPicker(session);
-  const backLiftPicker = renderBackLiftVariantSwitch(session);
   const restoredDraft = session.status === 'inProgress' && !session.completed && session.date < todayStr();
   const draftBanner = restoredDraft ? `
     <div class="card flat incomplete-session-banner">
@@ -3987,8 +4519,6 @@ function renderToday() {
 
   if (session.isRest) {
     return `
-      ${fourMenuPicker}
-      ${backLiftPicker}
       ${draftBanner}
       <div class="rest-day-banner">
         <div class="big">今日は休み</div>
@@ -4011,16 +4541,12 @@ function renderToday() {
   const totalDoneSets = session.exercises.reduce((acc, ex) => acc + ex.sets.filter(s2 => s2.done).length, 0);
   const volume = session.exercises.reduce((sum, ex) => sum + ex.sets.reduce((n, set) => n + (set.done && !set.skipped ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0), 0);
   const allDoneBanner = !incomplete.length
-    ? `<div class="card flat complete-menu-banner">
-        <div class="big">${ICON_CHECK} 今日のメニュー完了</div>
-        <div class="workout-metrics"><div><strong>${totalDoneSets}</strong><span>完了セット</span></div><div><strong>${volume.toLocaleString('ja-JP')}</strong><span>総ボリューム kg</span></div></div>
-        ${session.completed ? '<button class="btn-text btn-block" id="btnViewWorkoutLog">記録を見る</button>' : ''}
-      </div>`
+    ? renderWorkoutSummary(session, { totalDoneSets, volume })
     : '';
 
   const nextCard = upNext.length
     ? `<section class="up-next">
-        <div class="sec-label">次の種目</div>
+        <div class="micro-label sec-label">UP NEXT</div>
         ${upNext.map(({ ex, exIdx }) => `
           <div class="next-row" data-make-active="${exIdx}" role="button" tabindex="0" aria-label="${escapeHtml(displayExerciseName(ex.key, ex.name))}を先に実施">
             <span class="nx-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
@@ -4032,8 +4558,8 @@ function renderToday() {
     : '';
 
   const completedCards = completed.length
-    ? `<details class="ui-details completed-exercises" data-ui-key="completed" ${incomplete.length ? '' : 'open'}>
-        <summary><span>完了済み ${completed.length}件</span></summary>
+    ? `<details class="ui-details completed-exercises" data-ui-key="completed">
+        <summary><span>COMPLETED ${completed.length}</span></summary>
         ${completed.map(({ ex, exIdx }) => renderCompletedExerciseCard(ex, exIdx)).join('')}
       </details>`
     : '';
@@ -4044,58 +4570,62 @@ function renderToday() {
         ${(session.skippedRestExercises || []).map(ex => `
           <div class="next-row pause-row">
             <span class="nx-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
-            <span class="chip chip-pause">休止中</span>
+            <span class="chip chip-pause">PAUSED</span>
           </div>
         `).join('')}
       </div>`
     : '';
 
+  // 今日だけ削除したメイン種目: 戻す導線をその日のうちは必ず出す
+  const deletedMainRows = (session.deletedMains || []).length
+    ? `<div class="card flat">
+        ${(session.deletedMains || []).map((entry, i) => `
+          <div class="next-row deleted-row">
+            <span class="nx-name">${escapeHtml(displayExerciseName(entry.exerciseKey, entry.exerciseName))}</span>
+            <span class="chip chip-pause">今日だけ削除</span>
+            <button class="btn-secondary btn-small" data-restore-main="${i}">戻す</button>
+          </div>
+        `).join('')}
+      </div>`
+    : '';
+
+  // R4調整とMAX測定の本体はオプションシートへ移した。
+  // ただし「今日がMAX測定日」はその日の行動が変わるので、1行バナーだけ本文に残す。
+  // 判定条件は既存ロジックのまま、表示場所だけを変えている。
+  const maxTestLift = (session.isAdjustmentRotation || session.isDeload)
+    ? getDeloadMaxTestLiftForDay(session.day)
+    : null;
+  const maxTestBanner = maxTestLift
+    ? `<button class="day-banner" id="btnOpenMaxTestFromBanner">
+        <span class="chip chip-max">MAX</span>
+        <span class="day-banner-text">今日は${escapeHtml(maxTestLift.name)}のMAX測定日</span>
+        <span class="day-banner-go" aria-hidden="true">›</span>
+      </button>`
+    : '';
+
   return `
-    ${fourMenuPicker}
-    ${backLiftPicker}
+    ${incomplete.length ? renderSessionMetrics({
+      doneExercises: completed.length,
+      totalExercises: session.exercises.length,
+      volume,
+      totalDoneSets,
+    }) : ''}
     ${draftBanner}
-    ${renderR4AdjustmentPanel(session)}
-    ${renderDeloadMaxTestPanel(session)}
+    ${maxTestBanner}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
+    ${active && firstPendingSetIndex(active.ex) >= 0 ? `
+      <div class="set-dock">
+        <button class="btn-primary set-dock-btn" data-action="completeSet" data-ex="${active.exIdx}">${ICON_CHECK} LOG SET</button>
+      </div>` : ''}
     ${nextCard}
     ${completedCards}
+    ${deletedMainRows}
     ${pausedRows}
     <div class="btn-pair mt-12">
-      <button class="btn-sec" id="btnAddTodayAccessory">＋補助種目を追加</button>
-      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">トレーニング完了</button>
+      <button class="btn-sec" id="btnAddTodayAccessory">ADD EXERCISE</button>
+      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">FINISH</button>
     </div>
-    ${session.completed ? '<button class="btn-text btn-block" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
-  `;
-}
 
-function renderFourMenuTodayPicker(session) {
-  if (!session?.fourMenuRotation) return '';
-  const scheduled = session.scheduledSplitKey || store.currentState.nextMenuKey;
-  const selected = session.selectedSplitKey || scheduled;
-  const buttons = SELECTABLE_MENUS.map(key => `
-    <button class="seg-opt ${selected === key ? 'on' : ''}" aria-pressed="${selected === key}" ${session.completed ? 'disabled' : ''} data-four-menu-select="${key}">
-      ${fourMenuLabel(key)}
-    </button>
-  `).join('');
-  return `
-    <div class="four-menu-picker" aria-label="今日のメニュー">
-      <div class="seg">${buttons}</div>
-      ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '種目を追加'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>組み合わせを編集</button></div>` : ''}
-    </div>
-  `;
-}
-
-function renderBackLiftVariantSwitch(session) {
-  if (!session?.fourMenuRotation || normalizeFourMenuKey(session.selectedSplitKey || session.performedSplitKey) !== 'back') return '';
-  normalizeBackSessionState(session);
-  const selected = normalizeBackLiftKey(session.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState());
-  return `
-    <div class="back-lift-switch" aria-label="背中メイン種目">
-      <div class="seg">
-        <button class="seg-opt ${selected === 'halfDead' ? 'on' : ''}" data-back-lift-select="halfDead">ハーフデッド</button>
-        <button class="seg-opt ${selected === 'floorDead' ? 'on' : ''}" data-back-lift-select="floorDead">デッドリフト</button>
-      </div>
-    </div>
   `;
 }
 
@@ -4104,36 +4634,24 @@ function afterToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const viewLog = document.getElementById('btnViewWorkoutLog');
   if (viewLog) viewLog.onclick = () => navigate('log');
-
-  document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
+  const maxBanner = document.getElementById('btnOpenMaxTestFromBanner');
+  if (maxBanner) maxBanner.onclick = openMenuSheet;
+  const closeSummary = document.getElementById('btnCloseSummary');
+  if (closeSummary) closeSummary.onclick = () => navigate('block');
+  document.querySelectorAll('[data-undo-auto]').forEach(btn => {
     btn.onclick = () => {
-      if (btn.dataset.fourMenuSelect === session.selectedSplitKey) return;
-      if (!selectFourMenuForToday(btn.dataset.fourMenuSelect)) { showToast('メニューを保存できませんでした'); return; }
-      render();
-    };
-  });
-  const customEditor = document.getElementById('editCustomMenu');
-  if (customEditor) customEditor.onclick = () => openModal('組み合わせ', `
-    <div class="custom-menu-options">${FOUR_MENU_ORDER.map(key => `<label><input type="checkbox" data-custom-menu="${key}" ${(session.customMenuKeys || []).includes(key) ? 'checked' : ''}>${fourMenuLabel(key)}</label>`).join('')}</div>
-    <button class="btn-primary" id="saveCustomMenu">この組み合わせで記録</button>
-  `, () => {
-    document.getElementById('saveCustomMenu').onclick = () => {
-      const keys = [...document.querySelectorAll('[data-custom-menu]:checked')].map(el => el.dataset.customMenu);
-      if (!keys.length) { showToast('メニューを1つ以上選んでください'); return; }
-      const removed = session.exercises.filter(ex => !keys.includes(ex.fourMenuKey));
-      if (removed.some(ex => ex.sets?.some(set => set.done || set.skipped) || ex.note || ex.rpe !== '未入力') && !confirm('入力済みの種目が組み合わせから外れます。変更しますか？')) return;
-      if (!selectFourMenuForToday('custom', { customMenuKeys: keys })) { showToast('保存できませんでした'); return; }
-      store.settings.customMenuKeys = keys;
-      saveStore(); closeModal(); render();
-    };
-  });
-
-  document.querySelectorAll('[data-back-lift-select]').forEach(btn => {
-    btn.onclick = () => {
-      if (switchBackLiftVariant(session, btn.dataset.backLiftSelect)) {
-        todayEdit = null;
+      if (undoAutoApplied(todaySessionKey(), parseInt(btn.dataset.undoAuto, 10))) {
+        showToast('自動反映を戻しました');
         render();
       }
+    };
+  });
+
+  document.querySelectorAll('[data-restore-main]').forEach(btn => {
+    btn.onclick = () => {
+      if (!restoreDeletedMain(session, parseInt(btn.dataset.restoreMain, 10))) return;
+      showToast('今日のメニューに戻しました');
+      render();
     };
   });
 
@@ -4157,22 +4675,6 @@ function afterToday() {
     el.addEventListener('change', saveNote);
   });
 
-  // 値ボックス（タップで選択→エディタ開閉）
-  document.querySelectorAll('[data-vbox]').forEach(box => {
-    box.addEventListener('click', () => {
-      const exIdx = parseInt(box.dataset.ex);
-      const field = box.dataset.vbox;
-      const ex = session.exercises[exIdx];
-      if (!ex) return;
-      if (todayEdit && todayEdit.exIdx === exIdx && todayEdit.field === field) {
-        todayEdit = null; // 再タップで閉じる
-      } else {
-        todayEdit = { exIdx, field };
-      }
-      render();
-    });
-  });
-
   // ステッパー（kg=設定の刻み / 回=1）
   document.querySelectorAll('button[data-step-field]').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -4189,6 +4691,7 @@ function afterToday() {
         const inc = parseFloat(store.settings.increment) || 2.5;
         const base = parseFloat(set.weight ?? ex.plannedWeight) || 0;
         set.weight = Math.max(0, Math.round((base + dir * inc) * 100) / 100);
+        cueMotion({ type: 'weight', exIdx, dir });
       } else if (field === 'reps') {
         const parsed = parseInt(set.reps, 10);
         // 未入力時はレンジ表記（8〜12等）の上限を初期値にして±する
@@ -4322,12 +4825,24 @@ function afterToday() {
         persistTodaySession(session);
         startRestTimer(ex.restSec, ex.name);
       } else if (action === 'completeSet') {
+        const prBefore = sessionPrSetIndexes(ex).length;
+        const doneIdx = firstPendingSetIndex(ex);
         const result = toggleNextSetCompletion(session, exIdx);
         if (result.ok) {
           todayEdit = null;
           persistTodaySession(session);
-          if (!result.reverted) startRestTimer(ex.restSec, ex.name);
-          else showToast('1セット戻しました');
+          if (!result.reverted) {
+            const gotPr = sessionPrSetIndexes(ex).length > prBefore;
+            cueMotion({ type: gotPr ? 'pr' : 'setDone', exIdx, setIdx: doneIdx });
+            haptic(gotPr ? [40, 40, 120] : 30);
+            // 前回比。データは既にあるのに、進んでいるかがどこにも出ていなかった。
+            const delta = lastSetDelta(ex, doneIdx);
+            if (gotPr) showToast(`自己ベスト更新 ${fmtW(ex.sets[doneIdx].weight)}kg`);
+            else if (delta) showToast(`前回比 ${delta > 0 ? '+' : ''}${fmtW(delta)}kg`);
+            startRestTimer(ex.restSec, ex.name);
+          } else {
+            showToast('1セット戻しました');
+          }
           render();
         }
       } else if (action === 'skipSet') {
@@ -4375,7 +4890,7 @@ function afterToday() {
   });
 
   // 記録済みセット行をタップ → セット編集シート
-  document.querySelectorAll('.set-row[data-edit-ex]').forEach(row => {
+  document.querySelectorAll('.set-tr[data-edit-ex]').forEach(row => {
     row.addEventListener('click', () => {
       persistTodaySession(session);
       openSetEditSheet(parseInt(row.dataset.editEx, 10));
@@ -4384,11 +4899,6 @@ function afterToday() {
 
   const finishBtn = document.getElementById('btnFinishSession');
   if (finishBtn) finishBtn.onclick = finishTodaySession;
-  const newSessionBtn = document.getElementById('btnNewTodaySession');
-  if (newSessionBtn) newSessionBtn.onclick = () => {
-    if (startNewTodaySession()) render();
-  };
-
   const addTodayAccessoryBtn = document.getElementById('btnAddTodayAccessory');
   if (addTodayAccessoryBtn) addTodayAccessoryBtn.onclick = () => {
     persistTodaySession(session);
@@ -4657,6 +5167,7 @@ function openMainSetEditModal(exIdx) {
     <div class="btn-row">
       <button class="btn-primary" id="main-edit-save">今日だけ変更</button>
       <button class="btn-warn" id="main-edit-save-future">今後も変更</button>
+      <button class="btn-danger" id="main-delete-today">今日だけ削除</button>
     </div>
   `, () => {
     const save = (applyFuture) => {
@@ -4686,7 +5197,58 @@ function openMainSetEditModal(exIdx) {
     };
     document.getElementById('main-edit-save').onclick = () => save(false);
     document.getElementById('main-edit-save-future').onclick = () => save(true);
+    document.getElementById('main-delete-today').onclick = () => {
+      const result = deleteMainExerciseToday(session, exIdx);
+      if (result.reason === 'last-exercise') {
+        showToast('最後の1種目は削除できません（休むならメニューで休みを選んでください）');
+        return;
+      }
+      if (result.reason === 'needs-confirm') {
+        if (!confirm('記録済みのセットがあります。今日の記録ごと削除しますか？')) return;
+        if (!deleteMainExerciseToday(session, exIdx, { confirmDiscard: true }).ok) return;
+      } else if (!result.ok) {
+        return;
+      }
+      closeModal();
+      render();
+      showToast('今日だけ削除しました（下の「戻す」で戻せます）');
+    };
   });
+}
+
+// メイン種目を今日だけ外す。補助と違いメイン種目には「今日だけ追加」の導線がないので、
+// 消したものは同じ日のうちに戻せるところまでが1セットの機能になる。
+// 今後の予定には手を付けない。プログラムそのものを変えるのは設定画面の仕事。
+function deleteMainExerciseToday(session, exIdx, { confirmDiscard = false } = {}) {
+  const ex = session?.exercises?.[exIdx];
+  if (!ex || (!ex.isBig3 && !ex.isFourMenuMain)) return { ok: false, reason: 'not-main' };
+  // 全部消せてしまうと、何もしていない日が「実施済み」として次のメニューへ進んでしまう
+  if ((session.exercises || []).length <= 1) return { ok: false, reason: 'last-exercise' };
+  const hasRecord = (ex.sets || []).some(set => set.done || set.skipped);
+  if (hasRecord && !confirmDiscard) return { ok: false, reason: 'needs-confirm' };
+  session.deletedMains = session.deletedMains || [];
+  session.deletedMains.push({
+    ts: Date.now(),
+    index: exIdx,
+    exerciseKey: ex.key,
+    exerciseName: ex.name,
+    menuType: ex.menuType,
+    exercise: cloneWorkoutExercise(ex),
+  });
+  session.exercises.splice(exIdx, 1);
+  persistTodaySession(session);
+  return { ok: true };
+}
+
+function restoreDeletedMain(session, deletedIdx) {
+  const entry = session?.deletedMains?.[deletedIdx];
+  if (!entry) return false;
+  const restored = cloneWorkoutExercise(entry.exercise);
+  const at = Math.max(0, Math.min(session.exercises.length, entry.index ?? session.exercises.length));
+  session.exercises.splice(at, 0, restored);
+  session.deletedMains.splice(deletedIdx, 1);
+  persistTodaySession(session);
+  return true;
 }
 
 function openAccessoryTodayModal(exIdx) {
@@ -5197,6 +5759,255 @@ function upsertExerciseLogFromSession(session, ex, allowCreate = false) {
   return savedLog;
 }
 
+// ===== 体重 =====
+// ボリュームだけでは、強くなったのか重くなったのかが分からない。1日1件。
+function latestBodyWeight() {
+  return [...(store.bodyWeights || [])].sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null;
+}
+
+function recordBodyWeight(weight, date = todayStr()) {
+  const w = parseFloat(weight);
+  if (!Number.isFinite(w) || w <= 0 || w > 400) return false;
+  store.bodyWeights = (store.bodyWeights || []).filter(item => item.date !== date);
+  store.bodyWeights.push({ date, weight: Math.round(w * 10) / 10, ts: Date.now() });
+  return saveStore();
+}
+
+function bodyWeightDelta(days = 30) {
+  const list = [...(store.bodyWeights || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
+  if (list.length < 2) return null;
+  const latest = list[0];
+  const cutoff = new Date(`${latest.date}T00:00:00`);
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = dateToLocalStr(cutoff);
+  const older = list.find(item => item.date <= cutoffStr) || list[list.length - 1];
+  if (!older || older.date === latest.date) return null;
+  return { from: older, to: latest, delta: Math.round((latest.weight - older.weight) * 10) / 10 };
+}
+
+// ===== 部位ごとのボリューム推移 =====
+// 停滞に気づく手段が、いまは記憶しかなかった。既存ログの集計だけで出す。
+// dayLimit を渡すと各月の「1日〜dayLimit日」だけを集計する。
+// 月初にいる今月と、終わった先月をそのまま比べると必ず大幅減に見えるため。
+// 対象月の選定は日数で絞る前の記録で行うので、月がずれることはない。
+function monthlyVolumeByMenu(monthsBack = 2, dayLimit = null, endMonth = null) {
+  const all = new Map();
+  const capped = new Map();
+  (store.logs || []).forEach(log => {
+    if (log.isExerciseRest || log.todayOnlyDeleted || !log.date) return;
+    const menu = normalizeFourMenuKey(log.performedSplitKey || log.selectedSplitKey || log.menuKey);
+    if (!FOUR_MENU_LABELS[menu]) return;
+    const month = log.date.slice(0, 7);
+    const volume = (log.sets || []).reduce((n, set) => n + (set.done && !set.skipped
+      ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0);
+    if (!volume) return;
+    if (!all.has(month)) all.set(month, {});
+    all.get(month)[menu] = (all.get(month)[menu] || 0) + volume;
+    if (dayLimit != null && (parseInt(log.date.slice(8, 10), 10) || 99) <= dayLimit) {
+      if (!capped.has(month)) capped.set(month, {});
+      capped.get(month)[menu] = (capped.get(month)[menu] || 0) + volume;
+    }
+  });
+  const months = [...all.keys()]
+    .filter(month => !endMonth || month <= endMonth)
+    .sort().reverse().slice(0, monthsBack);
+  const source = dayLimit == null ? all : capped;
+  return months.map(month => ({ month, byMenu: source.get(month) || {} }));
+}
+
+// 体重は「見る場所」と「入れる場所」を分けない。値と入力を同じカードに置く。
+// 増減に色は付けない。増えたことが良いか悪いかは目的次第で、アプリには判断できない。
+function renderBodyWeightCard() {
+  const latest = latestBodyWeight();
+  const change = bodyWeightDelta(30);
+  const today = (store.bodyWeights || []).find(item => item.date === todayStr());
+  return `
+    <div class="card">
+      <div class="micro-label">BODY WEIGHT</div>
+      ${latest ? `
+      <div class="trend-row">
+        <span class="trend-name">${fmtDateShort(latest.date)}</span>
+        <span class="trend-value num">${latest.weight}<span class="trend-unit">kg</span></span>
+        <span class="trend-delta num plain">${change ? `${change.delta >= 0 ? '+' : ''}${change.delta}kg` : '—'}</span>
+      </div>` : ''}
+      ${latest && change ? `<div class="trend-note">30日前 ${change.from.weight}kg（${fmtDateShort(change.from.date)}）から</div>` : ''}
+      <label class="field bw-field">
+        <span>今日の体重 (kg)</span>
+        <input type="number" inputmode="decimal" step="0.1" min="0" id="bodyWeightInput"
+          value="${today ? today.weight : ''}" placeholder="${latest ? latest.weight : '—'}" />
+      </label>
+    </div>`;
+}
+
+// 体重入力の束縛。カードが出る画面ならどこからでも張れるようにしておく。
+function bindBodyWeightInput() {
+  const bw = document.getElementById('bodyWeightInput');
+  if (!bw) return;
+  bw.onchange = () => {
+    if (bw.value === '') return;
+    if (recordBodyWeight(bw.value)) { showToast('体重を記録しました'); render(); }
+    else showToast('体重を保存できませんでした');
+  };
+}
+
+function renderVolumeTrend() {
+  const today = todayStr();
+  const day = parseInt(today.slice(8, 10), 10) || 1;
+  const daysInMonth = new Date(parseInt(today.slice(0, 4), 10), parseInt(today.slice(5, 7), 10), 0).getDate();
+  // カレンダーで見ている月に合わせる。7月を開いているのに9月の集計が出ていた
+  const endMonth = selectedLogMonth();
+  // 今月がまだ途中なら、先月も同じ日数までで揃えて比べる
+  const toDate = endMonth === today.slice(0, 7) && day < daysInMonth;
+  const months = monthlyVolumeByMenu(2, toDate ? day : null, endMonth);
+  if (!months.length) return '';
+  const [current, previous] = months;
+  const keys = [...new Set([...Object.keys(current.byMenu), ...Object.keys(previous?.byMenu || {})])];
+  if (!keys.length) return '';
+  const rows = keys.map(key => {
+    const now = Math.round(current.byMenu[key] || 0);
+    const before = Math.round(previous?.byMenu?.[key] || 0);
+    const delta = before ? Math.round(((now - before) / before) * 100) : null;
+    return `
+      <div class="trend-row">
+        <span class="trend-name">${fourMenuLabel(key)}</span>
+        <span class="trend-value num">${now.toLocaleString('ja-JP')}<span class="trend-unit">kg</span></span>
+        <span class="trend-delta num ${delta == null ? '' : delta >= 0 ? 'up' : 'down'}">${delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta}%`}</span>
+      </div>`;
+  }).join('');
+  const monthLabel = m => `${parseInt(String(m).slice(5, 7), 10) || ''}月`;
+  const scope = toDate
+    ? `${monthLabel(current.month)}1〜${day}日${previous ? ` と ${monthLabel(previous.month)}1〜${day}日` : ''}`
+    : `${monthLabel(current.month)}${previous ? ` と ${monthLabel(previous.month)}` : ''}`;
+  return `
+    <div class="card">
+      <div class="micro-label">VOLUME BY MENU</div>
+      <div class="trend-note">${scope}</div>
+      <div class="trend-list">${rows}</div>
+    </div>`;
+}
+
+// ===== 自動採用 =====
+// 過去の記録から一意に決まる推奨値は、その場で採用して結果だけ残す。
+// 完了画面に一覧と取り消しを出すので、違うと思えば戻せる。
+// 取り消した提案の識別子。取り消しは「この提案は要らない」という意思表示なので、
+// 同じセッションを保存し直したときに黙って戻ってはいけない。
+// トレーニングを終えたらインターバルも終わり。止めないとリングが回り続け、
+// アプリを閉じたあとに鳴り、次に開いたときにまた復元されていた。
+function stopRestTimerAfterFinish() {
+  if (!restState.running && !restState.restEndAt && !store.restTimerState) return;
+  closeRestTimer();
+}
+
+function autoApplyIdentity(item) {
+  if (!item) return '';
+  if (item.kind === 'accessory') return `accessory:${item.menuKey}:${item.slotId}`;
+  return `${item.kind}:${item.id}`;
+}
+
+function autoApplySuggestions(session) {
+  const applied = [];
+  const liftKeys = new Set((session.exercises || []).map(ex => ex.key));
+  const undone = new Set(session.autoUndoneKeys || []);
+
+  // 1. ローテーション進行（メイン種目の次回重量）
+  (store.rotationProgressions || []).forEach(p => {
+    if (p.status !== 'suggested' || p.appliedAt || !p.delta) return;
+    if (!liftKeys.has(p.liftKey)) return;
+    if (undone.has(`rotation:${p.id}`)) return;
+    if (!adoptRotationProgression(p.id)) return;
+    applied.push({
+      kind: 'rotation',
+      id: p.id,
+      label: displayExerciseName(p.liftKey),
+      detail: `${p.delta > 0 ? '+' : ''}${fmtW(p.delta)}kg`,
+      reason: p.message || '前回の達成状況から',
+    });
+  });
+
+  // 2. 推定MAXの更新候補
+  (store.estimatedMaxHistory || []).forEach(entry => {
+    if (entry.adopted || !liftKeys.has(entry.liftKey)) return;
+    if (undone.has(`emax:${entry.id}`)) return;
+    const candidate = getMaxUpdateCandidate(entry);
+    if (!candidate) return;
+    const before = store.settings.maxes?.[entry.maxKey];
+    // MAX採用は同じ種目の保留中ローテーション進行を却下する。取り消しで戻せるよう控えておく
+    const dismissed = (store.rotationProgressions || [])
+      .filter(p => p.liftKey === entry.liftKey && ['suggested', 'accepted'].includes(p.status) && !p.appliedAt)
+      .map(p => ({ id: p.id, status: p.status }));
+    if (!adoptEstimatedMax(entry.id)) return;
+    applied.push({
+      kind: 'emax',
+      id: entry.id,
+      maxKey: entry.maxKey,
+      dismissed,
+      before,
+      label: `${displayExerciseName(entry.liftKey)} MAX`,
+      detail: `${fmtW(before)} → ${fmtW(candidate.candidate)}kg`,
+      reason: entry.maxUseReason || '推定MAXの更新',
+    });
+  });
+
+  // 3. 補助種目の重量進行
+  (session.exercises || []).forEach(ex => {
+    const candidate = getAccessoryProgressionCandidate(ex);
+    if (!candidate) return;
+    const menuKey = normalizeFourMenuKey(ex?.fourMenuKey || session?.performedSplitKey || session?.selectedSplitKey);
+    if (!FOUR_MENU_LABELS[menuKey] || !ex.slotId) return;
+    if (undone.has(`accessory:${menuKey}:${ex.slotId}`)) return;
+    const before = candidate.currentWeight;
+    if (!applyAccessoryProgressionCandidate(session, ex)) return;
+    applied.push({
+      kind: 'accessory',
+      menuKey,
+      slotId: ex.slotId,
+      before,
+      label: displayExerciseName(ex.key, ex.name),
+      detail: `${fmtW(before)} → ${fmtW(candidate.candidateWeight)}kg`,
+      reason: '予定セットを全て達成',
+    });
+  });
+
+  // 保存し直しでも、前回適用して取り消していない項目は一覧に残す（取り消せる状態を保つ）
+  const prior = (session.autoApplied || [])
+    .filter(item => !undone.has(autoApplyIdentity(item)))
+    .filter(item => !applied.some(next => autoApplyIdentity(next) === autoApplyIdentity(item)));
+  session.autoApplied = [...prior, ...applied];
+  return applied;
+}
+
+function undoAutoApplied(sessionKey, index) {
+  const session = store.daySessions[sessionKey];
+  const item = session?.autoApplied?.[index];
+  if (!item) return false;
+
+  if (item.kind === 'rotation') {
+    const p = (store.rotationProgressions || []).find(x => x.id === item.id);
+    if (p) { p.status = 'suggested'; delete p.adoptedAt; }
+  } else if (item.kind === 'emax') {
+    const entry = (store.estimatedMaxHistory || []).find(x => x.id === item.id);
+    if (entry) { entry.adopted = false; delete entry.adoptedAt; delete entry.adoptedMax; }
+    if (item.before != null) store.settings.maxes[item.maxKey] = item.before;
+    // 採用の巻き添えで却下したローテーション進行も戻す
+    (item.dismissed || []).forEach(({ id, status }) => {
+      const p = (store.rotationProgressions || []).find(x => x.id === id);
+      if (p && p.status === 'dismissed' && p.dismissedReason === 'max-updated') {
+        p.status = status;
+        delete p.dismissedReason;
+      }
+    });
+  } else if (item.kind === 'accessory') {
+    const slot = getFourMenuAccessorySlots(item.menuKey).find(x => x.slotId === item.slotId);
+    if (slot) updateFourMenuAccessorySlot(item.menuKey, item.slotId, { ...slot, plannedWeight: item.before });
+  }
+
+  session.autoApplied.splice(index, 1);
+  session.autoUndone = [...(session.autoUndone || []), item.label];
+  session.autoUndoneKeys = [...new Set([...(session.autoUndoneKeys || []), autoApplyIdentity(item)])];
+  saveStore();
+  return true;
+}
+
 function finishTodaySession() {
   const key = todaySessionKey();
   const session = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
@@ -5216,6 +6027,8 @@ function finishTodaySession() {
   session.exercises.forEach(ex => {
     upsertExerciseLogFromSession(session, ex, true);
   });
+
+  autoApplySuggestions(session);
 
   (session.skippedRestExercises || []).forEach(ex => {
     const fourMeta = session.fourMenuRotation ? {
@@ -5326,6 +6139,57 @@ function finishTodaySession() {
     else store.logs.push(log);
   });
 
+  // 今日だけ削除したメイン種目も、やらなかった事実として記録に残す。
+  // todayOnlyDeleted なので集計・自己ベスト・推定MAXのどれにも入らない。
+  (session.deletedMains || []).forEach(deleted => {
+    const fourMeta = session.fourMenuRotation ? {
+      fourMenuRotation: true,
+      scheduledDate: session.scheduledDate || session.date,
+      performedDate: session.performedDate || session.date,
+      scheduledSplitKey: session.scheduledSplitKey || null,
+      selectedSplitKey: session.selectedSplitKey || null,
+      performedSplitKey: session.performedSplitKey || session.selectedSplitKey || null,
+      menuKey: session.performedSplitKey || session.selectedSplitKey || null,
+      splitName: session.splitName || session.dayName || null,
+      menuName: session.splitName || session.dayName || null,
+    } : {};
+    const log = {
+      id: uid(),
+      sessionId: session.sessionId || null,
+      date: session.date,
+      day: session.fourMenuRotation ? null : session.day,
+      block: session.fourMenuRotation ? null : session.block,
+      rotation: session.fourMenuRotation ? null : session.rotation,
+      ...fourMeta,
+      isDeload: session.isDeload,
+      exerciseKey: deleted.exerciseKey,
+      exerciseName: deleted.exerciseName,
+      menuType: `main-deleted-${deleted.menuType || deleted.exerciseKey}`,
+      plannedWeight: null,
+      plannedReps: null,
+      plannedSets: 0,
+      targetRpe: null,
+      categories: [],
+      fatigueTags: [],
+      weightType: null,
+      sets: [],
+      doneSets: 0,
+      rpe: '未入力',
+      pains: [],
+      note: '今日だけ削除',
+      todayOnlyDeleted: true,
+      manualAdjusted: false,
+      ts: deleted.ts || Date.now(),
+    };
+    const existIdx = store.logs.findIndex(l =>
+      ((log.sessionId && l.sessionId === log.sessionId) || (!log.sessionId && l.date === log.date)) &&
+      l.exerciseKey === log.exerciseKey && l.menuType === log.menuType &&
+      (!log.fourMenuRotation || (l.performedSplitKey || l.selectedSplitKey || l.menuKey) === (log.performedSplitKey || log.selectedSplitKey || log.menuKey))
+    );
+    if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
+    else store.logs.push(log);
+  });
+
   session.completed = true;
   session.status = 'completed';
   session.completedAt = Date.now();
@@ -5351,6 +6215,7 @@ function finishTodaySession() {
       render();
       return;
     }
+    stopRestTimerAfterFinish();
     showToast(wasCompleted ? '記録を更新しました' : 'お疲れさま！記録を保存しました');
     navigate('today');
     return;
@@ -5361,6 +6226,7 @@ function finishTodaySession() {
     render();
     return;
   }
+  stopRestTimerAfterFinish();
   showToast('お疲れさま！記録を保存しました');
 
   // 4ローテD8（最後／休み）終了時のみ、次ブロック提案を表示
@@ -5445,6 +6311,9 @@ function getRestRemainingSec(now = nowMs()) {
   if (restState.running) {
     return Math.max(0, Math.ceil((restState.restEndAt - now) / 1000));
   }
+  // 鳴り終わって止まっている状態。停止中の式は「止めた時点の残り」を返すが、
+  // 自然終了では開始・終了時刻が元のままなので、同期のたびに満タンに戻って見えていた。
+  if (restState.alertedAt && restState.restEndAt <= now) return 0;
   return Math.max(0, Math.ceil((restState.restEndAt - restState.restStartedAt) / 1000));
 }
 
@@ -5452,6 +6321,7 @@ function setRestTimerVisibility(visible) {
   const timer = document.getElementById('restTimer');
   if (!timer) return;
   timer.classList.toggle('hidden', !visible);
+  if (!visible) toggleRestPopover(false);
   if (document.body?.classList) document.body.classList.toggle('timer-visible', !!visible);
 }
 
@@ -5459,6 +6329,13 @@ function setRestTimerAlarm(alarm) {
   const timer = document.getElementById('restTimer');
   if (!timer) return;
   timer.classList.toggle('alarm', !!alarm);
+}
+
+function toggleRestPopover(force) {
+  const pop = document.getElementById('restPop');
+  if (!pop?.classList) return;
+  const next = force != null ? !force : !pop.classList.contains('hidden');
+  pop.classList.toggle('hidden', next);
 }
 
 function setRestToggleText() {
@@ -5520,7 +6397,7 @@ function syncRestTimer({ persist = true, alert = true } = {}) {
       restState.alertedAt = nowMs();
       if (alert) {
         playBeep();
-        if ('vibrate' in navigator) navigator.vibrate([300, 100, 300]);
+        haptic([80, 60, 80]);
       }
     }
   }
@@ -5539,13 +6416,17 @@ function updateRestDisplay() {
   if (!display) return;
   display.textContent =
     `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  // 進捗バー（要素がある実DOMでのみ更新）
+  // 残量はリングの円弧で表す。pathLength=100 なので dashoffset は残り%そのもの。
   const fill = document.getElementById('restBarFill');
   if (fill && fill.style) {
     const total = restState.restDurationSec || 0;
     const pct = total > 0 ? Math.max(0, Math.min(100, (restState.remaining / total) * 100)) : 0;
-    fill.style.width = `${pct}%`;
+    fill.style.strokeDasharray = '100';
+    fill.style.strokeDashoffset = String(100 - pct);
   }
+  // 残り30秒で --max に切り替える
+  const ring = document.getElementById('restTimer');
+  if (ring?.classList) ring.classList.toggle('warn', restState.remaining > 0 && restState.remaining <= 30);
 }
 
 function playBeep() {
@@ -5599,19 +6480,33 @@ function setupRestTimerControls() {
     resetRestTimer();
   };
   document.getElementById('restClose').onclick = () => {
+    toggleRestPopover(false);
     closeRestTimer();
   };
+  // リングタップでポップオーバー。停止/再開・±30秒・スキップを1つの44pxターゲットに集約する。
+  const ringBtn = document.getElementById('restRingBtn');
+  if (ringBtn) ringBtn.onclick = () => toggleRestPopover();
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('click', (event) => {
+      const ring = document.getElementById('restTimer');
+      if (!ring || !event?.target?.closest) return;
+      if (!ring.contains(event.target)) toggleRestPopover(false);
+    });
+  }
 }
 
 function adjustRestTimer(deltaSec) {
   syncRestTimer({ persist: false, alert: false });
+  // 鳴り終わったあとの「+30」は、時間を足したのに止まったままだった。
+  // 自然に0になった状態（alertedAtあり）と、自分で止めた状態は別物として扱う。
+  const wasExpired = !restState.running && restState.remaining <= 0 && !!restState.alertedAt;
   const remaining = Math.max(0, restState.remaining + deltaSec);
   const now = nowMs();
   restState.restStartedAt = now;
   restState.restEndAt = now + remaining * 1000;
   restState.remaining = remaining;
   restState.alertedAt = remaining > 0 ? null : (restState.alertedAt || now);
-  restState.running = remaining > 0 ? restState.running : false;
+  restState.running = remaining > 0 ? (restState.running || wasExpired) : false;
   setRestTimerAlarm(remaining <= 0);
   setRestToggleText();
   scheduleRestTick();
@@ -6080,6 +6975,7 @@ function computeNextBlockSuggestion() {
 
 // ===== ログ画面 =====
 let logFilter = { type: 'daily', maxLift: 'bench', emaxLift: 'bench', month: null, selDate: null, menu: 'all', role: 'all', query: '' };
+let logQueryTimer = null; // 検索欄の再描画を少し待つためのタイマー
 
 function completedFourMenuSessionGroups(limit = 8) {
   const groups = new Map();
@@ -6167,18 +7063,15 @@ function renderLog() {
     <div class="tabs">
       <button class="tab ${logFilter.type === 'daily' ? 'active' : ''}" data-type="daily">日別</button>
       <button class="tab ${logFilter.type === 'monthly' ? 'active' : ''}" data-type="monthly">月別</button>
-      <button class="tab ${logFilter.type === 'max' ? 'active' : ''}" data-type="max">MAX</button>
-      <button class="tab ${logFilter.type === 'emax' ? 'active' : ''}" data-type="emax">推定MAX</button>
+      <button class="tab ${logFilter.type === 'max' || logFilter.type === 'emax' ? 'active' : ''}" data-type="max">MAX</button>
     </div>
   `;
 
   const body = logFilter.type === 'monthly'
-    ? renderMonthlyLogView()
-    : logFilter.type === 'max'
+    ? `${renderMonthlyLogView()}${renderVolumeTrend()}${renderBodyWeightCard()}`
+    : (logFilter.type === 'max' || logFilter.type === 'emax')
       ? renderMaxLogTab()
-      : logFilter.type === 'emax'
-        ? renderEmaxLogTab()
-        : renderDailyLogView();
+      : renderDailyLogView();
 
   return `
     ${tabs}
@@ -6188,13 +7081,6 @@ function renderLog() {
       <input type="search" id="log-query-filter" value="${escapeHtml(logFilter.query)}" placeholder="種目を検索" aria-label="種目を検索" />
     </div>` : ''}
     ${body}
-    <div class="section">
-      <h2>データ管理</h2>
-      <div class="btn-row">
-        <button class="btn-secondary btn-small" id="btnExport">エクスポート(JSON)</button>
-        <button class="btn-secondary btn-small" id="btnImport">インポート(JSON)</button>
-      </div>
-    </div>
   `;
 }
 
@@ -6218,24 +7104,65 @@ function renderMaxLogTab() {
     : latest
       ? `挑戦 ${fmtW(latest.attemptedWeight ?? latest.weight)}kg ✗`
       : '1RM挑戦でここに記録されます';
+  const emaxLatest = latestEstimatedMaxEntryForLift(liftKey);
+  const emaxBest = bestEstimatedMaxEntryForLift(liftKey);
   return `
     ${liftSegHtml(liftKey, 'data-max-lift')}
-    <div class="card max-current gold">
-      <div class="mc-label">MAX</div>
-      <div class="max-current-val">${value}</div>
-      <div class="mc-sub">${sub}</div>
+    <div class="summary-grid">
+      <div class="card max-current ${best ? 'gold' : 'empty'}">
+        <div class="mc-label">MEASURED</div>
+        ${best ? `<div class="max-current-val">${value}</div>` : ''}
+        <div class="mc-sub">${sub}</div>
+      </div>
+      <div class="card max-current ${emaxLatest ? '' : 'empty'}">
+        <div class="mc-label">ESTIMATED</div>
+        ${emaxLatest ? `<div class="max-current-val">${fmtW(emaxLatest.estimatedMax)}<span class="u">kg</span></div>` : ''}
+        <div class="mc-sub">${emaxLatest
+          ? `${fmtDateShort(emaxLatest.date)} ・ ${fmtW(emaxLatest.sourceWeight)}×${emaxLatest.sourceReps}${emaxBest && emaxBest.estimatedMax > emaxLatest.estimatedMax ? ` ・ 最高 ${fmtW(emaxBest.estimatedMax)}kg` : ''}`
+          : 'セット記録から自動計算されます'}</div>
+      </div>
     </div>
-    <div class="card">
-      <div class="sec-label">履歴</div>
+    ${tests.length ? `<div class="card">
+      <div class="sec-label">実測の履歴</div>
       ${renderMaxTestHistory(12, liftKey)}
+    </div>` : ''}
+    <div class="card">
+      <div class="sec-label">推定の履歴</div>
+      ${estimatedMaxHistoryRows(liftKey) || '<div class="muted">履歴なし</div>'}
     </div>
   `;
 }
 
+// 推定MAX履歴の行だけを返す（MAXタブと推定MAXタブで共用）
+function estimatedMaxHistoryRows(liftKey) {
+  return collectEstimatedMaxEntries(liftKey).slice(0, 14).map(entry => {
+    const kind = entry.adopted ? 'adopted' : (entry.maxUseKind || 'excluded');
+    // 候補には印を付けない。全ての行に付くラベルは何も区別していない。
+    // 採用ボタンの有無がその行が候補であることを示している。
+    const chip = kind === 'adopted'
+      ? '<span class="chip chip-adopted">採用済み</span>'
+      : kind === 'reference'
+        ? '<span class="chip chip-pause">参考</span>'
+        : kind === 'excluded'
+          ? '<span class="chip chip-pause">除外</span>'
+          : '';
+    const candidate = !entry.adopted && !entry.derivedFromLog ? getMaxUpdateCandidate(entry) : null;
+    return `
+      <div class="hist-row ${kind === 'excluded' ? 'excluded' : ''}">
+        <span class="h-date">${fmtDateShort(entry.date)}</span>
+        <span class="h-val">${fmtW(entry.estimatedMax)}<span class="u">kg</span>
+          <span class="h-src">${fmtW(entry.sourceWeight)}×${entry.sourceReps} @${entry.rpe || '-'}</span>
+        </span>
+        ${chip}
+        ${candidate ? `<button class="btn-secondary btn-small" data-adopt-emax="${entry.id}">採用</button>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
 // 推定MAXタブ: 計算値の履歴（MAXとは完全に別タブ）
-function renderEmaxLogTab() {
-  const liftKey = BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench';
-  const entries = collectEstimatedMaxEntries(liftKey);
+function renderEmaxLogTab(forcedLiftKey = null) {
+  const liftKey = forcedLiftKey || (BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench');
   const latest = latestEstimatedMaxEntryForLift(liftKey);
   const adopted = adoptedEstimatedMaxEntryForLift(liftKey);
   const best = bestEstimatedMaxEntryForLift(liftKey);
@@ -6254,27 +7181,7 @@ function renderEmaxLogTab() {
       </div>
     </div>`
     : '<div class="card flat"><div class="muted text-center">推定MAXの記録はまだありません</div></div>';
-  const rows = entries.slice(0, 14).map(entry => {
-    const kind = entry.adopted ? 'adopted' : (entry.maxUseKind || 'excluded');
-    const chip = kind === 'adopted'
-      ? '<span class="chip chip-adopted">採用済み</span>'
-      : kind === 'candidate'
-        ? '<span class="chip chip-outline">候補</span>'
-        : kind === 'reference'
-          ? '<span class="chip chip-pause">参考</span>'
-          : '<span class="chip chip-pause">除外</span>';
-    const candidate = !entry.adopted && !entry.derivedFromLog ? getMaxUpdateCandidate(entry) : null;
-    return `
-      <div class="hist-row ${kind === 'excluded' ? 'excluded' : ''}">
-        <span class="h-date">${fmtDateShort(entry.date)}</span>
-        <span class="h-val">${fmtW(entry.estimatedMax)}<span class="u">kg</span>
-          <span class="h-src">${fmtW(entry.sourceWeight)}×${entry.sourceReps} @${entry.rpe || '-'}</span>
-        </span>
-        ${chip}
-        ${candidate ? `<button class="btn-secondary btn-small" data-adopt-emax="${entry.id}">採用</button>` : ''}
-      </div>
-    `;
-  }).join('');
+  const rows = estimatedMaxHistoryRows(liftKey);
   return `
     ${liftSegHtml(liftKey, 'data-emax-lift')}
     ${currentCard}
@@ -6283,6 +7190,14 @@ function renderEmaxLogTab() {
       ${rows || '<div class="muted">履歴なし</div>'}
     </div>
   `;
+}
+
+// 月別タブがいま見ている月。カレンダーとボリューム推移が別々の月を出さないよう、
+// どちらもこの1か所から取る。
+function selectedLogMonth() {
+  if (/^\d{4}-\d{2}$/.test(logFilter.month || '')) return logFilter.month;
+  const dates = [...logsByDate().keys()].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  return dates.length ? dates[dates.length - 1].slice(0, 7) : todayStr().slice(0, 7);
 }
 
 function logsByDate() {
@@ -6299,10 +7214,12 @@ function summarizeLogGroup(logs) {
   // 休止ログ・今日だけ削除ログは実施数に含めない（0/0で「完了」に見えるのを防ぐ）
   const trainingLogs = logs.filter(log => !log.isExerciseRest && !log.todayOnlyDeleted);
   const completed = trainingLogs.filter(log => (parseInt(log.doneSets, 10) || 0) >= (parseInt(log.plannedSets, 10) || 0));
-  const restCount = logs.length - trainingLogs.length;
+  // 休止（設定で止めている）と今日だけ削除（その日の判断）は別のこと。同じ「休止」にまとめない
+  const restCount = logs.filter(log => log.isExerciseRest).length;
+  const removedCount = logs.filter(log => log.todayOnlyDeleted).length;
   const mainNames = (trainingLogs.length ? trainingLogs : logs).slice(0, 3).map(log => displayExerciseName(log.exerciseKey, log.exerciseName)).filter(Boolean).join(' / ') || '記録';
   const hasCandidate = trainingLogs.some(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate);
-  return { completedCount: completed.length, totalCount: trainingLogs.length, restCount, mainNames, hasCandidate };
+  return { completedCount: completed.length, totalCount: trainingLogs.length, restCount, removedCount, mainNames, hasCandidate };
 }
 
 // ログのベストセット表記「160.0×1」
@@ -6320,7 +7237,7 @@ function renderLogDetail(logs) {
         <div class="log-detail-row">
           <div class="row between">
             <span class="muted">${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}</span>
-            <span class="chip chip-pause">${log.isExerciseRest ? '休止中' : '削除'}</span>
+            <span class="chip chip-pause">${log.isExerciseRest ? '休止中' : '今日だけ削除'}</span>
           </div>
         </div>
       `;
@@ -6369,7 +7286,7 @@ function renderDailyLogView(logMap = logsByDate()) {
             <span class="log-card-title">${fmtDateShort(date)} ${logGroupHeaderMeta(first)}</span>
             <span class="muted d-block">${summaryRows || summary.mainNames}</span>
           </span>
-          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}
+          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}${summary.removedCount ? `<span class="chip chip-pause">削除${summary.removedCount}</span>` : ''}
         </summary>
         ${renderLogDetail(logs)}
       </details>
@@ -6381,8 +7298,7 @@ function renderDailyLogView(logMap = logsByDate()) {
 function renderMonthlyLogView() {
   const dateMap = logsByDate();
   const dates = [...dateMap.keys()].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
-  const fallbackMonth = dates.length ? dates[dates.length - 1].slice(0, 7) : todayStr().slice(0, 7);
-  const month = /^\d{4}-\d{2}$/.test(logFilter.month || '') ? logFilter.month : fallbackMonth;
+  const month = selectedLogMonth();
   logFilter.month = month; // 月送り操作の基準を常に保持する
   const [y, m] = month.split('-').map(Number);
   const firstDow = new Date(y, m - 1, 1).getDay();
@@ -6492,6 +7408,7 @@ function renderSimpleGraph(logs, key) {
 }
 
 function afterLog() {
+  bindBodyWeightInput();
   document.querySelectorAll('.tab[data-type]').forEach(t => {
     t.onclick = () => {
       logFilter.type = t.dataset.type;
@@ -6531,14 +7448,34 @@ function afterLog() {
   const roleFilter = document.getElementById('log-role-filter');
   if (roleFilter) roleFilter.onchange = () => { logFilter.role = roleFilter.value; render(); };
   const queryFilter = document.getElementById('log-query-filter');
-  if (queryFilter) queryFilter.onchange = () => { logFilter.query = queryFilter.value; render(); };
-  document.getElementById('btnExport').onclick = exportData;
-  document.getElementById('btnImport').onclick = importData;
+  if (queryFilter) {
+    // 入力のたびに絞り込む。change だけだと欄から離れるまで何も起きず、検索が壊れて見えた。
+    // 再描画でフォーカスとカーソル位置が飛ぶので、描き直したあとに戻す。
+    queryFilter.oninput = () => {
+      logFilter.query = queryFilter.value;
+      const pos = queryFilter.selectionStart;
+      clearTimeout(logQueryTimer);
+      logQueryTimer = setTimeout(() => {
+        render();
+        const next = document.getElementById('log-query-filter');
+        if (!next) return;
+        next.focus();
+        try { next.setSelectionRange(pos, pos); } catch (e) { /* type=search が選択位置を持たない環境 */ }
+      }, 180);
+    };
+  }
+  const logExport = document.getElementById('btnExport');
+  if (logExport) logExport.onclick = exportData;
+  const logImport = document.getElementById('btnImport');
+  if (logImport) logImport.onclick = importData;
   bindEstimatedMaxActions();
 }
 
 function exportData() {
-  store.settings.lastExportedAt = new Date().toISOString();
+  // 端末の暦で持つ。UTCのままだと JST の午前中に取ったバックアップが前日扱いになり、
+  // 「最終バックアップ」の表示も30日警告も1日ずれる。
+  const now = new Date();
+  store.settings.lastExportedAt = `${dateToLocalStr(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   saveStore();
   const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -6804,7 +7741,7 @@ function renderAccessorySlotEditor(context = 'settings') {
 function addDaysStr(dateStr, days) {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return dateToLocalStr(d);
 }
 
 // 休止期間の表示「6/2 – 6/16」（未定なら「6/2 – 未定」）
@@ -7175,23 +8112,29 @@ function renderSettings() {
       </details>
     </div>
 
+    ${adjList.length === 0 ? '' : `
     <div class="section">
       <h2>手動調整一覧</h2>
-      ${adjList.length === 0 ? '<div class="muted">調整なし</div>' :
-        adjList.map(([k, v]) => `
+      ${adjList.map(([k, v]) => `
           <div class="suggestion-row">
             <div class="name">${k}</div>
             <div class="delta">${v > 0 ? '+' : ''}${v}kg</div>
             <button class="btn-ghost btn-small" data-clear-adj="${k}">解除</button>
           </div>
-        `).join('')
-      }
-    </div>
+        `).join('')}
+    </div>`}
 
     <div class="section">
       <h2>データ管理</h2>
       <div class="muted mb-8">最終バックアップ: ${storageInfo.lastExportedAt ? fmtDateShort(storageInfo.lastExportedAt.slice(0, 10)) : '記録なし'} ・ ${storageInfo.sizeText} ・ ログ${storageInfo.logs}件 ・ セッション${storageInfo.sessions}件</div>
-      ${backupOld ? '<div class="status-pill status-caution mb-8">30日以上バックアップされていません</div>' : ''}
+      ${backupOld ? `
+        <div class="backup-warning">
+          <span class="micro-label">BACKUP</span>
+          <div class="backup-warning-text">${storageInfo.lastExportedAt
+            ? `最後のバックアップから30日以上経っています。データはこの端末にしかありません。`
+            : `まだ一度もバックアップしていません。Safariのデータ削除や機種変更で全て消えます。`}</div>
+          <button class="btn-primary btn-small" id="btnBackupNow">今すぐ書き出す</button>
+        </div>` : ''}
       <div class="btn-row">
         <button class="btn-secondary btn-small" id="btnExport2">エクスポート</button>
         <button class="btn-secondary btn-small" id="btnImport2">インポート</button>
@@ -7337,6 +8280,8 @@ function afterSettings() {
   });
 
   document.getElementById('btnExport2').onclick = exportData;
+  const backupNow = document.getElementById('btnBackupNow');
+  if (backupNow) backupNow.onclick = exportData;
   document.getElementById('btnImport2').onclick = importData;
   document.getElementById('btnFullReset').onclick = () => {
     if (!confirm('全データを削除します。本当によろしいですか？(取り消し不可)')) return;
@@ -7369,6 +8314,11 @@ function init() {
     if (e.target.id === 'modal') closeModal();
   });
   setupRestTimerControls();
+  setupHeaderScroll();
+  const headerOptions = document.getElementById('hdOptions');
+  if (headerOptions) headerOptions.onclick = openMenuSheet;
+  const headerTitle = document.getElementById('hdTitle');
+  if (headerTitle) headerTitle.onclick = () => { if (currentScreen === 'today') openMenuSheet(); };
   setupRestTimerLifecycleEvents();
   restoreRestTimer();
 
@@ -7483,6 +8433,10 @@ if (typeof window !== 'undefined') {
     adoptedEstimatedMaxEntryForLift,
     bestEstimatedMaxEntryForLift,
     renderEmaxLogTab,
+    renderMaxLogTab,
+    renderVolumeTrend,
+    renderBodyWeightCard,
+    monthlyVolumeByMenu,
     upsertExerciseLogFromSession,
     updateExerciseRestSetting,
     defaultAccessorySlots,
@@ -7530,7 +8484,25 @@ if (typeof window !== 'undefined') {
     getSessionBackLiftKey,
     deriveLastCompletedBackLiftKey,
     switchBackLiftVariant,
-    renderBackLiftVariantSwitch,
+    backLiftRowsHtml,
+    menuSheetRowsHtml,
+    undoAutoApplied,
+    autoApplySuggestions,
+    sessionPrSetIndexes,
+    getExercisePrRecord,
+    selectedLogMonth,
+    deleteMainExerciseToday,
+    restoreDeletedMain,
+    addDaysStr,
+    dateToLocalStr,
+    platesPerSide,
+    renderPlateBreakdown,
+    recordBodyWeight,
+    latestBodyWeight,
+    migrateStoreData,
+    renderDeloadMaxTestPanel,
+    renderR4AdjustmentPanel,
+    todayHeaderTitle,
     getFourMenuMainPlan,
     getMainProgressionIncrement,
     countConsecutiveMainMisses,

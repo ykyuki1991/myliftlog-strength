@@ -360,6 +360,225 @@ function testMaxUpdateAndRotationProgressionAreCapped() {
   assert.ok(isolatedStore.rotationProgressions.every(p => p.status !== 'accepted' && p.status !== 'suggested'));
 }
 
+function testBodyWeightAndVolumeTrend() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  // schema 3: 器が増えるだけで既存データの意味は変わらない
+  assert.ok(Array.isArray(store.bodyWeights), 'bodyWeights は常に配列');
+  assert.strictEqual(api.recordBodyWeight('82.4'), true);
+  assert.strictEqual(store.bodyWeights.length, 1);
+  assert.strictEqual(store.bodyWeights[0].weight, 82.4);
+  // 同じ日は上書き、増えない
+  assert.strictEqual(api.recordBodyWeight('82.9'), true);
+  assert.strictEqual(store.bodyWeights.length, 1);
+  assert.strictEqual(store.bodyWeights[0].weight, 82.9);
+  // 不正値は保存しない
+  assert.strictEqual(api.recordBodyWeight('0'), false);
+  assert.strictEqual(api.recordBodyWeight('abc'), false);
+  assert.strictEqual(api.recordBodyWeight('500'), false);
+  assert.strictEqual(store.bodyWeights.length, 1);
+  // 旧データ（bodyWeights なし）を読んでも壊れない
+  const migrated = api.migrateStoreData({ logs: [], settings: {} });
+  assert.ok(Array.isArray(migrated.bodyWeights));
+  assert.strictEqual(migrated.bodyWeights.length, 0);
+  // 壊れた要素は落とす
+  const dirty = api.migrateStoreData({ bodyWeights: [{ date: '', weight: 1 }, { date: '2026-01-01', weight: 'x' }, { date: '2026-01-02', weight: 80 }] });
+  assert.strictEqual(dirty.bodyWeights.length, 1);
+  assert.strictEqual(dirty.bodyWeights[0].weight, 80);
+
+  // 体重カードは記録が無くても出る。入力欄がこのカードにしか無いため
+  store.bodyWeights = [];
+  const emptyCard = api.renderBodyWeightCard();
+  assert.ok(emptyCard.includes('id="bodyWeightInput"'), '記録ゼロでも入力欄は出す');
+  // 増減に色を付けない（増量中か減量中かはアプリには分からない）
+  store.bodyWeights = [
+    { date: '2026-06-01', weight: 80 },
+    { date: '2026-07-05', weight: 83 },
+  ];
+  const gainCard = api.renderBodyWeightCard();
+  assert.ok(gainCard.includes('trend-delta num plain'), '体重の増減は中立色で出す');
+  assert.ok(!/trend-delta num (up|down)/.test(gainCard), '体重の増減に up/down を付けてはいけない');
+  assert.ok(gainCard.includes('id="bodyWeightInput"'), '値と入力は同じカードに置く');
+}
+
+// 月初の今月と、終わった先月をそのまま比べると必ず大幅減に見える不具合の回帰テスト
+function testVolumeTrendComparesEqualPeriods() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  const log = (date, weight) => ({
+    id: `v-${date}-${weight}`, date, performedSplitKey: 'chest',
+    sets: [{ done: true, weight, reps: 10 }],
+  });
+  store.logs = [log('2026-09-02', 120), log('2026-08-02', 100), log('2026-08-20', 900)];
+
+  const full = api.monthlyVolumeByMenu(2);
+  assert.strictEqual(full.map(m => m.month).join(','), '2026-09,2026-08');
+  assert.strictEqual(full[1].byMenu.chest, 10000, '日数を絞らなければ先月は満額');
+
+  const toDate = api.monthlyVolumeByMenu(2, 5);
+  assert.strictEqual(toDate.map(m => m.month).join(','), '2026-09,2026-08', '対象月は絞る前の記録で決める');
+  assert.strictEqual(toDate[0].byMenu.chest, 1200);
+  assert.strictEqual(toDate[1].byMenu.chest, 1000, '先月も同じ日数までで揃える');
+
+  // 絞った結果が空になっても、その月が候補から消えて比較相手がずれてはいけない
+  const day1 = api.monthlyVolumeByMenu(2, 1);
+  assert.strictEqual(day1.map(m => m.month).join(','), '2026-09,2026-08');
+  assert.strictEqual(Object.keys(day1[1].byMenu).length, 0);
+
+  const html = api.renderVolumeTrend();
+  assert.ok(html.includes('VOLUME BY MENU'), 'ラベルは英大文字のまま');
+  assert.ok(!html.includes('2026-09'), '見出しにISO日付を出さない');
+  assert.ok(html.includes('trend-note'), '比較している期間を明示する');
+}
+
+// メイン種目の「今日だけ削除」。補助と同じ操作だが、戻す導線があることまでが機能。
+function testMainExerciseTodayOnlyDelete() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  const session = api.getOrCreateTodaySession();
+  const mainIdx = session.exercises.findIndex(ex => ex.isFourMenuMain || ex.isBig3);
+  assert.ok(mainIdx >= 0, 'メイン種目がある');
+  const main = session.exercises[mainIdx];
+  const before = session.exercises.length;
+
+  // 記録済みのセットがあるときは確認なしで消さない
+  main.sets[0] = { ...main.sets[0], done: true, weight: 100, reps: 5 };
+  assert.strictEqual(api.deleteMainExerciseToday(session, mainIdx).reason, 'needs-confirm');
+  assert.strictEqual(session.exercises.length, before, '確認前は消えない');
+  main.sets[0] = { ...main.sets[0], done: false };
+
+  assert.strictEqual(api.deleteMainExerciseToday(session, mainIdx).ok, true);
+  assert.strictEqual(session.exercises.length, before - 1);
+  assert.strictEqual(session.exercises.some(ex => ex.key === main.key && ex.menuType === main.menuType), false);
+  assert.strictEqual(session.deletedMains.length, 1);
+
+  // 再計算で黙って戻ってこない（休止設定の変更などで再計算が走る）
+  api.recalculateTodaySession();
+  const afterRecalc = api.getOrCreateTodaySession();
+  assert.strictEqual(afterRecalc.exercises.some(ex => ex.key === main.key && ex.menuType === main.menuType), false,
+    '今日だけ削除したメイン種目は再計算で復活しない');
+
+  // 戻す
+  assert.strictEqual(api.restoreDeletedMain(afterRecalc, 0), true);
+  assert.strictEqual(afterRecalc.exercises.some(ex => ex.key === main.key && ex.menuType === main.menuType), true);
+  assert.strictEqual(afterRecalc.deletedMains.length, 0);
+
+  // 最後の1種目は消せない（何もしない日が「実施済み」になるのを防ぐ）
+  const only = api.getOrCreateTodaySession();
+  const keepIdx = only.exercises.findIndex(ex => ex.isFourMenuMain || ex.isBig3);
+  only.exercises = [only.exercises[keepIdx]];
+  assert.strictEqual(api.deleteMainExerciseToday(only, 0).reason, 'last-exercise');
+  assert.strictEqual(only.exercises.length, 1);
+}
+
+// 削除したメイン種目は「やらなかった記録」として残り、集計には入らない
+function testDeletedMainLeavesANonCountingLog() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  const session = api.getOrCreateTodaySession();
+  const mainIdx = session.exercises.findIndex(ex => ex.isFourMenuMain || ex.isBig3);
+  const main = session.exercises[mainIdx];
+  const performed = session.performedSplitKey || session.selectedSplitKey;
+  api.deleteMainExerciseToday(session, mainIdx);
+  session.exercises.forEach(ex => {
+    ex.rpe = ex.rpe || '8';
+    ex.pains = ['なし'];
+    ex.sets = ex.sets.map(set => ({ ...set, weight: set.weight || 30, reps: set.reps || 10, done: true }));
+  });
+  api.persistTodaySession(session);
+  api.finishTodaySession();
+
+  const log = store.logs.find(l => l.exerciseKey === main.key && l.todayOnlyDeleted);
+  assert.ok(log, 'やらなかった事実はログに残る');
+  assert.strictEqual(log.doneSets, 0);
+  assert.strictEqual(log.sets.length, 0);
+  assert.strictEqual(api.getExercisePrRecord({ key: main.key, sets: [] }, null), null, '削除ログは自己ベストに入らない');
+  assert.strictEqual(store.estimatedMaxHistory.some(entry => entry.liftKey === main.key && entry.date === session.date), false,
+    '削除ログから推定MAXは作られない');
+  // ローテーションは進む（実施として扱う）
+  assert.strictEqual(store.currentState.lastCompletedMenuKey, performed, 'その日はそのメニューを実施した扱い');
+  assert.notStrictEqual(store.currentState.nextMenuKey, performed, '次のメニューへ進む');
+}
+
+// 日付をUTCに直していたせいで、JST（UTC+9）では休止期間が1日早く終わっていた回帰テスト。
+// 端末のタイムゾーンに関係なく同じ答えになるべき。
+function testLocalDateArithmetic() {
+  const { api } = createHarness();
+  assert.strictEqual(api.addDaysStr('2026-09-10', 7), '2026-09-17', '7日後は素直に7日後');
+  assert.strictEqual(api.addDaysStr('2026-09-10', 30), '2026-10-10');
+  assert.strictEqual(api.addDaysStr('2026-12-31', 1), '2027-01-01', '年をまたいでもずれない');
+  assert.strictEqual(api.addDaysStr('2026-03-01', -1), '2026-02-28');
+  assert.strictEqual(api.dateToLocalStr(new Date(2026, 8, 10, 0, 30)), '2026-09-10', '深夜でもその日の日付');
+  assert.strictEqual(api.dateToLocalStr(new Date(2026, 8, 10, 23, 30)), '2026-09-10');
+  assert.strictEqual(api.dateToLocalStr(new Date('nonsense')), '');
+}
+
+// プレート内訳の「足りない分」が構造上一度も表示されなかった不具合の回帰テスト
+function testPlateRemainderIsReachable() {
+  const { api } = createHarness();
+  const exact = api.platesPerSide(100);
+  assert.strictEqual(exact.remainder, 0, '2.5kg刻みなら端数は出ない');
+  const odd = api.platesPerSide(101.25);
+  assert.ok(odd.remainder >= 0.25 && odd.remainder < 1.25, '端数は最小プレート未満（' + odd.remainder + '）');
+  const html = api.renderPlateBreakdown({ key: 'bench', isBig3: true }, 101.25);
+  assert.ok(html.includes('plate-remainder'), '足りない分を表示する');
+  assert.ok(!api.renderPlateBreakdown({ key: 'bench', isBig3: true }, 100).includes('plate-remainder'), 'ちょうど組めるときは出さない');
+}
+
+// 完了画面の「NEW PR」が一度も出なかった不具合の回帰テスト。
+// 完了時に自分のセットが store.logs へ入るため、自己ベストが自分自身になっていた。
+function testPrCountsOnlyEarlierSessions() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  store.logs = [{
+    id: 'past', sessionId: 'session-past', date: '2026-08-01', exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス', sets: [{ weight: 100, reps: 5, done: true }],
+  }];
+  const ex = { key: 'bench', name: 'ベンチプレス', sets: [{ weight: 110, reps: 3, done: true }] };
+
+  // 進行中（自分のログはまだ無い）: PRとして検出される
+  assert.deepStrictEqual(api.sessionPrSetIndexes(ex, null).join(','), '0', '過去の記録を超えたセットはPR');
+
+  // 完了後（自分のログが保存済み）: それでも同じ判定になる
+  store.logs.push({
+    id: 'today', sessionId: 'session-today', date: '2026-09-10', exerciseKey: 'bench',
+    exerciseName: 'ベンチプレス', sets: [{ weight: 110, reps: 3, done: true }],
+  });
+  const session = { sessionId: 'session-today' };
+  assert.strictEqual(api.sessionPrSetIndexes(ex, session).join(','), '0', '保存後も自セッションを除いて判定する');
+  assert.strictEqual(api.getExercisePrRecord(ex, session).weight, 100, '自己ベストは過去のセッションから取る');
+  assert.strictEqual(api.getExercisePrRecord(ex, null).weight, 110, 'セッション指定なしなら全ログが対象');
+}
+
+// 破損したJSONを取り込むと設定画面が Object.entries(null) で落ちていた不具合の回帰テスト
+function testMigrationFixesContainerTypes() {
+  const { api } = createHarness();
+  const broken = api.migrateStoreData({ manualAdjustments: null, blockSuggestions: 'x' });
+  assert.strictEqual(typeof broken.manualAdjustments, 'object');
+  assert.ok(broken.manualAdjustments && !Array.isArray(broken.manualAdjustments));
+  assert.strictEqual(Object.keys(broken.manualAdjustments).length, 0);
+  assert.ok(Array.isArray(broken.blockSuggestions));
+  // 中身のある値は壊さない
+  const kept = api.migrateStoreData({ manualAdjustments: { '1-bench-main': 2.5 }, blockSuggestions: [{ ts: 1 }] });
+  assert.strictEqual(kept.manualAdjustments['1-bench-main'], 2.5);
+  assert.strictEqual(kept.blockSuggestions.length, 1);
+}
+
+// MAXタブに推定MAXを統合したときに、同じ数字とピッカーが二重に出た不具合の回帰テスト
+function testMaxTabShowsEachNumberOnce() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  store.estimatedMaxHistory = [
+    { id: 'e1', liftKey: 'bench', estimatedMax: 120, maxUseKind: 'candidate', date: '2026-09-01', sourceWeight: 100, sourceReps: 5, rpe: '9' },
+  ];
+  const html = api.renderMaxLogTab();
+  assert.strictEqual((html.match(/class="seg lift-seg/g) || []).length, 1, '種目ピッカーは1つ');
+  assert.ok(!html.includes('data-emax-lift'), 'MAXタブに2つ目の種目ピッカーを出さない');
+  assert.ok(!html.includes('最新推定MAX'), 'ESTIMATED カードと重複する見出しを出さない');
+  assert.ok(html.includes('MEASURED') && html.includes('ESTIMATED'));
+  assert.strictEqual((html.match(/120\.0/g) || []).length, 2, 'ESTIMATEDカードと履歴の1行だけ');
+}
+
 function testDeloadAccessoryAndMaxTestTiming() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
@@ -417,15 +636,21 @@ function testDeloadAccessoryAndMaxTestTiming() {
 
   isolatedStore.currentState = { block: 1, rotation: 4, day: 1 };
   let html = isolatedApi.renderToday();
-  assert.ok(html.includes('MAX測定'));
-  assert.ok(html.includes('data-mode="trueOneRm"'), 'MAX測定する/しないの2択（する）');
-  assert.ok(html.includes('data-mode="normal"'), 'MAX測定する/しないの2択（しない）');
+  // パネル本体はオプションシートへ移動。本文には「今日がMAX測定日」の1行バナーだけ残す。
+  assert.ok(html.includes('MAX測定'), '本文にMAX測定日のバナーが残る');
+  assert.ok(html.includes('btnOpenMaxTestFromBanner'), 'バナーはシートを開く導線になる');
+  const maxPanel = isolatedApi.renderDeloadMaxTestPanel(isolatedApi.getOrCreateTodaySession({ persist: false }));
+  assert.ok(maxPanel.includes('data-mode="trueOneRm"'), 'MAX測定する/しないの2択（する）');
+  assert.ok(maxPanel.includes('data-mode="normal"'), 'MAX測定する/しないの2択（しない）');
   assert.ok(!html.includes('e1RM確認'));
   assert.ok(!html.includes('3RM'));
   assert.ok(!html.includes('5RM'));
   assert.ok(!html.includes('方法'));
-  assert.ok(html.includes('Lv1'));
-  assert.ok(html.includes('今回の強さ'), 'R4のLvセグメントカード');
+  // R4の強さ選択もオプションシートへ移動した。
+  const r4Panel = isolatedApi.renderR4AdjustmentPanel(isolatedApi.getOrCreateTodaySession({ persist: false }));
+  assert.ok(r4Panel.includes('Lv1'));
+  assert.ok(r4Panel.includes('今回の強さ'), 'R4のLvセグメントカード');
+  assert.ok(!html.includes('今回の強さ'), '調整パネルは本文に出さない');
   assert.ok(!html.includes('MAX測定以外の軽さを選びます'));
   assert.ok(!html.includes('測定結果を入力'));
   assert.ok(html.includes('chip-max'), 'MAX測定種目は金チップ');
@@ -517,7 +742,10 @@ function testLogDailyAndMonthlyViews() {
   const logHtml = isolatedApi.renderLog();
   assert.ok(logHtml.includes('日別'));
   assert.ok(logHtml.includes('月別'));
-  assert.ok(logHtml.includes('推定MAX'), 'MAXと推定MAXはタブを分離');
+  // 実測MAXと推定MAXは1つのタブに統合した。知りたいのは「いま何kg挙がるか」で、
+  // 両方を並べて見る値だから。タブが分かれている契約はここで反転する。
+  assert.ok(!logHtml.includes('data-type="emax"'), 'MAXと推定MAXは同じタブ');
+  assert.ok((logHtml.match(/class="tab /g) || []).length === 3, 'ログのタブは3つ');
   assert.ok(logHtml.includes('log-card'));
   const monthHtml = isolatedApi.renderMonthlyLogView();
   assert.ok(monthHtml.includes('2026年5月'), 'calendar should open on the latest logged month');
@@ -561,7 +789,7 @@ function testExerciseRestSettings() {
   assert.ok(menu.exercises.some(ex => ex.key === 'chinning'), 'unrelated exercises should remain');
 
   const html = isolatedApi.renderToday();
-  assert.ok(html.includes('休止中'), 'rested exercises should be shown with the gray 休止中 chip');
+  assert.ok(html.includes('PAUSED'), 'rested exercises should be shown with the gray PAUSED chip');
   assert.ok(html.includes('pause-row'), 'rested exercises should be listed as gray rows at the bottom');
   assert.ok(html.includes('ベンチプレス'), 'rested exercise name should be visible');
   const session = Object.values(isolatedStore.daySessions).find(s => s.day === 2 && s.rotation === 1);
@@ -636,7 +864,24 @@ function testRotationFlowAndMaxRecordsFromSession() {
   assert.ok(backoffLog);
   assert.strictEqual(isolatedApi.createEstimatedMaxEntry(backoffLog), null, 'backoff should not be mixed into e1RM history');
   assert.strictEqual(isolatedStore.estimatedMaxHistory.some(entry => entry.logId === backoffLog.id), false);
-  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, 'MAX setting should remain user-approved');
+  // 推奨値は完了時に自動採用し、完了画面から取り消せる（DESIGN.md 原則15）。
+  // 「タップするまで変わらない」契約は「自動で変わり、戻せる」契約に置き換わった。
+  const finishedKey = Object.keys(isolatedStore.daySessions).find(k => isolatedStore.daySessions[k].completed);
+  const applied = isolatedStore.daySessions[finishedKey].autoApplied || [];
+  const emaxApplied = applied.find(item => item.kind === 'emax' && item.maxKey === 'bench');
+  assert.ok(emaxApplied, 'MAX更新は自動採用され記録に残る');
+  assert.strictEqual(emaxApplied.before, 120, '取り消し用に旧値を保持する');
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 122.5, 'MAXは自動採用される');
+  assert.strictEqual(isolatedApi.undoAutoApplied(finishedKey, applied.indexOf(emaxApplied)), true);
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, '取り消すと旧値に戻る');
+  // 取り消したのに、同じセッションを保存し直すと黙って再適用されていた
+  isolatedApi.autoApplySuggestions(isolatedStore.daySessions[finishedKey]);
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, '取り消した提案は保存し直しても戻らない');
+  assert.strictEqual(
+    (isolatedStore.daySessions[finishedKey].autoApplied || []).some(item => item.kind === 'emax' && item.maxKey === 'bench'),
+    false,
+    '取り消した項目が一覧に復活してはいけない'
+  );
 
   const failedLog = big3Log({
     id: 'failed-max-log',
@@ -1517,9 +1762,14 @@ function testExistingStoreMigratesToFourMenuMode() {
   assert.ok(store.settings.fourMenuAccessorySlots);
   assert.ok(store.settings.fourMenuAccessorySlots.legs.every(slot => typeof slot.reps === 'number'));
   const html = api.renderToday();
-  assert.ok(html.includes('肩・腕'));
-  assert.strictEqual((html.match(/data-four-menu-select=/g) || []).length, 5);
-  assert.ok(!html.includes('data-four-menu-select="rest"'));
+  // メニューピッカーは本文からヘッダーのシートへ移動した。
+  // 「5つ選択できて rest は出ない」という契約はシート側で検証する。
+  const session = api.getOrCreateTodaySession({ persist: false });
+  assert.strictEqual(api.todayHeaderTitle(session), 'SHOULDER & ARM');
+  const menuHtml = api.menuSheetRowsHtml(session);
+  assert.strictEqual((menuHtml.match(/data-four-menu-select=/g) || []).length, 5);
+  assert.ok(!menuHtml.includes('data-four-menu-select="rest"'));
+  assert.ok(!html.includes('data-four-menu-select='), 'picker must not render in the page body');
   assert.ok(!html.includes('次のメニュー'));
   assert.ok(!html.includes('<h2 class="screen-title">今日</h2>'));
   assert.ok(!html.includes('変更中:'));
@@ -1528,7 +1778,9 @@ function testExistingStoreMigratesToFourMenuMode() {
   assert.ok(!api.renderBlock().includes('<h2 class="screen-title">計画</h2>'));
   assert.ok(!api.renderSettings().includes('<h2 class="screen-title">設定</h2>'));
   api.updateHeader();
-  assert.strictEqual(isolated.elements.headerStatus.textContent, '');
+  // ヘッダーは #headerStatus の「B/R/Day」表示をやめ、部位名を出す共通ヘッダーになった。
+  assert.ok(!/B\d+ \/ R\d+ \/ Day\d+/.test(isolated.elements.hdTitle.textContent || ''),
+    'four-menu header must not fall back to legacy progress metadata');
   const logHtml = api.renderDailyLogView();
   assert.ok(logHtml.includes('B2 / R3 / Day5'), 'legacy log view remains readable');
 }
@@ -1714,7 +1966,9 @@ function testFourMenuSessionSelectionAndDeadliftAlternation() {
   const initialHtml = api.renderToday();
   assert.strictEqual(Object.keys(store.daySessions).length, 0, 'opening today must not create an empty session');
   assert.strictEqual(store.logs.length, 0, 'opening today must not create a workout or rest log');
-  assert.strictEqual((initialHtml.match(/data-four-menu-select=/g) || []).length, 5);
+  // ピッカーは本文からシートへ移動。5択であることはシート側で検証する。
+  assert.strictEqual((api.menuSheetRowsHtml({ fourMenuRotation: true }).match(/data-four-menu-select=/g) || []).length, 5);
+  assert.ok(!initialHtml.includes('data-four-menu-select='), 'picker must not render in the page body');
   assert.ok(api.selectFourMenuForToday('shoulder_arm'));
   let session = Object.values(store.daySessions).find(s => s.fourMenuRotation);
   assert.ok(session);
@@ -1754,9 +2008,9 @@ function testManualBackLiftVariantSwitchAndPersistence() {
   const sessionId = session.sessionId;
   const workoutDate = session.workoutDate;
   assert.strictEqual(session.selectedBackLiftKey, 'halfDead');
-  assert.ok(api.renderBackLiftVariantSwitch(session).includes('data-back-lift-select="halfDead"'));
-  assert.ok(api.renderBackLiftVariantSwitch(session).includes('デッドリフト'));
-  assert.strictEqual(api.renderBackLiftVariantSwitch({ fourMenuRotation: true, selectedSplitKey: 'chest' }), '');
+  assert.ok(api.backLiftRowsHtml(session).includes('data-back-lift-select="halfDead"'));
+  assert.ok(api.backLiftRowsHtml(session).includes('デッドリフト'));
+  assert.strictEqual(api.backLiftRowsHtml({ fourMenuRotation: true, selectedSplitKey: 'chest' }), '');
 
   const logsBeforeSwitch = store.logs.length;
   const emaxBeforeSwitch = store.estimatedMaxHistory.length;
@@ -1953,7 +2207,9 @@ function testFourMenuAccessoryTemplatesAndPlanActions() {
   const api = isolated.api;
   const store = api.getStore();
   api.updateHeader();
-  assert.strictEqual(isolated.elements.headerStatus.textContent, '');
+  // ヘッダーは #headerStatus の「B/R/Day」表示をやめ、部位名を出す共通ヘッダーになった。
+  assert.ok(!/B\d+ \/ R\d+ \/ Day\d+/.test(isolated.elements.hdTitle.textContent || ''),
+    'four-menu header must not fall back to legacy progress metadata');
   const initial = api.getFourMenuAccessorySlots('legs');
   assert.ok(initial.length >= 3);
   assert.ok(initial.every(slot => typeof slot.reps === 'number'), 'four-menu planned reps must be numeric');
@@ -2369,6 +2625,15 @@ testFourMenuStateMigrationAliasesAndBackCount();
 testBackLiftMigrationUsesLatestCompletedLift();
 testImportMigrationPreservesLegacyAndMaxData();
 testMaxUpdateAndRotationProgressionAreCapped();
+testBodyWeightAndVolumeTrend();
+testVolumeTrendComparesEqualPeriods();
+testMaxTabShowsEachNumberOnce();
+testPrCountsOnlyEarlierSessions();
+testLocalDateArithmetic();
+testMainExerciseTodayOnlyDelete();
+testDeletedMainLeavesANonCountingLog();
+testPlateRemainderIsReachable();
+testMigrationFixesContainerTypes();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
 testAdaptiveR4ProposalAndSelection();

@@ -4,6 +4,24 @@ The tool a person who handles 150kg reaches for. Apple Watch Ultra, high-end
 strength equipment, the precision of powerlifting. No muscle photography, no
 flame, no neon, no showy gradients.
 
+## Audit (2026-09-09, today screen)
+
+Measured against a device screenshot after the token work landed (PR #43).
+The tokens were correct and the screen still read as a stack of grey boxes.
+
+- One shape only. Weight, reps, RPE, both increment buttons and the card
+  around them were the same grey, the same 16px radius and the same surface.
+  Correct tokens are not a visual identity; a screen needs rules, tables,
+  arcs, badges and row highlights as well as planes.
+- Too little density. The weight box was close to 300px tall for a label and
+  one number, so five things fitted on a screen. That reads as unfinished
+  rather than restrained.
+- Colour spent backwards. The largest blue area was the menu picker, touched
+  once a day, and the word 「メイン」 -- a classification label -- was blue too.
+- No entry point for the eye: every label and value was centred.
+- The loudest markers were the unfilled sets. Nothing that had happened yet
+  was as prominent as the things that had not.
+
 ## Audit (2026-09-09)
 
 Public baseline: PR #42 / 70cf64a, the Quiet Performance redesign. Measured
@@ -85,25 +103,110 @@ against them has not been made.
    `--text-3` clear 4.5:1 on every surface they are used on.
 
 6. **Numbers are instruments.** Seven sizes -- 11/13/15/17/22/34/56 -- and two
-   weights, 400 and 600. Letter spacing is zero to keep numerical labels
-   and Japanese text uncompressed. The recorded weight is at least 2.2x
-   every other string that can appear on the same screen; the exercise name is
-   17/400/`--text-2`. System font, tabular numerals.
+   weights, 400 and 600. Text, numerals and micro labels use zero letter
+   spacing, preserving the bundled face's natural glyph spacing.
 
-7. **Four/eight-pixel spacing**; 44px minimum touch target; no paid assets,
-   fonts, remote runtime libraries or analytics. Dark only: `color-scheme: dark`
-   stays, and there is no light mode.
+   Numerals and uppercase Latin micro labels are set in a bundled condensed
+   face (`--font-num`); Japanese and all running text stay on the system stack
+   (`--font-jp`). The two are separate variables and never swap.
+
+   The recorded weight is at least 2.2x every other string that can appear on
+   the same screen -- which is why reps sit at 22px and the rest timer, which
+   overlays the recording screen, does too.
+
+7. **Four/eight-pixel spacing**; 44px minimum touch target; no remote runtime
+   libraries, no analytics, no paid assets. Fonts under the SIL Open Font
+   License may be bundled in the repository, subset, and precached by the
+   service worker; loading a font from an external CDN remains forbidden, as
+   does any font that is not OFL. (This replaces the earlier blanket ban on
+   fonts, which was the single line holding the visual ceiling in place: with
+   only the system stack, a large number can never read as an instrument.)
+   Dark only: `color-scheme: dark` stays, and there is no light mode.
 
 8. **No compatibility layer.** No aliased tokens kept alive to avoid rewriting
    the rules that use them, no inline `style` attributes in `app.js`, and no
    single rule serving classes that mean different things. Character glyphs
    used as icons are inline SVG in the same shape as the nav icons.
 
-9. **Analysis after training:** actual completed sets and volume in the finish
+9. **Chrome is English, content is Japanese.** Every label the app writes
+   itself -- screen titles, section headings, column headers, button text,
+   navigation, unit labels -- is uppercase Latin in the numeral face. Every
+   string that came from the user or describes their training -- exercise
+   names, menu names in the picker's second line, notes, plan and log rows,
+   toasts and confirmations -- stays Japanese in `--font-jp`.
+
+   The split is by origin, not by prominence: nothing stored is translated,
+   and no display name is derived from a translation table that could drift
+   from the data behind it. The log reads in Japanese because the log is
+   content.
+
+10. **The today screen has one subject.** Order is fixed: session metrics,
+   anything that changes what the user does today, the exercise being
+   recorded, what is next, what is done (collapsed), what is paused. The
+   active exercise is never below something read once a day. Settings that
+   choose the day -- the menu picker, the R4 intensity, the MAX-test toggle --
+   live in the header's options sheet, not in the page. The exception is a
+   one-line banner when the day's action genuinely changes, which points at
+   the sheet rather than containing it.
+
+   Within the exercise card, form carries meaning: planes for grouping, a
+   ruled table for the set history, an arc for elapsed rest, a badge for a
+   record, a bar for the row in progress. A screen of identical rounded grey
+   boxes is a failure state, however correct its tokens.
+
+11. **One hand is holding something.** The primary action of the recording
+    screen is docked above the bottom navigation, within thumb reach, and does
+    not depend on scroll position. It survives the keyboard: the navigation
+    may hide, the action and the rest timer may not, because the moment the
+    user finishes typing a weight is exactly when they need both. Destructive
+    or secondary actions are never placed beside the primary one at the same
+    size -- completing a set and skipping it are not equals.
+
+12. **Each colour means one thing.**
+
+        --accent   what the user is doing now, and the primary action. As a
+                   fill only: at L*57 it is not legible as thin text, which
+                   is what --accent-bright is for.
+        --ok       completion, and nothing else.
+        --max      a personal best, and nothing else. Not caution, not
+                   warnings, not "MAX測定" chrome.
+        --danger   destructive actions and errors.
+
+    Blue is spent on area, so it is spent on what is live: one filled button,
+    one highlighted row, one arc. A classification label is never blue. A
+    control the user touches once a day is never the largest coloured area on
+    the screen. A drop in volume is `--text-3`, not red.
+
+13. **The app decides; the user corrects.** Anything derivable from past
+    records is applied automatically at session finish, and listed on the
+    completion screen with its reason and a way to undo it. A calculated
+    recommendation is not a question: asking the user to approve seven of
+    them per session is phone time in a gym, and a gym is a bad place to
+    read. What stays a question is only what the app cannot know -- how the
+    body feels today, whether a joint hurts, whether to test a max.
+
+14. **One place per capability.** A function appears on exactly one screen.
+    Export/import belongs to settings, not settings and the log; measured and
+    estimated max are one view, not two tabs, because the question behind
+    both is "what can I lift". A control that renders a permanent empty state
+    is deleted, not styled.
+
+15. **Every number the app computes is visible where it is used.** Estimated
+    1RM was calculated for every set and shown only behind a tab that asked
+    for approval; it belongs beside the exercise. The change against last
+    session, the next set during rest, volume per body part month over month
+    -- all of it already existed in the logs and none of it was on screen at
+    the moment it would change a decision.
+
+16. **The data lives in one browser.** There is no server and no account. A
+    backup reminder is therefore not a nicety and does not get a quiet chip;
+    it states what is lost and offers the export in the same block.
+
+17. **Analysis after training:** actual completed sets and volume in the finish
    summary; no fabricated PR or active-training duration (elapsed time may
    include overnight drafts).
 
-10. **Preserve all data.** Routines, custom composition, overrides, paused
+18. **Preserve all data.** Routines, custom composition, overrides, paused
     exercises, historical data, MAX approval and backup formats are preserved,
     and UI state stays outside the persistent training store. This is a
     guarantee about stored data and behaviour only -- it does not preserve any

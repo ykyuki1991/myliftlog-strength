@@ -4,6 +4,33 @@
    See DESIGN.md for the numeric constraints these tokens have to satisfy.
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   Archivo Narrow (SIL OFL 1.1, fonts/OFL.txt), subset to digits, Latin and the
+   punctuation this app renders. 4.6 KB per weight. Chosen over Barlow
+   Condensed, Saira Condensed and IBM Plex Sans Condensed because its digits
+   are tabular by default AND it ships a `tnum` feature, and because its digit
+   advance is the narrowest of the four (0.456 em) -- which is what lets a
+   five-character weight fit the 56px display at 320px. See DESIGN.md.
+
+   font-display: swap, so a failed or slow load renders the system stack
+   instead of blocking the number the user is reading.
+   -------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Archivo Narrow";
+  src: url("fonts/archivo-narrow-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archivo Narrow";
+  src: url("fonts/archivo-narrow-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -62,6 +89,8 @@
   --fw-regular: 400;
   --fw-semibold: 600;
   --tracking-tight: 0;
+  --tracking-num: 0;
+  --tracking-label: 0;
 
   /* ---- Metrics ---- */
   --nav-height: 72px;
@@ -72,8 +101,11 @@
   --space-5: 20px;
   --space-6: 24px;
   --control-height: 48px;
+  /* Header height. Compact everywhere; the today screen expands to the
+     editorial variant while the page is at the top. body reads the same token
+     for its padding, so the two can never disagree. */
+  --header-h: 44px;
   --page-top-space: 12px;
-  --rest-bar-offset: 104px;
 
   --duration-press: 120ms;
   --duration-fast: 160ms;
@@ -81,7 +113,12 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --font-num: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* Numerals and uppercase micro labels. Bundled, never fetched from a CDN;
+     falls back to the system stack if the file fails to load. */
+  --font-num: "Archivo Narrow", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* Japanese and all running text stays on the system stack. */
+  --font-jp: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
+             "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
 
   --shadow: 0 18px 52px rgba(0, 0, 0, 0.6);
   --shadow-soft: 0 6px 22px rgba(0, 0, 0, 0.28);
@@ -121,8 +158,7 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
-               "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  font-family: var(--font-jp);
   font-size: var(--fs-15);
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
@@ -132,10 +168,217 @@ html, body {
 }
 
 body {
+  padding-top: calc(var(--header-h) + env(safe-area-inset-top));
   padding-bottom: calc(var(--nav-height) + 24px + env(safe-area-inset-bottom));
   user-select: none;
   -webkit-user-select: none;
+  transition: padding-top var(--duration-normal) var(--ease-out);
 }
+
+body[data-header-variant="editorial"] { --header-h: 96px; }
+
+/* ==========================================================================
+   COMMON HEADER
+   Four screens, one header. The today screen expands it: an uppercase micro
+   label over the body part, with the rest ring and the options control on the
+   right. Scrolling interpolates the height back to 44px -- height only, no
+   transform, so the text never blurs mid-animation.
+   ========================================================================== */
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  height: calc(var(--header-h) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 16px 0;
+  background: var(--bg);
+  transition: height var(--duration-normal) var(--ease-out);
+}
+
+.app-header-inner {
+  height: var(--header-h);
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hd-text { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+
+.hd-eyebrow {
+  overflow: hidden;
+  opacity: 1;
+  max-height: 16px;
+  transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) ease;
+}
+
+body[data-header-variant="compact"] .hd-eyebrow { max-height: 0; opacity: 0; }
+
+.hd-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-num);
+  font-size: var(--fs-34);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.15;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: font-size var(--duration-normal) var(--ease-out);
+}
+
+/* CHEST, LEGS and BACK get the full display size. A long name steps down one
+   stop rather than being clipped -- the ring leaves little room beside it. */
+body[data-header-variant="editorial"] .hd-title[data-long="true"] { font-size: var(--fs-22); }
+
+body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
+.app-header[data-screen="today"] .hd-title { cursor: pointer; }
+
+.hd-actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+
+.hd-icon-btn {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: var(--radius-pill);
+}
+
+.hd-icon-btn svg { width: 22px; height: 22px; display: block; }
+
+/* ==========================================================================
+   SESSION METRICS
+   Three chips under the editorial header. Label above, number below, both
+   left-aligned. No DURATION: a draft can span a night, so elapsed time is
+   not a measurement of anything (DESIGN.md principle 5).
+   ========================================================================== */
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.metric-chip {
+  min-width: 0;
+  padding: var(--space-2) 10px;
+  background: var(--surface);
+  border-radius: var(--radius-control);
+}
+
+.metric-value {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric-unit {
+  font-size: var(--fs-11);
+  color: var(--text-3);
+  margin-left: 2px;
+}
+
+/* One-line banner for something that changes what the user does today.
+   The panel itself lives in the options sheet; this is only the pointer. */
+.day-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 48px;
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-3);
+  background: var(--max-soft);
+  border: 0;
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+
+.day-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-regular);
+  color: var(--text);
+  white-space: normal;
+}
+
+.day-banner-go { flex: 0 0 auto; color: var(--text-3); }
+
+/* ==========================================================================
+   MENU SHEET
+   The five-way picker used to sit at the top of the page, where it was the
+   largest blue area on screen for a control touched once a day. It is a
+   vertical list in a sheet now -- five equal columns cannot hold
+   「カスタム」 at 375px anyway -- and selection is a 3px bar plus a
+   check rather than a fill.
+   ========================================================================== */
+.sheet-group-label { margin: var(--space-3) 0 var(--space-2); }
+.sheet-group-label:first-child { margin-top: 0; }
+
+.menu-list { display: grid; gap: 2px; }
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 52px;
+  padding: 10px var(--space-3);
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  text-align: left;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-regular);
+}
+
+.menu-row.on {
+  border-left-color: var(--accent);
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: var(--fw-semibold);
+}
+
+.menu-row-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-num);
+  letter-spacing: 0.02em;
+}
+
+/* The Japanese name stays under the English one: the label is chrome, but the
+   user still thinks of the day as 「肩・腕」. */
+.menu-row-sub {
+  display: block;
+  font-family: var(--font-jp);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+.menu-row-note { color: var(--text-3); }
+.menu-row-check { flex: 0 0 20px; color: var(--accent-bright); }
+.menu-row-check .icon { width: 20px; height: 20px; }
 
 input, textarea, select {
   user-select: text;
@@ -145,127 +388,189 @@ input, textarea, select {
 .num,
 .value-big,
 .value-mid,
-.set-row .sv,
 .vbox .vb-val,
-.rest-bar-time,
 .cal-cell,
 .hist-row .h-val,
 .max-current-val {
   font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-num);
 }
 
-/* ==== ヘッダー ==== */
-/* ==== レストタイマーバー ==== */
-.rest-bar {
-  position: fixed;
-  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(100%, 640px);
-  z-index: 49;
-  background: var(--surface);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border: 0;
-  border-radius: var(--radius-card) var(--radius-card) 0 0;
-  padding: 12px 16px;
-  box-shadow: var(--shadow-soft);
+/* --------------------------------------------------------------------------
+   MICRO LABEL
+   The small uppercase Latin label that sits above or beside a number. Small,
+   wide-tracked and quiet, so the number beside it reads as the content and the
+   label reads as the unit. Left-aligned: centring both label and value leaves
+   the eye with no starting point.
+
+   Only labels attached to numbers take this treatment. Exercise names, menu
+   names, notes, prose and button text stay Japanese in the system font.
+   -------------------------------------------------------------------------- */
+.micro-label {
+  display: block;
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: left;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
-.rest-bar.hidden { display: none; }
-.rest-time-group { display: grid; gap: 4px; }
-.rest-caption { font-size: var(--fs-11); color: var(--text-2); }
-.timer-options { justify-self: end; }
-.timer-options > summary { min-height: 44px; padding: 12px 8px; cursor: pointer; list-style: none; font-size: var(--fs-13); color: var(--text-2); }
-.timer-options > summary::-webkit-details-marker { display: none; }
-.timer-options > div { position: absolute; bottom: 100%; right: 8px; display: flex; padding: 8px; gap: 8px; background: var(--surface-3); border: 0; border-radius: var(--radius-control); box-shadow: var(--shadow); }
-body.keyboard-open .bottom-nav, body.keyboard-open .rest-bar { visibility: hidden; pointer-events: none; }
-body.keyboard-open { padding-bottom: 0; }
-body.sheet-open { overflow: hidden; }
-body.sheet-open .rest-bar { visibility: hidden; }
+/* ==========================================================================
+   REST RING
+   The rest timer was a bar pinned across the bottom of the screen. It is an
+   arc in the header now: stroke-dasharray on a pathLength=100 circle, so the
+   dash offset is literally the percentage remaining. --accent while running,
+   --max in the last 30 seconds and when it fires.
 
-.rest-bar-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 8px;
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.rest-bar-time {
-  font-size: var(--fs-22);
-  letter-spacing: var(--tracking-tight);
-  font-weight: var(--fw-semibold);
-  color: var(--accent-bright);
-  line-height: 1;
+   It stays visible while the keyboard is open. Hiding the remaining time
+   while the user types the weight -- which is exactly when they are waiting
+   -- was the old bar's worst behaviour.
+   ========================================================================== */
+.rest-ring {
+  position: relative;
   flex: 0 0 auto;
-  min-width: 78px;
+  width: 88px;
+  height: 88px;
+  transition: width var(--duration-normal) var(--ease-out), height var(--duration-normal) var(--ease-out);
 }
 
-.rest-bar-track {
-  grid-row: 2;
-  grid-column: 1 / -1;
-  flex: 1;
-  height: 5px;
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  min-width: 24px;
-}
+.rest-ring.hidden { display: none; }
 
-.rest-bar-fill {
-  height: 100%;
+body[data-header-variant="compact"] .rest-ring { width: 40px; height: 40px; }
+
+.rest-ring-btn {
+  position: relative;
+  display: block;
   width: 100%;
-  background: var(--accent);
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
   border-radius: var(--radius-pill);
-  transition: width 0.4s linear;
 }
 
-.rest-bar button {
-  flex: 0 0 auto;
+.rest-ring-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.rest-ring-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 8;
+}
+
+.rest-ring-prog {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--duration-normal) linear, stroke var(--duration-fast) ease;
+}
+
+.rest-ring.warn .rest-ring-prog,
+.rest-ring.alarm .rest-ring-prog { stroke: var(--max); }
+.rest-ring.warn .rest-ring-time,
+.rest-ring.alarm .rest-ring-time { color: var(--max); }
+
+.rest-ring-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.rest-ring-time {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-num);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  color: var(--accent-bright);
+  transition: font-size var(--duration-normal) var(--ease-out);
+}
+
+.rest-ring-caption { text-align: center; }
+
+body[data-header-variant="compact"] .rest-ring-time { font-size: var(--fs-11); }
+body[data-header-variant="compact"] .rest-ring-caption { display: none; }
+
+/* Popover: pause/resume, the two adjustments and skip, on one 44px target. */
+.rest-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2;
+  display: grid;
+  grid-auto-flow: row;
+  gap: 4px;
+  min-width: 148px;
+  padding: var(--space-2);
+  background: var(--surface-3);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
+}
+
+.rest-pop.hidden { display: none; }
+
+.rest-pop button {
+  width: 100%;
   min-height: 44px;
-  min-width: 44px;
-  padding: 6px 9px;
+  padding: 8px 12px;
   font-size: var(--fs-13);
   font-weight: var(--fw-semibold);
   background: var(--surface-2);
-  color: var(--text-2);
+  color: var(--text);
   border-radius: var(--radius-control);
   white-space: nowrap;
 }
 
-.rest-bar #restClose {
-  color: var(--text);
-  background: var(--surface-3);
-}
-
-.rest-bar.alarm { background: var(--max-soft); }
-.rest-bar.alarm .rest-bar-time { color: var(--max); }
-.rest-bar.alarm .rest-bar-fill { background: var(--max); }
+.rest-pop #restToggle { background: var(--accent); color: var(--on-accent); }
+.rest-pop #restClose { background: transparent; color: var(--text-2); }
 
 /* 旧フローティングタイマー互換 */
 .rest-timer.hidden { display: none; }
 
 /* ==== メイン ==== */
 #main {
-  padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 16px 22px;
+  padding: var(--page-top-space) 16px 22px;
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
   overflow-x: hidden;
 }
 
-body.timer-visible #main {
-  padding-bottom: calc(22px + var(--rest-bar-offset));
-}
+/* The ring lives in the header, so the page no longer reserves bar space. */
+body.timer-visible #main { padding-bottom: 22px; }
+body:has(.set-dock) #main { padding-bottom: 84px; }
 
 .sec-label {
   font-size: var(--fs-13);
   font-weight: var(--fw-semibold);
   color: var(--text-3);
   margin: 0 0 9px;
+}
+
+/* Uppercase Latin chrome is set in the numeral face, like the micro labels. */
+.set-dock-btn,
+.completed-exercises > summary,
+.compact-details > summary {
+  font-family: var(--font-num);
+  letter-spacing: var(--tracking-label);
 }
 
 /* ==========================================================================
@@ -601,7 +906,7 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 }
 
 .status-ok { background: var(--ok-soft); color: var(--ok); }
-.status-caution { background: var(--max-soft); color: var(--max); }
+.status-caution { background: var(--surface-2); color: var(--text-2); }
 .status-danger { background: var(--danger-soft); color: var(--danger-bright); }
 .status-low { background: var(--surface-2); color: var(--text-3); }
 
@@ -671,105 +976,406 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
   padding: 5px 4px 0;
 }
 
-.four-menu-picker {
-  padding-bottom: 0;
-  margin-bottom: var(--space-6);
-}
 
-.four-menu-picker .seg { margin: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--surface-2); border: 0; }
-.four-menu-picker .seg-opt { min-width: 0; padding-inline: 2px; font-size: var(--fs-13); }
 .custom-menu-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: var(--fs-13); }
 .custom-menu-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .custom-menu-options label { display: flex; align-items: center; gap: 8px; min-height: 48px; }
 .custom-menu-options input { width: 20px; height: 20px; }
 
-.four-menu-picker .seg-opt {
-  min-height: 44px;
-  padding-inline: 2px;
+
+
+/* ==========================================================================
+   SET DOCK
+   In a gym one hand is usually holding something. The primary action sits
+   above the bottom nav, within thumb reach, and does not depend on scroll
+   position. It stays put while the keyboard is open -- the nav hides, the
+   dock does not, because the whole point is to complete the set you just
+   typed.
+   ========================================================================== */
+.set-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  z-index: 42;
+  padding: var(--space-2) 16px;
+  background: linear-gradient(to top, var(--bg) 62%, transparent);
+  pointer-events: none;
 }
 
-.back-lift-switch {
-  width: min(100%, 420px);
-  margin: 0 0 var(--space-3);
+.set-dock-btn {
+  display: block;
+  max-width: 720px;
+  margin: 0 auto;
+  pointer-events: auto;
 }
 
-.back-lift-switch .seg-opt {
-  min-height: 44px;
+body.sheet-open .set-dock { display: none; }
+/* The keyboard covers the nav, so the nav gets out of the way -- but the dock
+   and the rest ring stay, because completing the set you just typed and seeing
+   the time you are waiting on are exactly what is needed here. */
+body.keyboard-open .bottom-nav { visibility: hidden; pointer-events: none; }
+body.keyboard-open { padding-bottom: 0; }
+body.sheet-open { overflow: hidden; }
+body.keyboard-open .set-dock { bottom: 0; }
+
+/* ==========================================================================
+   PR
+   The most important moment in a training app was a chip among other chips.
+   It is now the only warm thing on the screen: --max belongs to a personal
+   best and to nothing else. Caution states moved off it, onto --text-3 and
+   an icon, so amber always means the same thing.
+   ========================================================================== */
+.pr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-control);
+  background: var(--max-soft);
+  box-shadow: inset 0 0 0 1px var(--max);
+  color: var(--max);
+  flex: 0 0 auto;
+}
+
+.pr-badge svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.pr-badge-tag { color: var(--max); display: inline; }
+
+.pr-badge-value {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--max);
   white-space: nowrap;
 }
 
-/* ==== セット行 ==== */
-.set-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 3px 2px;
-  border-bottom: 1px solid var(--surface-3);
-}
-
-.set-row:last-child { border-bottom: none; }
-
-.set-row .sn {
-  flex: 0 0 26px;
-  text-align: center;
-  font-size: var(--fs-13);
-  font-weight: var(--fw-semibold);
-  color: var(--text-3);
+/* The row that set it carries the same mark, so the table and the header
+   agree about which set it was. */
+.pr-tag {
   font-family: var(--font-num);
-  font-variant-numeric: tabular-nums;
-}
-
-.set-row .sv {
-  flex: 1;
-  font-size: var(--fs-22);
-  letter-spacing: var(--tracking-tight);
-  font-weight: var(--fw-semibold);
-  color: var(--text-3);
-}
-
-.set-row .sv .u {
   font-size: var(--fs-11);
-  color: var(--text-3);
   font-weight: var(--fw-semibold);
-  margin: 0 1px;
+  letter-spacing: var(--tracking-label);
+  color: var(--max);
+  background: var(--max-soft);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-right: 6px;
 }
 
-.set-row .st {
-  flex: 0 0 44px;
+/* ==========================================================================
+   PLATE STRIP
+   What is on one side of the bar, as stacked rectangles sized by weight.
+   Greyscale on purpose: real IPF plate colours are far more saturated than
+   anything else in this palette and would pull the eye off the number.
+   ========================================================================== */
+.plate-strip {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  gap: var(--space-3);
+  min-height: 44px;
+  margin: -2px 0 var(--space-2);
+  padding: 0 var(--space-2);
 }
 
-.set-row .st .ck {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-pill);
-  border: 0;
-  background: var(--surface-2);
+.plate-side { flex: 0 0 auto; }
+.plate-bar { display: flex; align-items: center; gap: 3px; min-width: 0; flex-wrap: wrap; }
+
+.plate {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: transparent;
+  width: 28px;
+  height: var(--plate-h, 24px);
+  border-radius: 3px;
+  background: var(--surface-3);
 }
 
-.set-row .st .ck svg { width: 16px; height: 16px; display: block; }
+.plate[data-plate="20"], .plate[data-plate="15"] { background: var(--surface-3); }
+.plate[data-plate="10"], .plate[data-plate="5"] { background: var(--surface-2); }
+.plate[data-plate="2.5"], .plate[data-plate="1.25"] { background: var(--surface-2); }
 
-.set-row-done .sv { color: var(--text-2); }
-.set-row-done .sn { color: var(--ok); }
-.set-row-done .st .ck {
+.plate-w {
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  line-height: 1;
+}
+
+.plate-remainder { font-size: var(--fs-11); color: var(--text-3); flex: 0 0 auto; }
+
+/* ==========================================================================
+   STEPPER
+   Minus, value and plus on ONE surface instead of three separate boxes plus
+   two more for the increments. The weight box used to be nearly 300px tall
+   holding a label and a number; this is 80px and holds the same information
+   with the increment controls inside it.
+
+   Full width, stacked: weight above, reps below. The value itself stays
+   directly tappable for keyboard entry.
+   ========================================================================== */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 80px;
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-control);
+}
+
+.stepper-btn {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-num);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-regular);
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+}
+
+.stepper-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  cursor: text;
+}
+
+/* The one place a centred label is right: it sits over a centred number. */
+.stepper-label { text-align: center; }
+
+.stepper-figure {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.stepper .stepper-input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-num);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  line-height: 1.05;
+}
+
+.stepper .stepper-input:focus { box-shadow: none; outline: none; }
+.stepper-value:focus-within { box-shadow: inset 0 0 0 2px var(--accent); border-radius: var(--radius-control); }
+
+.stepper-weight .stepper-input { font-size: var(--fs-56); }
+/* Reps stays at 22px so the weight keeps a 2.5x lead on the same screen. */
+.stepper-reps { height: 64px; }
+.stepper-reps .stepper-input { font-size: var(--fs-22); }
+
+/* The estimated 1RM the app already computes, shown where it is useful --
+   beside the exercise -- instead of behind a tab that asks you to approve it. */
+.ex-e1rm {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.ex-e1rm .num {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+}
+
+/* Rest is the time to prepare the next set, so the screen says what it is. */
+.up-next-set {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-3);
+  background: var(--accent-soft);
+  border-radius: var(--radius-control);
+}
+
+.up-next-set-value {
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-num);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.up-next-unit { font-size: var(--fs-11); color: var(--text-3); margin-left: 1px; }
+
+.ex-rpe {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+  flex: 0 0 auto;
+}
+
+/* ==========================================================================
+   SET TABLE
+   Four columns, ruled rows, tabular figures. STATUS carries no words -- at
+   375px "Completed" does not fit -- only an icon and a colour. The upcoming
+   marker is a thin unfilled ring, deliberately the quietest thing in the
+   table: nothing has happened there yet.
+   ========================================================================== */
+.set-table {
+  margin: var(--space-3) 0 var(--space-4);
+}
+
+.set-thead,
+.set-tr {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 10px;
+  border-left: 3px solid transparent;
+}
+
+.set-thead {
+  min-height: 24px;
+  padding-bottom: 4px;
+}
+
+.set-tr {
+  min-height: 44px;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.set-tr:last-child { border-bottom: 0; }
+
+.set-td {
+  min-width: 0;
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.set-td-n { font-size: var(--fs-13); font-weight: var(--fw-regular); color: var(--text-3); }
+.set-td-s { display: flex; justify-content: flex-end; }
+.set-thead .set-td-s { justify-content: flex-end; text-align: right; }
+
+/* Done and skipped recede; the row in progress is the only painted one. */
+.set-tr-done .set-td { color: var(--text-2); }
+.set-tr-todo .set-td { color: var(--text-3); font-weight: var(--fw-regular); }
+.set-tr-skip .set-td { color: var(--text-3); font-weight: var(--fw-regular); }
+
+.set-tr-active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  /* one-sided bar, so this row stays square */
+  border-radius: 0;
+}
+
+.set-tr[data-edit-ex] { cursor: pointer; }
+
+/* ---- STATUS markers ---- */
+.st-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  flex: 0 0 auto;
+}
+
+.st-done {
+  width: 18px;
+  height: 18px;
   background: var(--ok);
   color: var(--on-ok);
 }
 
-.set-row-skip .sv { color: var(--text-3); }
+.st-done .icon { width: 12px; height: 12px; }
+
+.st-active {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--accent-bright);
+  background: transparent;
+}
+
+.st-todo {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--surface-3);
+  background: transparent;
+}
+
+.st-skip {
+  width: 18px;
+  height: 18px;
+  position: relative;
+}
+
+.st-skip::before {
+  content: "";
+  position: absolute;
+  inset: 8px 1px auto 1px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: var(--text-3);
+  transform: rotate(-45deg);
+}
+
+/* ---- exercise card header ---- */
+.ex-head-text { min-width: 0; }
+.ex-head-actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+.ex-detail-btn { color: var(--text-3); }
+
+.ex-previous {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 4px;
+  min-height: 26px;
+}
+
+/* The badge sits on the PREVIOUS row rather than beside the name: a long
+   Japanese exercise name needs the full width and must not wrap around it. */
+.ex-previous .pr-badge { margin-left: auto; }
+
+.ex-previous-value {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ==== アクティブセットブロック ==== */
 .active-set {
   border: 0;
-  padding: 20px 0 12px;
-  margin: 8px 0;
+  padding: 0 0 var(--space-2);
+  margin: 0;
 }
 
 .active-set .as-head {
@@ -883,17 +1489,18 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 .card-ex .ex-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .card-ex .ex-title {
-  font-size: var(--fs-17);
-  font-weight: var(--fw-regular);
-  color: var(--text-2);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text);
   margin: 0;
-  line-height: 1.3;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -913,9 +1520,9 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 }
 
 .card-main .ex-title {
-  font-size: var(--fs-17);
-  font-weight: var(--fw-regular);
-  color: var(--text-2);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
 }
 
 .card-main .vbox:first-child .vb-val {
@@ -966,6 +1573,13 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
 
 .next-row.pause-row .nx-name { color: var(--text-3); }
 
+/* Deleted for today only. Quiet like a paused row, but it keeps its way back:
+   a main lift has no "add for today" path, so the undo has to live here.
+   The row sits on the inset plane, so the button has to step up one to read as
+   a button at all -- .btn-secondary is that same plane and disappeared into it. */
+.next-row.deleted-row .nx-name { color: var(--text-3); }
+.next-row.deleted-row .btn-secondary { background: var(--surface-3); }
+
 .next-row[data-make-active] { cursor: pointer; }
 .next-row[data-make-active] {
   display: grid;
@@ -988,7 +1602,6 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
   padding-left: 2px;
 }
 
-.set-row[data-edit-ex] { cursor: pointer; }
 
 /* 完了済みカード */
 .done-card { padding: var(--space-3) var(--space-4); margin-bottom: 8px; }
@@ -1050,7 +1663,6 @@ select { height: var(--control-height); }
 .vbox:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
 .quick-adjust { display: flex; gap: 8px; margin-top: 8px; }
 .quick-adjust button { flex: 1; min-width: 0; font-size: var(--fs-13); font-weight: var(--fw-regular); min-height: 44px; background: var(--surface-2); color: var(--text-2); }
-.exercise-eyebrow { font-size: var(--fs-13); font-weight: var(--fw-semibold); color: var(--accent-bright); margin-bottom: 8px; }
 .workout-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
 .workout-metrics strong { display: block; font-size: var(--fs-34); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tight); font-variant-numeric: tabular-nums; }
 .workout-metrics span { color: var(--text-2); font-size: var(--fs-13); }
@@ -1064,7 +1676,7 @@ input::-webkit-inner-spin-button {
   margin: 0;
 }
 
-textarea { min-height: 56px; resize: vertical; }
+textarea { min-height: 72px; resize: none; }
 
 label.field { display: block; margin-bottom: 12px; }
 
@@ -1362,6 +1974,72 @@ body.sheet-open .bottom-nav { display: none; }
 
 
 
+/* Volume and body weight over time. Noticing a plateau used to depend on
+   remembering. A rise is --ok; a fall is --text-3, not red. */
+/* What the numbers below cover. Month-to-date while the month is running,
+   so a partial month is never compared against a finished one. */
+.trend-note {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  margin-top: 4px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-list { margin-top: var(--space-2); }
+
+.trend-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 64px;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.trend-row:last-child { border-bottom: 0; }
+
+.trend-name { font-size: var(--fs-15); color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+
+.trend-value {
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.trend-unit { font-size: var(--fs-11); color: var(--text-3); margin-left: 1px; }
+
+.trend-delta {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.trend-delta.up { color: var(--ok); }
+.trend-delta.down { color: var(--text-3); }
+
+/* Body weight has no good direction: bulking and cutting want opposite signs.
+   The number carries the sign; the colour stays out of it. */
+.trend-delta.plain { color: var(--text-2); }
+
+/* Recording today's weight sits in the card that shows it, not in a sheet
+   about something else. */
+.field.bw-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 108px;
+  gap: var(--space-3);
+  align-items: center;
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--surface-2);
+}
+
+label.field.bw-field > span { margin: 0; font-size: var(--fs-15); font-weight: var(--fw-regular); }
+
 /* ==== ログ ==== */
 .log-card-list { display: grid; gap: 9px; }
 .log-card { margin: 0; padding: var(--space-4); }
@@ -1401,11 +2079,11 @@ body.sheet-open .bottom-nav { display: none; }
 }
 
 .r4-adjustment-panel .btn-row { gap: 6px; }
-.rpe-editor { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rpe-editor { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(42px, 1fr)); }
 .rpe-editor button { min-height: 44px; width: 100%; justify-content: center; }
 button.chip, .tab { min-height: 44px; }
 input, select, textarea { scroll-margin-block: 96px; }
-html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 24px); }
+html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 
 .tabs {
   display: flex;
@@ -1437,6 +2115,13 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 /* 現在値カード（MAX/推定MAX） */
 .max-current { text-align: center; padding: 20px 14px; }
 .card.max-current.gold { background: var(--max-soft); }
+
+/* No record yet. A 56px dash in a gold card reads as a value, and an amber
+   plane that size promises something the card does not have. Say the sentence
+   instead and take up the room a sentence needs. */
+.card.max-current.empty { padding: 14px; }
+.card.max-current.empty .mc-label { color: var(--text-3); margin-bottom: 2px; }
+.card.max-current.empty .mc-sub { margin-top: 0; }
 
 .max-current .mc-label {
   font-size: var(--fs-13);
@@ -1659,6 +2344,13 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
   color: var(--ok);
 }
 
+/* Both at once: deload is the fact worth seeing, so it wins. Without this the
+   more specific .actual-current rule above silently keeps the green. */
+.rotation-cell.actual-current.deload:not(.current) {
+  background: var(--max-soft);
+  color: var(--max);
+}
+
 .rotation-cell.deload {
   background: var(--max-soft);
   color: var(--max);
@@ -1677,13 +2369,40 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
   padding: var(--space-3) var(--space-4);
 }
 
+/* Inside a card the disclosure is not a nested plane: only its summary is a
+   control. Painting the whole block --surface-2 left every chip and button
+   inside it on the same plane as its own background, which is why they read
+   as loose text rather than as things you can press. */
 .card .ui-details,
 .exercise-card .ui-details,
 .four-plan-card .ui-details {
+  background: transparent;
+  border-radius: var(--radius-control);
+  padding: 0;
+}
+
+.card .ui-details > summary,
+.exercise-card .ui-details > summary,
+.four-plan-card .ui-details > summary {
+  padding: 0 var(--space-3);
   background: var(--surface-2);
   border-radius: var(--radius-control);
-  padding: var(--space-2) var(--space-3);
 }
+
+.card .ui-details[open] > summary { margin-bottom: var(--space-3); }
+
+/* Everything the block contains steps up to the inset plane, so it is legible
+   against the card behind it. */
+.card .ui-details .chip,
+.card .ui-details .btn-secondary,
+.card .ui-details .btn-sec,
+.card .ui-details .btn-ghost {
+  background: var(--surface-2);
+  border: 0;
+}
+
+.card .ui-details .chip.active,
+.card .ui-details .chip.on { background: var(--accent); color: var(--on-accent); }
 
 .ui-details > summary {
   min-height: 44px;
@@ -1822,8 +2541,8 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 }
 
 .load-warning-caution {
-  background: var(--max-soft);
-  color: var(--max);
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 
 .load-warning-caution span { background: var(--max-soft); }
@@ -1859,6 +2578,32 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
   font-size: var(--fs-11);
   font-weight: var(--fw-semibold);
   margin-bottom: 5px;
+}
+
+/* The only copy of this data is in one browser's localStorage. A quiet chip
+   was the wrong weight for that. */
+.backup-warning {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+  background: var(--max-soft);
+  border-radius: var(--radius-control);
+}
+
+.backup-warning .micro-label { color: var(--max); }
+
+.backup-warning-text {
+  margin: 4px 0 var(--space-3);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.summary-best-note {
+  margin-left: 6px;
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
 }
 
 /* ==== ボトムシート（モーダル） ==== */
@@ -1986,7 +2731,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
   vertical-align: -0.125em;
 }
 
-.set-row .st .ck .icon { width: 15px; height: 15px; }
 .btn-primary .icon,
 .seg-opt .icon { width: 18px; height: 18px; vertical-align: -0.2em; }
 
@@ -2039,6 +2783,237 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 /* The open rotation day. */
 .rotation-day-card.is-current { background: var(--accent-soft); }
 
+/* ==========================================================================
+   WORKOUT SUMMARY
+   The one screen that gets the extravagance. Everything else in this app is
+   restrained so that this can be loud: the session volume at --fs-56, the
+   change against the last session, and the personal bests. A drop is
+   --text-3, never red -- a lighter day is not an error.
+   ========================================================================== */
+.workout-summary {
+  padding: var(--space-6) var(--space-4) var(--space-5);
+  text-align: center;
+}
+
+.summary-eyebrow { text-align: center; }
+
+.summary-volume {
+  font-size: var(--fs-56);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-num);
+  line-height: 1.02;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.summary-volume-unit {
+  font-size: var(--fs-17);
+  color: var(--text-3);
+  margin-left: 4px;
+  letter-spacing: 0;
+}
+
+.summary-delta {
+  margin-top: var(--space-2);
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+}
+
+.summary-delta.up { color: var(--ok); }
+.summary-delta.down { color: var(--text-3); }
+
+.summary-delta-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-regular);
+  color: var(--text-3);
+  letter-spacing: var(--tracking-label);
+}
+
+.summary-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.summary-figures > div {
+  padding: var(--space-3) var(--space-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-control);
+}
+
+.summary-figures .micro-label { text-align: center; }
+
+.summary-figure {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+
+.summary-pr {
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--max-soft);
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+
+.summary-pr .micro-label { color: var(--max); }
+
+.summary-pr-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: 4px;
+}
+
+.summary-pr-name {
+  font-size: var(--fs-15);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-pr-value {
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-num);
+  color: var(--max);
+  white-space: nowrap;
+}
+
+/* What the app decided on your behalf, with the reason and a way out.
+   The alternative was asking seven questions between sets. */
+.summary-auto {
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+
+.summary-auto-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 4px 0;
+}
+
+.summary-auto-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.summary-auto-name {
+  font-size: var(--fs-15);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.summary-auto-reason {
+  font-size: var(--fs-11);
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.summary-auto-value {
+  flex: 0 0 auto;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--ok);
+  white-space: nowrap;
+}
+
+.summary-best {
+  margin-top: var(--space-5);
+  text-align: left;
+}
+
+.summary-best-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 36px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.summary-best-row:last-child { border-bottom: 0; }
+
+.summary-best-name {
+  font-size: var(--fs-15);
+  color: var(--text-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-best-value {
+  font-size: var(--fs-17);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.summary-unit { font-size: var(--fs-11); color: var(--text-3); margin-left: 1px; }
+
+/* ==========================================================================
+   MOTION
+   Four cues, no more. Each marks a state change the user caused; nothing
+   animates on its own. All of it is switched off under
+   prefers-reduced-motion, where the state change still lands instantly.
+   ========================================================================== */
+
+/* 1. A completed set folds into the table. */
+@keyframes set-fold-in {
+  from { opacity: 0; transform: translateY(-6px) scaleY(0.86); }
+  to   { opacity: 1; transform: none; }
+}
+
+.set-tr-just-done {
+  animation: set-fold-in 250ms var(--ease-out) both;
+  transform-origin: top center;
+}
+
+/* 2. The weight rolls to its new value. */
+@keyframes num-roll-up {
+  from { opacity: 0; transform: translateY(0.22em); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes num-roll-down {
+  from { opacity: 0; transform: translateY(-0.22em); }
+  to   { opacity: 1; transform: none; }
+}
+
+.stepper.roll-up .stepper-input { animation: num-roll-up 120ms var(--ease-out) both; }
+.stepper.roll-down .stepper-input { animation: num-roll-down 120ms var(--ease-out) both; }
+
+/* 3. The rest ring turning --max is the timer-end cue; it is a colour
+      transition already declared on .rest-ring-prog. */
+
+/* 4. A new PR pops once and settles. */
+@keyframes pr-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+.pr-badge-pop { animation: pr-pop 300ms var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .set-tr-just-done,
+  .stepper.roll-up .stepper-input,
+  .stepper.roll-down .stepper-input,
+  .pr-badge-pop {
+    animation: none !important;
+  }
+}
+
 /* ==== ユーティリティ ==== */
 .hidden { display: none !important; }
 .modal.hidden {
@@ -2059,7 +3034,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 }
 .text-center { text-align: center; }
 .text-success { color: var(--ok); }
-.text-warn { color: var(--max); }
+.text-warn { color: var(--text-2); }
 .text-danger { color: var(--danger-bright); }
 .text-rest { color: var(--max); }
 .text-accent { color: var(--accent-bright); }
@@ -2071,7 +3046,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 
 /* ==== レスポンシブ ==== */
 @media (min-width: 768px) {
-  #main { padding: calc(var(--page-top-space) + env(safe-area-inset-top)) 24px 22px; }
+  #main { padding: var(--page-top-space) 24px 22px; }
   #main[data-screen="block"] { max-width: 1000px; }
   .plan-grid { grid-template-columns: 1fr 1fr; }
 }
@@ -2079,11 +3054,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 @media (max-width: 430px) {
   #main { padding-left: 12px; padding-right: 12px; }
   .card { padding: 20px 16px; }
-  .rest-bar { padding: 7px 10px; }
-  .rest-bar-row { gap: 8px; }
-  .rest-bar-time { min-width: 62px; }
-  .rest-bar-track { min-width: 18px; }
-  .rest-bar button { min-width: 42px; padding: 6px 7px; }
   .acc-edit-header,
   .acc-edit-row {
     grid-template-columns: minmax(0, 1fr) 70px 70px 56px;
@@ -2095,6 +3065,9 @@ html { scroll-padding-bottom: calc(var(--nav-height) + var(--rest-bar-offset) + 
 }
 
 @media (max-width: 360px) {
+  body[data-header-variant="editorial"] .rest-ring { width: 66px; height: 66px; }
+  body[data-header-variant="editorial"] .rest-ring-time { font-size: var(--fs-15); }
+  body[data-header-variant="editorial"] .hd-title[data-long="true"] { font-size: var(--fs-17); }
   .vbox-row { gap: 6px; }
   #btnExport,
   #btnImport { grid-column: 1 / -1; }
