@@ -235,6 +235,10 @@ body[data-header-variant="compact"] .hd-eyebrow { max-height: 0; opacity: 0; }
   transition: font-size var(--duration-normal) var(--ease-out);
 }
 
+/* CHEST, LEGS and BACK get the full display size. A long name steps down one
+   stop rather than being clipped -- the ring leaves little room beside it. */
+body[data-header-variant="editorial"] .hd-title[data-long="true"] { font-size: var(--fs-22); }
+
 body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
 .app-header[data-screen="today"] .hd-title { cursor: pointer; }
 
@@ -2873,6 +2877,9 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 }
 
 @media (max-width: 360px) {
+  body[data-header-variant="editorial"] .rest-ring { width: 66px; height: 66px; }
+  body[data-header-variant="editorial"] .rest-ring-time { font-size: var(--fs-15); }
+  body[data-header-variant="editorial"] .hd-title[data-long="true"] { font-size: var(--fs-17); }
   .vbox-row { gap: 6px; }
   #btnExport,
   #btnImport { grid-column: 1 / -1; }

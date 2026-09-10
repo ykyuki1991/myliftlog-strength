@@ -3816,6 +3816,8 @@ function updateHeader() {
     const s = store.currentState;
     eyebrow.textContent = 'WORKOUT';
     title.textContent = todayHeaderTitle(session);
+    // 長いメニュー名はスケールを一段落とす。リング表示時に見出しが切れないため。
+    title.dataset.long = title.textContent.length > 8 ? 'true' : 'false';
     title.title = isFourMenuMode() ? '' : `B${s.block} / R${s.rotation} / Day${s.day}`;
     setHeaderVariant((window.scrollY || 0) > 24 ? 'compact' : 'editorial');
   } else {
@@ -4492,8 +4494,8 @@ function renderToday() {
     ${completedCards}
     ${pausedRows}
     <div class="btn-pair mt-12">
-      <button class="btn-sec" id="btnAddTodayAccessory">＋ ADD EXERCISE</button>
-      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">FINISH WORKOUT</button>
+      <button class="btn-sec" id="btnAddTodayAccessory">ADD EXERCISE</button>
+      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">FINISH</button>
     </div>
     ${session.completed ? '<button class="btn-text btn-block" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
   `;

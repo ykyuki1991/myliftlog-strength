@@ -241,7 +241,7 @@ function testAccessoryProgression() {
 function testTodayScreenRenders() {
   let html = api.renderToday();
   // 目につくクロームは英語になった（種目名・ログ本文は日本語のまま）。
-  assert.ok(html.includes('FINISH WORKOUT') || html.includes('休み'));
+  assert.ok(html.includes('FINISH') || html.includes('休み'));
   if (!html.includes('今日は休み')) {
     assert.ok(html.includes('ADD EXERCISE'));
     assert.ok(html.includes('active-set'), 'first incomplete exercise should expand as the active card');
