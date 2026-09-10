@@ -103,9 +103,8 @@ against them has not been made.
    `--text-3` clear 4.5:1 on every surface they are used on.
 
 6. **Numbers are instruments.** Seven sizes -- 11/13/15/17/22/34/56 -- and two
-   weights, 400 and 600. `--tracking-tight` is -0.02em at 22px and up,
-   `--tracking-num` is -0.03em on every numeral, and `--tracking-label` is
-   +0.08em on micro labels. No rule sets `letter-spacing: 0`.
+   weights, 400 and 600. Text, numerals and micro labels use zero letter
+   spacing, preserving the bundled face's natural glyph spacing.
 
    Numerals and uppercase Latin micro labels are set in a bundled condensed
    face (`--font-num`); Japanese and all running text stay on the system stack

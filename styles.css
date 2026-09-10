@@ -88,11 +88,9 @@
   --fs-56: 56px;
   --fw-regular: 400;
   --fw-semibold: 600;
-  --tracking-tight: -0.02em;
-  /* Numerals are set tighter than text: the instrument reading is one shape. */
-  --tracking-num: -0.03em;
-  /* Micro labels are the opposite: small, wide, quiet. */
-  --tracking-label: 0.08em;
+  --tracking-tight: 0;
+  --tracking-num: 0;
+  --tracking-label: 0;
 
   /* ---- Metrics ---- */
   --nav-height: 72px;
