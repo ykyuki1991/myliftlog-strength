@@ -2682,6 +2682,44 @@ function sessionPrSetIndexes(ex) {
   return out;
 }
 
+// 今セッションの完了セットから e1RM を出す。既存の estimateMaxFromSet を使うだけで
+// 新しい計算式は足さない。RPE未入力なら出さない。
+function sessionEstimatedMax(ex) {
+  if (!isBig3Key(ex?.key) && !ex?.isFourMenuMain) return null;
+  const done = (ex.sets || []).filter(set => set.done && !set.skipped && set.weight && set.reps);
+  if (!done.length) return null;
+  const best = done.reduce((acc, set) => {
+    const est = estimateMaxFromSet(set.weight, set.reps, ex.rpe);
+    if (est.value == null) return acc;
+    return est.value > (acc?.value ?? -1) ? est : acc;
+  }, null);
+  return best?.value ?? null;
+}
+
+// 直近の同種目ログの最大重量。前回比の基準に使う。
+function previousMainLogWeight(ex) {
+  const logs = (store.logs || [])
+    .filter(log => log.exerciseKey === ex.key && !log.isExerciseRest && !log.todayOnlyDeleted)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  for (const log of logs) {
+    const done = (log.sets || []).filter(set => set.done && !set.skipped);
+    if (!done.length) continue;
+    const best = Math.max(...done.map(set => parseFloat(set.weight) || 0));
+    if (best > 0) return best;
+  }
+  return null;
+}
+
+function lastSetDelta(ex, setIdx) {
+  const set = ex?.sets?.[setIdx];
+  const prev = previousMainLogWeight(ex);
+  if (!set || prev == null) return null;
+  const w = parseFloat(set.weight);
+  if (!Number.isFinite(w)) return null;
+  const delta = Math.round((w - prev) * 10) / 10;
+  return delta === 0 ? null : delta;
+}
+
 function renderPrBadge(ex, justSet = false) {
   const record = getExercisePrRecord(ex);
   const prIdx = sessionPrSetIndexes(ex);
@@ -4241,9 +4279,18 @@ function renderActiveExerciseCard(ex, exIdx) {
         <span class="micro-label">PREVIOUS</span>
         <span class="ex-previous-value num">${previous?.log ? escapeHtml(previous.text.replace(/^前回\s*/, '')) : '—'}</span>
         ${rpeVal !== '—' ? `<span class="ex-rpe num">${rpeVal}</span>` : ''}
+        ${(() => {
+          const e1rm = sessionEstimatedMax(ex);
+          return e1rm ? `<span class="ex-e1rm"><span class="micro-label">E1RM</span><span class="num">${fmtW(e1rm)}</span></span>` : '';
+        })()}
         ${renderPrBadge(ex, cue && cue.type === 'pr' && cue.exIdx === exIdx)}
       </div>
       ${setTable}
+      ${restState.running && setIdx >= 0 ? `
+        <div class="up-next-set">
+          <span class="micro-label">NEXT SET</span>
+          <span class="up-next-set-value num">${fmtW(currentWeight)}<span class="up-next-unit">kg</span> × ${hasSetReps ? set.reps : escapeHtml(String(ex.plannedReps ?? '—'))}</span>
+        </div>` : ''}
       ${activeBlock}
       ${progressionNote}
       <details class="ui-details compact-details mt-8" data-ui-key="exercise-${ex.key}-${ex.menuType}">
@@ -4725,6 +4772,10 @@ function afterToday() {
             const gotPr = sessionPrSetIndexes(ex).length > prBefore;
             cueMotion({ type: gotPr ? 'pr' : 'setDone', exIdx, setIdx: doneIdx });
             haptic(gotPr ? [40, 40, 120] : 30);
+            // 前回比。データは既にあるのに、進んでいるかがどこにも出ていなかった。
+            const delta = lastSetDelta(ex, doneIdx);
+            if (gotPr) showToast(`自己ベスト更新 ${fmtW(ex.sets[doneIdx].weight)}kg`);
+            else if (delta) showToast(`前回比 ${delta > 0 ? '+' : ''}${fmtW(delta)}kg`);
             startRestTimer(ex.restSec, ex.name);
           } else {
             showToast('1セット戻しました');

@@ -1195,6 +1195,43 @@ body.keyboard-open .set-dock { bottom: 0; }
 .stepper-reps { height: 64px; }
 .stepper-reps .stepper-input { font-size: var(--fs-22); }
 
+/* The estimated 1RM the app already computes, shown where it is useful --
+   beside the exercise -- instead of behind a tab that asks you to approve it. */
+.ex-e1rm {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.ex-e1rm .num {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+}
+
+/* Rest is the time to prepare the next set, so the screen says what it is. */
+.up-next-set {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-3);
+  background: var(--accent-soft);
+  border-radius: var(--radius-control);
+}
+
+.up-next-set-value {
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-num);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.up-next-unit { font-size: var(--fs-11); color: var(--text-3); margin-left: 1px; }
+
 .ex-rpe {
   font-size: var(--fs-13);
   font-weight: var(--fw-semibold);
