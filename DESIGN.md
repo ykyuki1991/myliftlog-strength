@@ -178,11 +178,36 @@ against them has not been made.
     control the user touches once a day is never the largest coloured area on
     the screen. A drop in volume is `--text-3`, not red.
 
-13. **Analysis after training:** actual completed sets and volume in the finish
+13. **The app decides; the user corrects.** Anything derivable from past
+    records is applied automatically at session finish, and listed on the
+    completion screen with its reason and a way to undo it. A calculated
+    recommendation is not a question: asking the user to approve seven of
+    them per session is phone time in a gym, and a gym is a bad place to
+    read. What stays a question is only what the app cannot know -- how the
+    body feels today, whether a joint hurts, whether to test a max.
+
+14. **One place per capability.** A function appears on exactly one screen.
+    Export/import belongs to settings, not settings and the log; measured and
+    estimated max are one view, not two tabs, because the question behind
+    both is "what can I lift". A control that renders a permanent empty state
+    is deleted, not styled.
+
+15. **Every number the app computes is visible where it is used.** Estimated
+    1RM was calculated for every set and shown only behind a tab that asked
+    for approval; it belongs beside the exercise. The change against last
+    session, the next set during rest, volume per body part month over month
+    -- all of it already existed in the logs and none of it was on screen at
+    the moment it would change a decision.
+
+16. **The data lives in one browser.** There is no server and no account. A
+    backup reminder is therefore not a nicety and does not get a quiet chip;
+    it states what is lost and offers the export in the same block.
+
+17. **Analysis after training:** actual completed sets and volume in the finish
    summary; no fabricated PR or active-training duration (elapsed time may
    include overnight drafts).
 
-14. **Preserve all data.** Routines, custom composition, overrides, paused
+18. **Preserve all data.** Routines, custom composition, overrides, paused
     exercises, historical data, MAX approval and backup formats are preserved,
     and UI state stays outside the persistent training store. This is a
     guarantee about stored data and behaviour only -- it does not preserve any
