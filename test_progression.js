@@ -385,6 +385,65 @@ function testBodyWeightAndVolumeTrend() {
   const dirty = api.migrateStoreData({ bodyWeights: [{ date: '', weight: 1 }, { date: '2026-01-01', weight: 'x' }, { date: '2026-01-02', weight: 80 }] });
   assert.strictEqual(dirty.bodyWeights.length, 1);
   assert.strictEqual(dirty.bodyWeights[0].weight, 80);
+
+  // 体重カードは記録が無くても出る。入力欄がこのカードにしか無いため
+  store.bodyWeights = [];
+  const emptyCard = api.renderBodyWeightCard();
+  assert.ok(emptyCard.includes('id="bodyWeightInput"'), '記録ゼロでも入力欄は出す');
+  // 増減に色を付けない（増量中か減量中かはアプリには分からない）
+  store.bodyWeights = [
+    { date: '2026-06-01', weight: 80 },
+    { date: '2026-07-05', weight: 83 },
+  ];
+  const gainCard = api.renderBodyWeightCard();
+  assert.ok(gainCard.includes('trend-delta num plain'), '体重の増減は中立色で出す');
+  assert.ok(!/trend-delta num (up|down)/.test(gainCard), '体重の増減に up/down を付けてはいけない');
+  assert.ok(gainCard.includes('id="bodyWeightInput"'), '値と入力は同じカードに置く');
+}
+
+// 月初の今月と、終わった先月をそのまま比べると必ず大幅減に見える不具合の回帰テスト
+function testVolumeTrendComparesEqualPeriods() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  const log = (date, weight) => ({
+    id: `v-${date}-${weight}`, date, performedSplitKey: 'chest',
+    sets: [{ done: true, weight, reps: 10 }],
+  });
+  store.logs = [log('2026-09-02', 120), log('2026-08-02', 100), log('2026-08-20', 900)];
+
+  const full = api.monthlyVolumeByMenu(2);
+  assert.strictEqual(full.map(m => m.month).join(','), '2026-09,2026-08');
+  assert.strictEqual(full[1].byMenu.chest, 10000, '日数を絞らなければ先月は満額');
+
+  const toDate = api.monthlyVolumeByMenu(2, 5);
+  assert.strictEqual(toDate.map(m => m.month).join(','), '2026-09,2026-08', '対象月は絞る前の記録で決める');
+  assert.strictEqual(toDate[0].byMenu.chest, 1200);
+  assert.strictEqual(toDate[1].byMenu.chest, 1000, '先月も同じ日数までで揃える');
+
+  // 絞った結果が空になっても、その月が候補から消えて比較相手がずれてはいけない
+  const day1 = api.monthlyVolumeByMenu(2, 1);
+  assert.strictEqual(day1.map(m => m.month).join(','), '2026-09,2026-08');
+  assert.strictEqual(Object.keys(day1[1].byMenu).length, 0);
+
+  const html = api.renderVolumeTrend();
+  assert.ok(html.includes('VOLUME BY MENU'), 'ラベルは英大文字のまま');
+  assert.ok(!html.includes('2026-09'), '見出しにISO日付を出さない');
+  assert.ok(html.includes('trend-note'), '比較している期間を明示する');
+}
+
+// MAXタブに推定MAXを統合したときに、同じ数字とピッカーが二重に出た不具合の回帰テスト
+function testMaxTabShowsEachNumberOnce() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  store.estimatedMaxHistory = [
+    { id: 'e1', liftKey: 'bench', estimatedMax: 120, maxUseKind: 'candidate', date: '2026-09-01', sourceWeight: 100, sourceReps: 5, rpe: '9' },
+  ];
+  const html = api.renderMaxLogTab();
+  assert.strictEqual((html.match(/class="seg lift-seg/g) || []).length, 1, '種目ピッカーは1つ');
+  assert.ok(!html.includes('data-emax-lift'), 'MAXタブに2つ目の種目ピッカーを出さない');
+  assert.ok(!html.includes('最新推定MAX'), 'ESTIMATED カードと重複する見出しを出さない');
+  assert.ok(html.includes('MEASURED') && html.includes('ESTIMATED'));
+  assert.strictEqual((html.match(/120\.0/g) || []).length, 2, 'ESTIMATEDカードと履歴の1行だけ');
 }
 
 function testDeloadAccessoryAndMaxTestTiming() {
@@ -2426,6 +2485,8 @@ testBackLiftMigrationUsesLatestCompletedLift();
 testImportMigrationPreservesLegacyAndMaxData();
 testMaxUpdateAndRotationProgressionAreCapped();
 testBodyWeightAndVolumeTrend();
+testVolumeTrendComparesEqualPeriods();
+testMaxTabShowsEachNumberOnce();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
 testAdaptiveR4ProposalAndSelection();

@@ -3950,26 +3950,12 @@ function openMenuSheet() {
     ${backLiftRowsHtml(session)}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
-    <div class="micro-label sheet-group-label">BODY WEIGHT</div>
-    <label class="field">
-      <span>今日の体重 (kg)</span>
-      <input type="number" inputmode="decimal" step="0.1" min="0" id="bodyWeightInput" value="${(() => {
-        const today = (store.bodyWeights || []).find(item => item.date === todayStr());
-        return today ? today.weight : '';
-      })()}" placeholder="${(() => { const l = latestBodyWeight(); return l ? `${l.weight}` : '—'; })()}" />
-    </label>
     ${session.completed ? '<button class="btn-text btn-block mt-12" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
   `, () => bindMenuSheetControls(session));
 }
 
 // メニュー選択系の束縛。本文から出したのでシートのマウント時に張る。
 function bindMenuSheetControls(session) {
-  const bw = document.getElementById('bodyWeightInput');
-  if (bw) bw.onchange = () => {
-    if (bw.value === '') return;
-    if (recordBodyWeight(bw.value)) showToast('体重を記録しました');
-    else showToast('体重を保存できませんでした');
-  };
   const newSessionBtn = document.getElementById('btnNewTodaySession');
   if (newSessionBtn) newSessionBtn.onclick = () => {
     closeModal();
@@ -5699,8 +5685,12 @@ function bodyWeightDelta(days = 30) {
 
 // ===== 部位ごとのボリューム推移 =====
 // 停滞に気づく手段が、いまは記憶しかなかった。既存ログの集計だけで出す。
-function monthlyVolumeByMenu(monthsBack = 2) {
-  const out = new Map();
+// dayLimit を渡すと各月の「1日〜dayLimit日」だけを集計する。
+// 月初にいる今月と、終わった先月をそのまま比べると必ず大幅減に見えるため。
+// 対象月の選定は日数で絞る前の記録で行うので、月がずれることはない。
+function monthlyVolumeByMenu(monthsBack = 2, dayLimit = null) {
+  const all = new Map();
+  const capped = new Map();
   (store.logs || []).forEach(log => {
     if (log.isExerciseRest || log.todayOnlyDeleted || !log.date) return;
     const menu = normalizeFourMenuKey(log.performedSplitKey || log.selectedSplitKey || log.menuKey);
@@ -5709,31 +5699,61 @@ function monthlyVolumeByMenu(monthsBack = 2) {
     const volume = (log.sets || []).reduce((n, set) => n + (set.done && !set.skipped
       ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0);
     if (!volume) return;
-    if (!out.has(month)) out.set(month, {});
-    const row = out.get(month);
-    row[menu] = (row[menu] || 0) + volume;
+    if (!all.has(month)) all.set(month, {});
+    all.get(month)[menu] = (all.get(month)[menu] || 0) + volume;
+    if (dayLimit != null && (parseInt(log.date.slice(8, 10), 10) || 99) <= dayLimit) {
+      if (!capped.has(month)) capped.set(month, {});
+      capped.get(month)[menu] = (capped.get(month)[menu] || 0) + volume;
+    }
   });
-  const months = [...out.keys()].sort().reverse().slice(0, monthsBack);
-  return months.map(month => ({ month, byMenu: out.get(month) }));
+  const months = [...all.keys()].sort().reverse().slice(0, monthsBack);
+  const source = dayLimit == null ? all : capped;
+  return months.map(month => ({ month, byMenu: source.get(month) || {} }));
 }
 
+// 体重は「見る場所」と「入れる場所」を分けない。値と入力を同じカードに置く。
+// 増減に色は付けない。増えたことが良いか悪いかは目的次第で、アプリには判断できない。
 function renderBodyWeightCard() {
   const latest = latestBodyWeight();
-  if (!latest) return '';
   const change = bodyWeightDelta(30);
+  const today = (store.bodyWeights || []).find(item => item.date === todayStr());
   return `
     <div class="card">
       <div class="micro-label">BODY WEIGHT</div>
+      ${latest ? `
       <div class="trend-row">
         <span class="trend-name">${fmtDateShort(latest.date)}</span>
         <span class="trend-value num">${latest.weight}<span class="trend-unit">kg</span></span>
-        <span class="trend-delta num ${change ? (change.delta >= 0 ? 'up' : 'down') : ''}">${change ? `${change.delta >= 0 ? '+' : ''}${change.delta}kg` : '—'}</span>
-      </div>
+        <span class="trend-delta num plain">${change ? `${change.delta >= 0 ? '+' : ''}${change.delta}kg` : '—'}</span>
+      </div>` : ''}
+      ${latest && change ? `<div class="trend-note">30日前 ${change.from.weight}kg（${fmtDateShort(change.from.date)}）から</div>` : ''}
+      <label class="field bw-field">
+        <span>今日の体重 (kg)</span>
+        <input type="number" inputmode="decimal" step="0.1" min="0" id="bodyWeightInput"
+          value="${today ? today.weight : ''}" placeholder="${latest ? latest.weight : '—'}" />
+      </label>
     </div>`;
 }
 
+// 体重入力の束縛。カードが出る画面ならどこからでも張れるようにしておく。
+function bindBodyWeightInput() {
+  const bw = document.getElementById('bodyWeightInput');
+  if (!bw) return;
+  bw.onchange = () => {
+    if (bw.value === '') return;
+    if (recordBodyWeight(bw.value)) { showToast('体重を記録しました'); render(); }
+    else showToast('体重を保存できませんでした');
+  };
+}
+
 function renderVolumeTrend() {
-  const months = monthlyVolumeByMenu(2);
+  const today = todayStr();
+  const day = parseInt(today.slice(8, 10), 10) || 1;
+  const daysInMonth = new Date(parseInt(today.slice(0, 4), 10), parseInt(today.slice(5, 7), 10), 0).getDate();
+  const first = monthlyVolumeByMenu(2)[0];
+  // 今月がまだ途中なら、先月も同じ日数までで揃えて比べる
+  const toDate = !!first && first.month === today.slice(0, 7) && day < daysInMonth;
+  const months = toDate ? monthlyVolumeByMenu(2, day) : monthlyVolumeByMenu(2);
   if (!months.length) return '';
   const [current, previous] = months;
   const keys = [...new Set([...Object.keys(current.byMenu), ...Object.keys(previous?.byMenu || {})])];
@@ -5749,9 +5769,14 @@ function renderVolumeTrend() {
         <span class="trend-delta num ${delta == null ? '' : delta >= 0 ? 'up' : 'down'}">${delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta}%`}</span>
       </div>`;
   }).join('');
+  const monthLabel = m => `${parseInt(String(m).slice(5, 7), 10) || ''}月`;
+  const scope = toDate
+    ? `${monthLabel(current.month)}1〜${day}日${previous ? ` と ${monthLabel(previous.month)}1〜${day}日` : ''}`
+    : `${monthLabel(current.month)}${previous ? ` と ${monthLabel(previous.month)}` : ''}`;
   return `
     <div class="card">
-      <div class="micro-label">VOLUME BY MENU ・ ${current.month}${previous ? ` vs ${previous.month}` : ''}</div>
+      <div class="micro-label">VOLUME BY MENU</div>
+      <div class="trend-note">${scope}</div>
       <div class="trend-list">${rows}</div>
     </div>`;
 }
@@ -6882,50 +6907,33 @@ function renderMaxLogTab() {
   return `
     ${liftSegHtml(liftKey, 'data-max-lift')}
     <div class="summary-grid">
-      <div class="card max-current gold">
+      <div class="card max-current ${best ? 'gold' : 'empty'}">
         <div class="mc-label">MEASURED</div>
-        <div class="max-current-val">${value}</div>
+        ${best ? `<div class="max-current-val">${value}</div>` : ''}
         <div class="mc-sub">${sub}</div>
       </div>
-      <div class="card max-current">
+      <div class="card max-current ${emaxLatest ? '' : 'empty'}">
         <div class="mc-label">ESTIMATED</div>
-        <div class="max-current-val">${emaxLatest ? `${fmtW(emaxLatest.estimatedMax)}<span class="u">kg</span>` : '—'}</div>
+        ${emaxLatest ? `<div class="max-current-val">${fmtW(emaxLatest.estimatedMax)}<span class="u">kg</span></div>` : ''}
         <div class="mc-sub">${emaxLatest
           ? `${fmtDateShort(emaxLatest.date)} ・ ${fmtW(emaxLatest.sourceWeight)}×${emaxLatest.sourceReps}${emaxBest && emaxBest.estimatedMax > emaxLatest.estimatedMax ? ` ・ 最高 ${fmtW(emaxBest.estimatedMax)}kg` : ''}`
           : 'セット記録から自動計算されます'}</div>
       </div>
     </div>
-    <div class="card">
+    ${tests.length ? `<div class="card">
       <div class="sec-label">実測の履歴</div>
       ${renderMaxTestHistory(12, liftKey)}
+    </div>` : ''}
+    <div class="card">
+      <div class="sec-label">推定の履歴</div>
+      ${estimatedMaxHistoryRows(liftKey) || '<div class="muted">履歴なし</div>'}
     </div>
-    ${renderEmaxLogTab(liftKey)}
   `;
 }
 
-// 推定MAXタブ: 計算値の履歴（MAXとは完全に別タブ）
-function renderEmaxLogTab(forcedLiftKey = null) {
-  const liftKey = forcedLiftKey || (BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench');
-  const entries = collectEstimatedMaxEntries(liftKey);
-  const latest = latestEstimatedMaxEntryForLift(liftKey);
-  const adopted = adoptedEstimatedMaxEntryForLift(liftKey);
-  const best = bestEstimatedMaxEntryForLift(liftKey);
-  const currentCard = latest
-    ? `<div class="summary-grid">
-      <div class="card max-current">
-        <div class="mc-label">最新推定MAX</div>
-        <div class="max-current-val">${fmtW(latest.estimatedMax)}<span class="u">kg</span></div>
-        <div class="mc-sub">${fmtDateShort(latest.date)} ・ ${fmtW(latest.sourceWeight)}×${latest.sourceReps} @${latest.rpe || '-'}</div>
-        ${adopted ? `<div class="mc-sub">現在採用中: ${fmtW(adopted.estimatedMax)}kg (${fmtDateShort(adopted.date)})</div>` : ''}
-      </div>
-      <div class="card max-current">
-        <div class="mc-label">過去最高推定MAX</div>
-        <div class="max-current-val">${fmtW(best?.estimatedMax)}<span class="u">kg</span></div>
-        <div class="mc-sub">${best ? `${fmtDateShort(best.date)} ・ ${fmtW(best.sourceWeight)}×${best.sourceReps}` : '記録なし'}</div>
-      </div>
-    </div>`
-    : '<div class="card flat"><div class="muted text-center">推定MAXの記録はまだありません</div></div>';
-  const rows = entries.slice(0, 14).map(entry => {
+// 推定MAX履歴の行だけを返す（MAXタブと推定MAXタブで共用）
+function estimatedMaxHistoryRows(liftKey) {
+  return collectEstimatedMaxEntries(liftKey).slice(0, 14).map(entry => {
     const kind = entry.adopted ? 'adopted' : (entry.maxUseKind || 'excluded');
     const chip = kind === 'adopted'
       ? '<span class="chip chip-adopted">採用済み</span>'
@@ -6946,6 +6954,30 @@ function renderEmaxLogTab(forcedLiftKey = null) {
       </div>
     `;
   }).join('');
+}
+
+// 推定MAXタブ: 計算値の履歴（MAXとは完全に別タブ）
+function renderEmaxLogTab(forcedLiftKey = null) {
+  const liftKey = forcedLiftKey || (BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench');
+  const latest = latestEstimatedMaxEntryForLift(liftKey);
+  const adopted = adoptedEstimatedMaxEntryForLift(liftKey);
+  const best = bestEstimatedMaxEntryForLift(liftKey);
+  const currentCard = latest
+    ? `<div class="summary-grid">
+      <div class="card max-current">
+        <div class="mc-label">最新推定MAX</div>
+        <div class="max-current-val">${fmtW(latest.estimatedMax)}<span class="u">kg</span></div>
+        <div class="mc-sub">${fmtDateShort(latest.date)} ・ ${fmtW(latest.sourceWeight)}×${latest.sourceReps} @${latest.rpe || '-'}</div>
+        ${adopted ? `<div class="mc-sub">現在採用中: ${fmtW(adopted.estimatedMax)}kg (${fmtDateShort(adopted.date)})</div>` : ''}
+      </div>
+      <div class="card max-current">
+        <div class="mc-label">過去最高推定MAX</div>
+        <div class="max-current-val">${fmtW(best?.estimatedMax)}<span class="u">kg</span></div>
+        <div class="mc-sub">${best ? `${fmtDateShort(best.date)} ・ ${fmtW(best.sourceWeight)}×${best.sourceReps}` : '記録なし'}</div>
+      </div>
+    </div>`
+    : '<div class="card flat"><div class="muted text-center">推定MAXの記録はまだありません</div></div>';
+  const rows = estimatedMaxHistoryRows(liftKey);
   return `
     ${liftSegHtml(liftKey, 'data-emax-lift')}
     ${currentCard}
@@ -7163,6 +7195,7 @@ function renderSimpleGraph(logs, key) {
 }
 
 function afterLog() {
+  bindBodyWeightInput();
   document.querySelectorAll('.tab[data-type]').forEach(t => {
     t.onclick = () => {
       logFilter.type = t.dataset.type;
@@ -8169,6 +8202,10 @@ if (typeof window !== 'undefined') {
     adoptedEstimatedMaxEntryForLift,
     bestEstimatedMaxEntryForLift,
     renderEmaxLogTab,
+    renderMaxLogTab,
+    renderVolumeTrend,
+    renderBodyWeightCard,
+    monthlyVolumeByMenu,
     upsertExerciseLogFromSession,
     updateExerciseRestSetting,
     defaultAccessorySlots,
