@@ -2712,7 +2712,7 @@ function renderPlateBreakdown(ex, weight) {
     <div class="plate-strip" aria-label="片側のプレート ${result.plates.join('、')}キロ">
       <span class="micro-label plate-side">PER SIDE</span>
       <span class="plate-bar">${bars}</span>
-      ${result.remainder > 0 ? `<span class="plate-remainder num">+${result.remainder}kg</span>` : ''}
+      ${result.remainder >= 1.25 ? `<span class="plate-remainder num">+${result.remainder}kg</span>` : ''}
     </div>`;
 }
 
@@ -4155,7 +4155,7 @@ function renderActiveExerciseCard(ex, exIdx) {
     <div class="active-set">
       <div class="as-head">
         <span class="micro-label">SET ${setIdx + 1} / ${totalSets}</span>
-        <span class="micro-label as-prev">${ex.isAccessory && ex.targetRpe ? `TARGET RPE ${ex.targetRpe}` : 'TARGET'}</span>
+        <span class="micro-label as-prev">TARGET ${ex.isAccessory && ex.targetRpe ? `RPE ${ex.targetRpe}` : escapeHtml(exercisePlanText(ex))}</span>
       </div>
       <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
         <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
@@ -4356,11 +4356,15 @@ function renderSessionMetrics({ doneExercises, totalExercises, volume, totalDone
       <span class="micro-label">${label}</span>
       <span class="metric-value num">${value}</span>
     </div>`;
+  // 未着手の値は 0 ではなく — で出す。何もないことを大きく出さない。
+  const zeroable = (n, suffix = '') => (n > 0 ? `${n.toLocaleString('ja-JP')}${suffix}` : '—');
   return `
     <div class="metric-row" aria-label="今日の集計">
       ${chip('EXERCISES', `${doneExercises} / ${totalExercises}`)}
-      ${chip('TOTAL VOLUME', `${volume.toLocaleString('ja-JP')}<span class="metric-unit">kg</span>`)}
-      ${chip('SETS DONE', totalDoneSets)}
+      ${chip('TOTAL VOLUME', volume > 0
+        ? `${volume.toLocaleString('ja-JP')}<span class="metric-unit">kg</span>`
+        : '—')}
+      ${chip('SETS DONE', zeroable(totalDoneSets))}
     </div>`;
 }
 

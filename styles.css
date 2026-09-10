@@ -339,7 +339,7 @@ body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
   width: 100%;
   min-height: 52px;
   padding: 10px var(--space-3);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text-2);
   border: 0;
   border-left: 3px solid transparent;
@@ -351,7 +351,7 @@ body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
 
 .menu-row.on {
   border-left-color: var(--accent);
-  background: var(--surface-2);
+  background: var(--surface-3);
   color: var(--text);
   font-weight: var(--fw-semibold);
 }
@@ -1044,8 +1044,8 @@ body.keyboard-open .set-dock { bottom: 0; }
 .plate-strip {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
+  gap: var(--space-3);
+  min-height: 44px;
   margin: -2px 0 var(--space-2);
   padding: 0 var(--space-2);
 }
@@ -1057,9 +1057,9 @@ body.keyboard-open .set-dock { bottom: 0; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: var(--plate-h, 20px);
-  border-radius: 2px;
+  width: 28px;
+  height: var(--plate-h, 24px);
+  border-radius: 3px;
   background: var(--surface-3);
 }
 
@@ -1068,9 +1068,10 @@ body.keyboard-open .set-dock { bottom: 0; }
 .plate[data-plate="2.5"], .plate[data-plate="1.25"] { background: var(--surface-2); }
 
 .plate-w {
-  font-size: 9px;
+  font-family: var(--font-num);
+  font-size: var(--fs-11);
   font-weight: var(--fw-semibold);
-  color: var(--text-2);
+  color: var(--text);
   line-height: 1;
 }
 
@@ -1180,7 +1181,7 @@ body.keyboard-open .set-dock { bottom: 0; }
    table: nothing has happened there yet.
    ========================================================================== */
 .set-table {
-  margin: var(--space-3) 0;
+  margin: var(--space-3) 0 var(--space-4);
 }
 
 .set-thead,
@@ -1309,8 +1310,8 @@ body.keyboard-open .set-dock { bottom: 0; }
 /* ==== アクティブセットブロック ==== */
 .active-set {
   border: 0;
-  padding: 20px 0 12px;
-  margin: 8px 0;
+  padding: 0 0 var(--space-2);
+  margin: 0;
 }
 
 .active-set .as-head {
@@ -1604,7 +1605,7 @@ input::-webkit-inner-spin-button {
   margin: 0;
 }
 
-textarea { min-height: 56px; resize: vertical; }
+textarea { min-height: 72px; resize: none; }
 
 label.field { display: block; margin-bottom: 12px; }
 
@@ -1941,7 +1942,7 @@ body.sheet-open .bottom-nav { display: none; }
 }
 
 .r4-adjustment-panel .btn-row { gap: 6px; }
-.rpe-editor { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rpe-editor { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(42px, 1fr)); }
 .rpe-editor button { min-height: 44px; width: 100%; justify-content: center; }
 button.chip, .tab { min-height: 44px; }
 input, select, textarea { scroll-margin-block: 96px; }
@@ -2217,13 +2218,40 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   padding: var(--space-3) var(--space-4);
 }
 
+/* Inside a card the disclosure is not a nested plane: only its summary is a
+   control. Painting the whole block --surface-2 left every chip and button
+   inside it on the same plane as its own background, which is why they read
+   as loose text rather than as things you can press. */
 .card .ui-details,
 .exercise-card .ui-details,
 .four-plan-card .ui-details {
+  background: transparent;
+  border-radius: var(--radius-control);
+  padding: 0;
+}
+
+.card .ui-details > summary,
+.exercise-card .ui-details > summary,
+.four-plan-card .ui-details > summary {
+  padding: 0 var(--space-3);
   background: var(--surface-2);
   border-radius: var(--radius-control);
-  padding: var(--space-2) var(--space-3);
 }
+
+.card .ui-details[open] > summary { margin-bottom: var(--space-3); }
+
+/* Everything the block contains steps up to the inset plane, so it is legible
+   against the card behind it. */
+.card .ui-details .chip,
+.card .ui-details .btn-secondary,
+.card .ui-details .btn-sec,
+.card .ui-details .btn-ghost {
+  background: var(--surface-2);
+  border: 0;
+}
+
+.card .ui-details .chip.active,
+.card .ui-details .chip.on { background: var(--accent); color: var(--on-accent); }
 
 .ui-details > summary {
   min-height: 44px;
