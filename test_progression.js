@@ -431,6 +431,75 @@ function testVolumeTrendComparesEqualPeriods() {
   assert.ok(html.includes('trend-note'), '比較している期間を明示する');
 }
 
+// メイン種目の「今日だけ削除」。補助と同じ操作だが、戻す導線があることまでが機能。
+function testMainExerciseTodayOnlyDelete() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  const session = api.getOrCreateTodaySession();
+  const mainIdx = session.exercises.findIndex(ex => ex.isFourMenuMain || ex.isBig3);
+  assert.ok(mainIdx >= 0, 'メイン種目がある');
+  const main = session.exercises[mainIdx];
+  const before = session.exercises.length;
+
+  // 記録済みのセットがあるときは確認なしで消さない
+  main.sets[0] = { ...main.sets[0], done: true, weight: 100, reps: 5 };
+  assert.strictEqual(api.deleteMainExerciseToday(session, mainIdx).reason, 'needs-confirm');
+  assert.strictEqual(session.exercises.length, before, '確認前は消えない');
+  main.sets[0] = { ...main.sets[0], done: false };
+
+  assert.strictEqual(api.deleteMainExerciseToday(session, mainIdx).ok, true);
+  assert.strictEqual(session.exercises.length, before - 1);
+  assert.strictEqual(session.exercises.some(ex => ex.key === main.key && ex.menuType === main.menuType), false);
+  assert.strictEqual(session.deletedMains.length, 1);
+
+  // 再計算で黙って戻ってこない（休止設定の変更などで再計算が走る）
+  api.recalculateTodaySession();
+  const afterRecalc = api.getOrCreateTodaySession();
+  assert.strictEqual(afterRecalc.exercises.some(ex => ex.key === main.key && ex.menuType === main.menuType), false,
+    '今日だけ削除したメイン種目は再計算で復活しない');
+
+  // 戻す
+  assert.strictEqual(api.restoreDeletedMain(afterRecalc, 0), true);
+  assert.strictEqual(afterRecalc.exercises.some(ex => ex.key === main.key && ex.menuType === main.menuType), true);
+  assert.strictEqual(afterRecalc.deletedMains.length, 0);
+
+  // 最後の1種目は消せない（何もしない日が「実施済み」になるのを防ぐ）
+  const only = api.getOrCreateTodaySession();
+  const keepIdx = only.exercises.findIndex(ex => ex.isFourMenuMain || ex.isBig3);
+  only.exercises = [only.exercises[keepIdx]];
+  assert.strictEqual(api.deleteMainExerciseToday(only, 0).reason, 'last-exercise');
+  assert.strictEqual(only.exercises.length, 1);
+}
+
+// 削除したメイン種目は「やらなかった記録」として残り、集計には入らない
+function testDeletedMainLeavesANonCountingLog() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  const session = api.getOrCreateTodaySession();
+  const mainIdx = session.exercises.findIndex(ex => ex.isFourMenuMain || ex.isBig3);
+  const main = session.exercises[mainIdx];
+  const performed = session.performedSplitKey || session.selectedSplitKey;
+  api.deleteMainExerciseToday(session, mainIdx);
+  session.exercises.forEach(ex => {
+    ex.rpe = ex.rpe || '8';
+    ex.pains = ['なし'];
+    ex.sets = ex.sets.map(set => ({ ...set, weight: set.weight || 30, reps: set.reps || 10, done: true }));
+  });
+  api.persistTodaySession(session);
+  api.finishTodaySession();
+
+  const log = store.logs.find(l => l.exerciseKey === main.key && l.todayOnlyDeleted);
+  assert.ok(log, 'やらなかった事実はログに残る');
+  assert.strictEqual(log.doneSets, 0);
+  assert.strictEqual(log.sets.length, 0);
+  assert.strictEqual(api.getExercisePrRecord({ key: main.key, sets: [] }, null), null, '削除ログは自己ベストに入らない');
+  assert.strictEqual(store.estimatedMaxHistory.some(entry => entry.liftKey === main.key && entry.date === session.date), false,
+    '削除ログから推定MAXは作られない');
+  // ローテーションは進む（実施として扱う）
+  assert.strictEqual(store.currentState.lastCompletedMenuKey, performed, 'その日はそのメニューを実施した扱い');
+  assert.notStrictEqual(store.currentState.nextMenuKey, performed, '次のメニューへ進む');
+}
+
 // 日付をUTCに直していたせいで、JST（UTC+9）では休止期間が1日早く終わっていた回帰テスト。
 // 端末のタイムゾーンに関係なく同じ答えになるべき。
 function testLocalDateArithmetic() {
@@ -2561,6 +2630,8 @@ testVolumeTrendComparesEqualPeriods();
 testMaxTabShowsEachNumberOnce();
 testPrCountsOnlyEarlierSessions();
 testLocalDateArithmetic();
+testMainExerciseTodayOnlyDelete();
+testDeletedMainLeavesANonCountingLog();
 testPlateRemainderIsReachable();
 testMigrationFixesContainerTypes();
 testDeloadAccessoryAndMaxTestTiming();

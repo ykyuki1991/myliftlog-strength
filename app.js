@@ -3614,7 +3614,7 @@ function selectFourMenuForToday(menuKey, options = {}) {
   const exerciseDrafts = oldSession?.exerciseDrafts || {};
   (oldSession?.exercises || []).forEach(ex => { exerciseDrafts[`${ex.key}:${ex.menuType}`] = cloneWorkoutExercise(ex); });
   const menuDrafts = oldSession?.menuDrafts || {};
-  if (oldSession) menuDrafts[oldSession.selectedSplitKey] = JSON.parse(JSON.stringify({ exercises: oldSession.exercises, deletedAccessories: oldSession.deletedAccessories || [], skippedRestExercises: oldSession.skippedRestExercises || [], customMenuKeys: oldSession.customMenuKeys }));
+  if (oldSession) menuDrafts[oldSession.selectedSplitKey] = JSON.parse(JSON.stringify({ exercises: oldSession.exercises, deletedAccessories: oldSession.deletedAccessories || [], deletedMains: oldSession.deletedMains || [], skippedRestExercises: oldSession.skippedRestExercises || [], customMenuKeys: oldSession.customMenuKeys }));
   const restored = !options.customMenuKeys ? menuDrafts[selected] : null;
   const state = getFourMenuState();
   const sessionDate = oldSession?.date || todayStr();
@@ -3630,6 +3630,7 @@ function selectFourMenuForToday(menuKey, options = {}) {
     exerciseDrafts,
     customMenuKeys: restored?.customMenuKeys || menu.customMenuKeys || null,
     deletedAccessories: restored?.deletedAccessories || [],
+    deletedMains: restored?.deletedMains || [],
     status: 'inProgress',
     createdAt: oldSession?.createdAt || oldSession?.ts || now,
     updatedAt: now,
@@ -3728,7 +3729,15 @@ function recalculateTodaySession() {
     }
   }
 
-  const newExercises = menu.exercises.map(newEx => {
+  // 今日だけ削除したものは、再計算で黙って戻ってこない。
+  // 補助種目も同じで、休止設定を変えただけで消したはずの種目が復活していた。
+  const deletedToday = new Set([
+    ...(oldSession.deletedMains || []).map(entry => `${entry.exerciseKey}:${entry.menuType || ''}`),
+    ...(oldSession.deletedAccessories || []).map(entry => `${entry.exerciseKey}:${entry.slotId || ''}`),
+  ]);
+  const isDeletedToday = ex => deletedToday.has(`${ex.key}:${ex.menuType || ''}`) || deletedToday.has(`${ex.key}:${ex.slotId || ''}`);
+
+  const newExercises = menu.exercises.filter(newEx => !isDeletedToday(newEx)).map(newEx => {
     const oldEx = oldSession.exercises.find(e => e.key === newEx.key && e.menuType === newEx.menuType);
     if (oldEx && oldSession.fourMenuRotation && oldEx.isFourMenuMain) {
       const hasInput = oldEx.todayEdited || oldEx.note || (oldEx.pains || []).some(p => p !== 'なし') ||
@@ -4567,6 +4576,19 @@ function renderToday() {
       </div>`
     : '';
 
+  // 今日だけ削除したメイン種目: 戻す導線をその日のうちは必ず出す
+  const deletedMainRows = (session.deletedMains || []).length
+    ? `<div class="card flat">
+        ${(session.deletedMains || []).map((entry, i) => `
+          <div class="next-row deleted-row">
+            <span class="nx-name">${escapeHtml(displayExerciseName(entry.exerciseKey, entry.exerciseName))}</span>
+            <span class="chip chip-pause">今日だけ削除</span>
+            <button class="btn-secondary btn-small" data-restore-main="${i}">戻す</button>
+          </div>
+        `).join('')}
+      </div>`
+    : '';
+
   // R4調整とMAX測定の本体はオプションシートへ移した。
   // ただし「今日がMAX測定日」はその日の行動が変わるので、1行バナーだけ本文に残す。
   // 判定条件は既存ロジックのまま、表示場所だけを変えている。
@@ -4597,6 +4619,7 @@ function renderToday() {
       </div>` : ''}
     ${nextCard}
     ${completedCards}
+    ${deletedMainRows}
     ${pausedRows}
     <div class="btn-pair mt-12">
       <button class="btn-sec" id="btnAddTodayAccessory">ADD EXERCISE</button>
@@ -4621,6 +4644,14 @@ function afterToday() {
         showToast('自動反映を戻しました');
         render();
       }
+    };
+  });
+
+  document.querySelectorAll('[data-restore-main]').forEach(btn => {
+    btn.onclick = () => {
+      if (!restoreDeletedMain(session, parseInt(btn.dataset.restoreMain, 10))) return;
+      showToast('今日のメニューに戻しました');
+      render();
     };
   });
 
@@ -5136,6 +5167,7 @@ function openMainSetEditModal(exIdx) {
     <div class="btn-row">
       <button class="btn-primary" id="main-edit-save">今日だけ変更</button>
       <button class="btn-warn" id="main-edit-save-future">今後も変更</button>
+      <button class="btn-danger" id="main-delete-today">今日だけ削除</button>
     </div>
   `, () => {
     const save = (applyFuture) => {
@@ -5165,7 +5197,58 @@ function openMainSetEditModal(exIdx) {
     };
     document.getElementById('main-edit-save').onclick = () => save(false);
     document.getElementById('main-edit-save-future').onclick = () => save(true);
+    document.getElementById('main-delete-today').onclick = () => {
+      const result = deleteMainExerciseToday(session, exIdx);
+      if (result.reason === 'last-exercise') {
+        showToast('最後の1種目は削除できません（休むならメニューで休みを選んでください）');
+        return;
+      }
+      if (result.reason === 'needs-confirm') {
+        if (!confirm('記録済みのセットがあります。今日の記録ごと削除しますか？')) return;
+        if (!deleteMainExerciseToday(session, exIdx, { confirmDiscard: true }).ok) return;
+      } else if (!result.ok) {
+        return;
+      }
+      closeModal();
+      render();
+      showToast('今日だけ削除しました（下の「戻す」で戻せます）');
+    };
   });
+}
+
+// メイン種目を今日だけ外す。補助と違いメイン種目には「今日だけ追加」の導線がないので、
+// 消したものは同じ日のうちに戻せるところまでが1セットの機能になる。
+// 今後の予定には手を付けない。プログラムそのものを変えるのは設定画面の仕事。
+function deleteMainExerciseToday(session, exIdx, { confirmDiscard = false } = {}) {
+  const ex = session?.exercises?.[exIdx];
+  if (!ex || (!ex.isBig3 && !ex.isFourMenuMain)) return { ok: false, reason: 'not-main' };
+  // 全部消せてしまうと、何もしていない日が「実施済み」として次のメニューへ進んでしまう
+  if ((session.exercises || []).length <= 1) return { ok: false, reason: 'last-exercise' };
+  const hasRecord = (ex.sets || []).some(set => set.done || set.skipped);
+  if (hasRecord && !confirmDiscard) return { ok: false, reason: 'needs-confirm' };
+  session.deletedMains = session.deletedMains || [];
+  session.deletedMains.push({
+    ts: Date.now(),
+    index: exIdx,
+    exerciseKey: ex.key,
+    exerciseName: ex.name,
+    menuType: ex.menuType,
+    exercise: cloneWorkoutExercise(ex),
+  });
+  session.exercises.splice(exIdx, 1);
+  persistTodaySession(session);
+  return { ok: true };
+}
+
+function restoreDeletedMain(session, deletedIdx) {
+  const entry = session?.deletedMains?.[deletedIdx];
+  if (!entry) return false;
+  const restored = cloneWorkoutExercise(entry.exercise);
+  const at = Math.max(0, Math.min(session.exercises.length, entry.index ?? session.exercises.length));
+  session.exercises.splice(at, 0, restored);
+  session.deletedMains.splice(deletedIdx, 1);
+  persistTodaySession(session);
+  return true;
 }
 
 function openAccessoryTodayModal(exIdx) {
@@ -6038,6 +6121,57 @@ function finishTodaySession() {
       weightType: null,
       slotId: deleted.slotId,
       slotName: deleted.slotName,
+      sets: [],
+      doneSets: 0,
+      rpe: '未入力',
+      pains: [],
+      note: '今日だけ削除',
+      todayOnlyDeleted: true,
+      manualAdjusted: false,
+      ts: deleted.ts || Date.now(),
+    };
+    const existIdx = store.logs.findIndex(l =>
+      ((log.sessionId && l.sessionId === log.sessionId) || (!log.sessionId && l.date === log.date)) &&
+      l.exerciseKey === log.exerciseKey && l.menuType === log.menuType &&
+      (!log.fourMenuRotation || (l.performedSplitKey || l.selectedSplitKey || l.menuKey) === (log.performedSplitKey || log.selectedSplitKey || log.menuKey))
+    );
+    if (existIdx >= 0) store.logs[existIdx] = { ...log, id: store.logs[existIdx].id || log.id };
+    else store.logs.push(log);
+  });
+
+  // 今日だけ削除したメイン種目も、やらなかった事実として記録に残す。
+  // todayOnlyDeleted なので集計・自己ベスト・推定MAXのどれにも入らない。
+  (session.deletedMains || []).forEach(deleted => {
+    const fourMeta = session.fourMenuRotation ? {
+      fourMenuRotation: true,
+      scheduledDate: session.scheduledDate || session.date,
+      performedDate: session.performedDate || session.date,
+      scheduledSplitKey: session.scheduledSplitKey || null,
+      selectedSplitKey: session.selectedSplitKey || null,
+      performedSplitKey: session.performedSplitKey || session.selectedSplitKey || null,
+      menuKey: session.performedSplitKey || session.selectedSplitKey || null,
+      splitName: session.splitName || session.dayName || null,
+      menuName: session.splitName || session.dayName || null,
+    } : {};
+    const log = {
+      id: uid(),
+      sessionId: session.sessionId || null,
+      date: session.date,
+      day: session.fourMenuRotation ? null : session.day,
+      block: session.fourMenuRotation ? null : session.block,
+      rotation: session.fourMenuRotation ? null : session.rotation,
+      ...fourMeta,
+      isDeload: session.isDeload,
+      exerciseKey: deleted.exerciseKey,
+      exerciseName: deleted.exerciseName,
+      menuType: `main-deleted-${deleted.menuType || deleted.exerciseKey}`,
+      plannedWeight: null,
+      plannedReps: null,
+      plannedSets: 0,
+      targetRpe: null,
+      categories: [],
+      fatigueTags: [],
+      weightType: null,
       sets: [],
       doneSets: 0,
       rpe: '未入力',
@@ -7080,10 +7214,12 @@ function summarizeLogGroup(logs) {
   // 休止ログ・今日だけ削除ログは実施数に含めない（0/0で「完了」に見えるのを防ぐ）
   const trainingLogs = logs.filter(log => !log.isExerciseRest && !log.todayOnlyDeleted);
   const completed = trainingLogs.filter(log => (parseInt(log.doneSets, 10) || 0) >= (parseInt(log.plannedSets, 10) || 0));
-  const restCount = logs.length - trainingLogs.length;
+  // 休止（設定で止めている）と今日だけ削除（その日の判断）は別のこと。同じ「休止」にまとめない
+  const restCount = logs.filter(log => log.isExerciseRest).length;
+  const removedCount = logs.filter(log => log.todayOnlyDeleted).length;
   const mainNames = (trainingLogs.length ? trainingLogs : logs).slice(0, 3).map(log => displayExerciseName(log.exerciseKey, log.exerciseName)).filter(Boolean).join(' / ') || '記録';
   const hasCandidate = trainingLogs.some(log => createEstimatedMaxEntry(log, 'log-preview')?.useForMaxUpdate);
-  return { completedCount: completed.length, totalCount: trainingLogs.length, restCount, mainNames, hasCandidate };
+  return { completedCount: completed.length, totalCount: trainingLogs.length, restCount, removedCount, mainNames, hasCandidate };
 }
 
 // ログのベストセット表記「160.0×1」
@@ -7101,7 +7237,7 @@ function renderLogDetail(logs) {
         <div class="log-detail-row">
           <div class="row between">
             <span class="muted">${escapeHtml(displayExerciseName(log.exerciseKey, log.exerciseName))}</span>
-            <span class="chip chip-pause">${log.isExerciseRest ? '休止中' : '削除'}</span>
+            <span class="chip chip-pause">${log.isExerciseRest ? '休止中' : '今日だけ削除'}</span>
           </div>
         </div>
       `;
@@ -7150,7 +7286,7 @@ function renderDailyLogView(logMap = logsByDate()) {
             <span class="log-card-title">${fmtDateShort(date)} ${logGroupHeaderMeta(first)}</span>
             <span class="muted d-block">${summaryRows || summary.mainNames}</span>
           </span>
-          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}
+          <span class="status-pill ${summary.hasCandidate ? 'status-caution' : 'status-ok'}">${summary.hasCandidate ? 'MAX候補' : `${summary.completedCount}/${summary.totalCount}`}</span>${summary.restCount ? `<span class="chip chip-pause">休止${summary.restCount}</span>` : ''}${summary.removedCount ? `<span class="chip chip-pause">削除${summary.removedCount}</span>` : ''}
         </summary>
         ${renderLogDetail(logs)}
       </details>
@@ -8355,6 +8491,8 @@ if (typeof window !== 'undefined') {
     sessionPrSetIndexes,
     getExercisePrRecord,
     selectedLogMonth,
+    deleteMainExerciseToday,
+    restoreDeletedMain,
     addDaysStr,
     dateToLocalStr,
     platesPerSide,

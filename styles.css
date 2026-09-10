@@ -1575,6 +1575,13 @@ body.keyboard-open .set-dock { bottom: 0; }
 
 .next-row.pause-row .nx-name { color: var(--text-3); }
 
+/* Deleted for today only. Quiet like a paused row, but it keeps its way back:
+   a main lift has no "add for today" path, so the undo has to live here.
+   The row sits on the inset plane, so the button has to step up one to read as
+   a button at all -- .btn-secondary is that same plane and disappeared into it. */
+.next-row.deleted-row .nx-name { color: var(--text-3); }
+.next-row.deleted-row .btn-secondary { background: var(--surface-3); }
+
 .next-row[data-make-active] { cursor: pointer; }
 .next-row[data-make-active] {
   display: grid;
