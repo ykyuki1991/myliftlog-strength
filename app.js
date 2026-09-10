@@ -700,7 +700,14 @@ function r4AdjustmentKey(block = store.currentState.block) {
 
 function getSelectedR4AdjustmentMode(settings = store.settings, block = store.currentState.block) {
   const mode = settings.r4AdjustmentModes?.[r4AdjustmentKey(block)];
-  return R4_ADJUSTMENT_MODES[mode] ? mode : 'normalDeload';
+  if (R4_ADJUSTMENT_MODES[mode]) return mode;
+  // 手で選ばれていなければ推奨値を使う。過去の記録から一意に決まるものを
+  // 毎ブロック聞かない、という方針（DESIGN.md 原則15）。
+  try {
+    const recommended = getR4AdjustmentProposal().recommendedMode;
+    if (R4_ADJUSTMENT_MODES[recommended]) return recommended;
+  } catch (e) { /* 提案が組めない場合は既定へ */ }
+  return 'normalDeload';
 }
 
 function getR4AdjustmentProfile(mode = 'normalDeload') {
@@ -3892,11 +3899,18 @@ function openMenuSheet() {
     ${backLiftRowsHtml(session)}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
+    ${session.completed ? '<button class="btn-text btn-block mt-12" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
   `, () => bindMenuSheetControls(session));
 }
 
 // メニュー選択系の束縛。本文から出したのでシートのマウント時に張る。
 function bindMenuSheetControls(session) {
+  const newSessionBtn = document.getElementById('btnNewTodaySession');
+  if (newSessionBtn) newSessionBtn.onclick = () => {
+    closeModal();
+    if (startNewTodaySession()) render();
+  };
+
   document.querySelectorAll('[data-four-menu-select]').forEach(btn => {
     btn.onclick = () => {
       if (btn.dataset.fourMenuSelect === session.selectedSplitKey) { closeModal(); return; }
@@ -4202,10 +4216,9 @@ function renderActiveExerciseCard(ex, exIdx) {
     </div>
   ` : '';
 
-  const rotationProgression = ex.isBig3 ? findPendingRotationProgressionForExercise(ex, session?.day, true) : null;
-  const progressionNote = ex.isBig3 && rotationProgression?.status === 'suggested' && rotationProgression.delta
-    ? `<div class="accessory-suggestion"><span class="suggestion-label">次回候補</span><span>${rotationProgression.message}</span><button class="btn-secondary btn-small" data-action="adoptRotation" data-progression-id="${rotationProgression.id}">採用</button></div>`
-    : '';
+  // 次回候補・5%減候補・推定MAX更新は完了時に自動採用する。
+  // セット間に判断を挟まない（DESIGN.md 原則15）。
+  const progressionNote = '';
 
   const painChips = PAIN_OPTIONS.map(p => `
     <button class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" aria-pressed="${ex.pains.includes(p)}" data-ex="${exIdx}" data-pain="${p}">${p}</button>
@@ -4270,7 +4283,6 @@ function renderCompletedExerciseCard(ex, exIdx) {
   const bestText = best
     ? `ベスト ${fmtW(best.w)}kg ×${best.reps ?? '-'}${ex.rpe && ex.rpe !== '未入力' ? ` @${ex.rpe}` : ''}`
     : 'スキップのみ';
-  const accessoryCandidate = getAccessoryProgressionCandidate(ex);
   return `
     <div class="card done-card exercise-card-complete" data-ex="${exIdx}">
       <div class="dn-row">
@@ -4284,7 +4296,7 @@ function renderCompletedExerciseCard(ex, exIdx) {
           <button class="btn-ghost btn-small" data-action="undoSet" data-ex="${exIdx}">戻す</button>
         </span>
       </div>
-      ${accessoryCandidate ? `<div class="accessory-suggestion"><span class="suggestion-label">次回候補</span><span>${fmtW(accessoryCandidate.candidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptAccessoryCandidate" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
+
     </div>
   `;
 }
@@ -4358,6 +4370,20 @@ function renderWorkoutSummary(session, { totalDoneSets, volume }) {
             <div class="summary-pr-row">
               <span class="summary-pr-name">${escapeHtml(pr.name)}</span>
               <span class="summary-pr-value num">${fmtW(pr.weight)}<span class="summary-unit">kg</span> × ${pr.reps ?? '-'}</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+      ${(session.autoApplied || []).length ? `
+        <div class="summary-auto">
+          <span class="micro-label">APPLIED AUTOMATICALLY</span>
+          ${session.autoApplied.map((item, i) => `
+            <div class="summary-auto-row">
+              <span class="summary-auto-text">
+                <span class="summary-auto-name">${escapeHtml(item.label)}</span>
+                <span class="summary-auto-reason">${escapeHtml(item.reason || '')}</span>
+              </span>
+              <span class="summary-auto-value num">${escapeHtml(item.detail)}</span>
+              <button class="btn-ghost btn-small" data-undo-auto="${i}">戻す</button>
             </div>`).join('')}
         </div>` : ''}
 
@@ -4497,7 +4523,7 @@ function renderToday() {
       <button class="btn-sec" id="btnAddTodayAccessory">ADD EXERCISE</button>
       <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">FINISH</button>
     </div>
-    ${session.completed ? '<button class="btn-text btn-block" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
+
   `;
 }
 
@@ -4510,6 +4536,14 @@ function afterToday() {
   if (maxBanner) maxBanner.onclick = openMenuSheet;
   const closeSummary = document.getElementById('btnCloseSummary');
   if (closeSummary) closeSummary.onclick = () => navigate('block');
+  document.querySelectorAll('[data-undo-auto]').forEach(btn => {
+    btn.onclick = () => {
+      if (undoAutoApplied(todaySessionKey(), parseInt(btn.dataset.undoAuto, 10))) {
+        showToast('自動反映を戻しました');
+        render();
+      }
+    };
+  });
 
   const continueDraft = document.getElementById('btnContinueDraft');
   if (continueDraft) continueDraft.onclick = () => showToast('未完了トレーニングを継続します');
@@ -4751,11 +4785,6 @@ function afterToday() {
 
   const finishBtn = document.getElementById('btnFinishSession');
   if (finishBtn) finishBtn.onclick = finishTodaySession;
-  const newSessionBtn = document.getElementById('btnNewTodaySession');
-  if (newSessionBtn) newSessionBtn.onclick = () => {
-    if (startNewTodaySession()) render();
-  };
-
   const addTodayAccessoryBtn = document.getElementById('btnAddTodayAccessory');
   if (addTodayAccessoryBtn) addTodayAccessoryBtn.onclick = () => {
     persistTodaySession(session);
@@ -5564,6 +5593,91 @@ function upsertExerciseLogFromSession(session, ex, allowCreate = false) {
   return savedLog;
 }
 
+// ===== 自動採用 =====
+// 過去の記録から一意に決まる推奨値は、その場で採用して結果だけ残す。
+// 完了画面に一覧と取り消しを出すので、違うと思えば戻せる。
+function autoApplySuggestions(session) {
+  const applied = [];
+  const liftKeys = new Set((session.exercises || []).map(ex => ex.key));
+
+  // 1. ローテーション進行（メイン種目の次回重量）
+  (store.rotationProgressions || []).forEach(p => {
+    if (p.status !== 'suggested' || p.appliedAt || !p.delta) return;
+    if (!liftKeys.has(p.liftKey)) return;
+    if (!adoptRotationProgression(p.id)) return;
+    applied.push({
+      kind: 'rotation',
+      id: p.id,
+      label: displayExerciseName(p.liftKey),
+      detail: `${p.delta > 0 ? '+' : ''}${fmtW(p.delta)}kg`,
+      reason: p.message || '前回の達成状況から',
+    });
+  });
+
+  // 2. 推定MAXの更新候補
+  (store.estimatedMaxHistory || []).forEach(entry => {
+    if (entry.adopted || !liftKeys.has(entry.liftKey)) return;
+    const candidate = getMaxUpdateCandidate(entry);
+    if (!candidate) return;
+    const before = store.settings.maxes?.[entry.maxKey];
+    if (!adoptEstimatedMax(entry.id)) return;
+    applied.push({
+      kind: 'emax',
+      id: entry.id,
+      maxKey: entry.maxKey,
+      before,
+      label: `${displayExerciseName(entry.liftKey)} MAX`,
+      detail: `${fmtW(before)} → ${fmtW(candidate.candidate)}kg`,
+      reason: entry.maxUseReason || '推定MAXの更新',
+    });
+  });
+
+  // 3. 補助種目の重量進行
+  (session.exercises || []).forEach(ex => {
+    const candidate = getAccessoryProgressionCandidate(ex);
+    if (!candidate) return;
+    const menuKey = normalizeFourMenuKey(ex?.fourMenuKey || session?.performedSplitKey || session?.selectedSplitKey);
+    if (!FOUR_MENU_LABELS[menuKey] || !ex.slotId) return;
+    const before = candidate.currentWeight;
+    if (!applyAccessoryProgressionCandidate(session, ex)) return;
+    applied.push({
+      kind: 'accessory',
+      menuKey,
+      slotId: ex.slotId,
+      before,
+      label: displayExerciseName(ex.key, ex.name),
+      detail: `${fmtW(before)} → ${fmtW(candidate.candidateWeight)}kg`,
+      reason: '予定セットを全て達成',
+    });
+  });
+
+  session.autoApplied = applied;
+  return applied;
+}
+
+function undoAutoApplied(sessionKey, index) {
+  const session = store.daySessions[sessionKey];
+  const item = session?.autoApplied?.[index];
+  if (!item) return false;
+
+  if (item.kind === 'rotation') {
+    const p = (store.rotationProgressions || []).find(x => x.id === item.id);
+    if (p) { p.status = 'suggested'; delete p.adoptedAt; }
+  } else if (item.kind === 'emax') {
+    const entry = (store.estimatedMaxHistory || []).find(x => x.id === item.id);
+    if (entry) { entry.adopted = false; delete entry.adoptedAt; delete entry.adoptedMax; }
+    if (item.before != null) store.settings.maxes[item.maxKey] = item.before;
+  } else if (item.kind === 'accessory') {
+    const slot = getFourMenuAccessorySlots(item.menuKey).find(x => x.slotId === item.slotId);
+    if (slot) updateFourMenuAccessorySlot(item.menuKey, item.slotId, { ...slot, plannedWeight: item.before });
+  }
+
+  session.autoApplied.splice(index, 1);
+  session.autoUndone = [...(session.autoUndone || []), item.label];
+  saveStore();
+  return true;
+}
+
 function finishTodaySession() {
   const key = todaySessionKey();
   const session = store.daySessions[key] || (previewTodaySession?.key === key ? previewTodaySession : null);
@@ -5583,6 +5697,8 @@ function finishTodaySession() {
   session.exercises.forEach(ex => {
     upsertExerciseLogFromSession(session, ex, true);
   });
+
+  autoApplySuggestions(session);
 
   (session.skippedRestExercises || []).forEach(ex => {
     const fourMeta = session.fourMenuRotation ? {
@@ -6557,18 +6673,15 @@ function renderLog() {
     <div class="tabs">
       <button class="tab ${logFilter.type === 'daily' ? 'active' : ''}" data-type="daily">日別</button>
       <button class="tab ${logFilter.type === 'monthly' ? 'active' : ''}" data-type="monthly">月別</button>
-      <button class="tab ${logFilter.type === 'max' ? 'active' : ''}" data-type="max">MAX</button>
-      <button class="tab ${logFilter.type === 'emax' ? 'active' : ''}" data-type="emax">推定MAX</button>
+      <button class="tab ${logFilter.type === 'max' || logFilter.type === 'emax' ? 'active' : ''}" data-type="max">MAX</button>
     </div>
   `;
 
   const body = logFilter.type === 'monthly'
     ? renderMonthlyLogView()
-    : logFilter.type === 'max'
+    : (logFilter.type === 'max' || logFilter.type === 'emax')
       ? renderMaxLogTab()
-      : logFilter.type === 'emax'
-        ? renderEmaxLogTab()
-        : renderDailyLogView();
+      : renderDailyLogView();
 
   return `
     ${tabs}
@@ -6578,13 +6691,6 @@ function renderLog() {
       <input type="search" id="log-query-filter" value="${escapeHtml(logFilter.query)}" placeholder="種目を検索" aria-label="種目を検索" />
     </div>` : ''}
     ${body}
-    <div class="section">
-      <h2>データ管理</h2>
-      <div class="btn-row">
-        <button class="btn-secondary btn-small" id="btnExport">エクスポート(JSON)</button>
-        <button class="btn-secondary btn-small" id="btnImport">インポート(JSON)</button>
-      </div>
-    </div>
   `;
 }
 
@@ -6608,23 +6714,35 @@ function renderMaxLogTab() {
     : latest
       ? `挑戦 ${fmtW(latest.attemptedWeight ?? latest.weight)}kg ✗`
       : '1RM挑戦でここに記録されます';
+  const emaxLatest = latestEstimatedMaxEntryForLift(liftKey);
+  const emaxBest = bestEstimatedMaxEntryForLift(liftKey);
   return `
     ${liftSegHtml(liftKey, 'data-max-lift')}
-    <div class="card max-current gold">
-      <div class="mc-label">MAX</div>
-      <div class="max-current-val">${value}</div>
-      <div class="mc-sub">${sub}</div>
+    <div class="summary-grid">
+      <div class="card max-current gold">
+        <div class="mc-label">MEASURED</div>
+        <div class="max-current-val">${value}</div>
+        <div class="mc-sub">${sub}</div>
+      </div>
+      <div class="card max-current">
+        <div class="mc-label">ESTIMATED</div>
+        <div class="max-current-val">${emaxLatest ? `${fmtW(emaxLatest.estimatedMax)}<span class="u">kg</span>` : '—'}</div>
+        <div class="mc-sub">${emaxLatest
+          ? `${fmtDateShort(emaxLatest.date)} ・ ${fmtW(emaxLatest.sourceWeight)}×${emaxLatest.sourceReps}${emaxBest && emaxBest.estimatedMax > emaxLatest.estimatedMax ? ` ・ 最高 ${fmtW(emaxBest.estimatedMax)}kg` : ''}`
+          : 'セット記録から自動計算されます'}</div>
+      </div>
     </div>
     <div class="card">
-      <div class="sec-label">履歴</div>
+      <div class="sec-label">実測の履歴</div>
       ${renderMaxTestHistory(12, liftKey)}
     </div>
+    ${renderEmaxLogTab(liftKey)}
   `;
 }
 
 // 推定MAXタブ: 計算値の履歴（MAXとは完全に別タブ）
-function renderEmaxLogTab() {
-  const liftKey = BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench';
+function renderEmaxLogTab(forcedLiftKey = null) {
+  const liftKey = forcedLiftKey || (BIG3_LIFTS[logFilter.emaxLift] ? logFilter.emaxLift : 'bench');
   const entries = collectEstimatedMaxEntries(liftKey);
   const latest = latestEstimatedMaxEntryForLift(liftKey);
   const adopted = adoptedEstimatedMaxEntryForLift(liftKey);
@@ -6922,8 +7040,10 @@ function afterLog() {
   if (roleFilter) roleFilter.onchange = () => { logFilter.role = roleFilter.value; render(); };
   const queryFilter = document.getElementById('log-query-filter');
   if (queryFilter) queryFilter.onchange = () => { logFilter.query = queryFilter.value; render(); };
-  document.getElementById('btnExport').onclick = exportData;
-  document.getElementById('btnImport').onclick = importData;
+  const logExport = document.getElementById('btnExport');
+  if (logExport) logExport.onclick = exportData;
+  const logImport = document.getElementById('btnImport');
+  if (logImport) logImport.onclick = importData;
   bindEstimatedMaxActions();
 }
 
@@ -7565,18 +7685,17 @@ function renderSettings() {
       </details>
     </div>
 
+    ${adjList.length === 0 ? '' : `
     <div class="section">
       <h2>手動調整一覧</h2>
-      ${adjList.length === 0 ? '<div class="muted">調整なし</div>' :
-        adjList.map(([k, v]) => `
+      ${adjList.map(([k, v]) => `
           <div class="suggestion-row">
             <div class="name">${k}</div>
             <div class="delta">${v > 0 ? '+' : ''}${v}kg</div>
             <button class="btn-ghost btn-small" data-clear-adj="${k}">解除</button>
           </div>
-        `).join('')
-      }
-    </div>
+        `).join('')}
+    </div>`}
 
     <div class="section">
       <h2>データ管理</h2>
@@ -7927,6 +8046,7 @@ if (typeof window !== 'undefined') {
     switchBackLiftVariant,
     backLiftRowsHtml,
     menuSheetRowsHtml,
+    undoAutoApplied,
     renderDeloadMaxTestPanel,
     renderR4AdjustmentPanel,
     todayHeaderTitle,

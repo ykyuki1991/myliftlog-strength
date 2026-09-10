@@ -29,9 +29,11 @@ const server = http.createServer((req, res) => {
 // メニューピッカーはヘッダーのオプションシートへ移動した。
 // 「シートを開いて選ぶ」をひとまとめにしておく。
 async function selectMenu(page, key) {
-  const already = await page.locator(`[data-four-menu-select="${key}"]`).count();
-  if (!already) await page.locator('#hdOptions').click();
-  await page.locator(`[data-four-menu-select="${key}"]`).click();
+  // 閉じたシートはDOMに残る（.modal.hidden は visibility で隠す）ので、
+  // count ではなく可視性で判定する。
+  const row = page.locator(`[data-four-menu-select="${key}"]`);
+  if (!(await row.isVisible().catch(() => false))) await page.locator('#hdOptions').click();
+  await row.click();
 }
 
 async function menuIsSelected(page, key) {
@@ -89,6 +91,8 @@ async function run() {
     // Build representative history using the existing completion path, never a user's browser data.
     await page.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; })); finishTodaySession(); });
     const next = await page.evaluate(() => store.currentState.nextMenuKey);
+    // 同日別セッションは記録画面から外し、オプションシートへ移した。
+    await page.locator('#hdOptions').click();
     await page.locator('#btnNewTodaySession').click();
     await selectMenu(page, 'custom');
     await page.locator('#hdOptions').click();
@@ -99,6 +103,8 @@ async function run() {
     await page.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; })); finishTodaySession(); });
     check(await page.evaluate(() => store.currentState.nextMenuKey) === next, 'custom preserves normal sequence');
     check(await page.evaluate(() => new Set(store.logs.map(log => log.sessionId)).size) === 2, 'same-day separate sessions');
+    // 同日別セッションは記録画面から外し、オプションシートへ移した。
+    await page.locator('#hdOptions').click();
     await page.locator('#btnNewTodaySession').click();
     for (const width of [320, 375, 390, 430, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
@@ -119,11 +125,12 @@ async function run() {
     }
     await page.setViewportSize({ width: 320, height: 740 });
     await page.locator('.nav-btn[data-screen="log"]').click();
-    for (const type of ['daily', 'monthly', 'max', 'emax']) {
+    // 実測MAXと推定MAXは1タブに統合した。
+    for (const type of ['daily', 'monthly', 'max']) {
       await page.locator(`.tab[data-type="${type}"]`).click();
       check(await page.locator(`.tab[data-type="${type}"]`).getAttribute('aria-pressed') === 'true', `${type} log tab state`);
       check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${type} log width`);
-      check(await page.locator('.lift-seg button').evaluateAll(elements => elements.every(el => el.scrollWidth <= el.clientWidth)), `${type} lift labels fit`);
+      if (type === 'max') check(await page.locator('.lift-seg button').evaluateAll(elements => elements.length > 0 && elements.every(el => el.scrollWidth <= el.clientWidth)), `${type} lift labels fit`);
       await page.screenshot({ path: path.join(artifacts, `log-${type}-320.png`), fullPage: true, animations: 'disabled' });
     }
     await page.locator('.nav-btn[data-screen="today"]').click();

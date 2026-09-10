@@ -523,7 +523,10 @@ function testLogDailyAndMonthlyViews() {
   const logHtml = isolatedApi.renderLog();
   assert.ok(logHtml.includes('日別'));
   assert.ok(logHtml.includes('月別'));
-  assert.ok(logHtml.includes('推定MAX'), 'MAXと推定MAXはタブを分離');
+  // 実測MAXと推定MAXは1つのタブに統合した。知りたいのは「いま何kg挙がるか」で、
+  // 両方を並べて見る値だから。タブが分かれている契約はここで反転する。
+  assert.ok(!logHtml.includes('data-type="emax"'), 'MAXと推定MAXは同じタブ');
+  assert.ok((logHtml.match(/class="tab /g) || []).length === 3, 'ログのタブは3つ');
   assert.ok(logHtml.includes('log-card'));
   const monthHtml = isolatedApi.renderMonthlyLogView();
   assert.ok(monthHtml.includes('2026年5月'), 'calendar should open on the latest logged month');
@@ -642,7 +645,16 @@ function testRotationFlowAndMaxRecordsFromSession() {
   assert.ok(backoffLog);
   assert.strictEqual(isolatedApi.createEstimatedMaxEntry(backoffLog), null, 'backoff should not be mixed into e1RM history');
   assert.strictEqual(isolatedStore.estimatedMaxHistory.some(entry => entry.logId === backoffLog.id), false);
-  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, 'MAX setting should remain user-approved');
+  // 推奨値は完了時に自動採用し、完了画面から取り消せる（DESIGN.md 原則15）。
+  // 「タップするまで変わらない」契約は「自動で変わり、戻せる」契約に置き換わった。
+  const finishedKey = Object.keys(isolatedStore.daySessions).find(k => isolatedStore.daySessions[k].completed);
+  const applied = isolatedStore.daySessions[finishedKey].autoApplied || [];
+  const emaxApplied = applied.find(item => item.kind === 'emax' && item.maxKey === 'bench');
+  assert.ok(emaxApplied, 'MAX更新は自動採用され記録に残る');
+  assert.strictEqual(emaxApplied.before, 120, '取り消し用に旧値を保持する');
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 122.5, 'MAXは自動採用される');
+  assert.strictEqual(isolatedApi.undoAutoApplied(finishedKey, applied.indexOf(emaxApplied)), true);
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, '取り消すと旧値に戻る');
 
   const failedLog = big3Log({
     id: 'failed-max-log',
