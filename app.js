@@ -8,7 +8,7 @@
 const STORAGE_KEY = 'mll_strength_planner_v1';
 const RECOVERY_KEY_PREFIX = `${STORAGE_KEY}_recovery_`;
 const APP_VERSION = '1.0.0';
-const DATA_SCHEMA_VERSION = 2;
+const DATA_SCHEMA_VERSION = 3;
 
 const DEFAULT_SETTINGS = {
   programMode: 'fourMenu',
@@ -399,12 +399,24 @@ function defaultStore() {
     estimatedMaxHistory: [],  // BIG3推定MAX履歴
     maxTestResults: [],       // デロード/MAX測定結果
     daySessions: {},         // key: "YYYY-MM-DD" → セッションデータ
+    bodyWeights: [],         // {date, weight, ts} ボリュームだけでは強さの変化が読めないため
     restTimerState: null,     // {restStartedAt, restDurationSec, restEndAt, running, targetName, alertedAt}
   };
 }
 
 function migrateStoreData(parsed = {}) {
   const def = defaultStore();
+  // schema 3: 体重履歴の器と、ダンベルの片手/両手表記。
+  // どちらも既存の値の意味を変えない。dumbbellSide は未設定のままなら何も表示しない。
+  const bodyWeights = Array.isArray(parsed.bodyWeights)
+    ? parsed.bodyWeights
+      .map(item => ({
+        date: String(item?.date || ''),
+        weight: Number(item?.weight),
+        ts: Number(item?.ts) || 0,
+      }))
+      .filter(item => item.date && Number.isFinite(item.weight) && item.weight > 0)
+    : [];
   const mergedAccDefaults = { ...def.settings.accessoryDefaults };
   const userAccDefaults = parsed.settings?.accessoryDefaults || {};
   for (const key of Object.keys(userAccDefaults)) {
@@ -464,6 +476,7 @@ function migrateStoreData(parsed = {}) {
     estimatedMaxHistory: Array.isArray(parsed.estimatedMaxHistory) ? parsed.estimatedMaxHistory : [],
     maxTestResults: Array.isArray(parsed.maxTestResults) ? parsed.maxTestResults : [],
     daySessions: parsed.daySessions && typeof parsed.daySessions === 'object' ? parsed.daySessions : {},
+    bodyWeights,
   };
 }
 
@@ -3937,12 +3950,26 @@ function openMenuSheet() {
     ${backLiftRowsHtml(session)}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
+    <div class="micro-label sheet-group-label">BODY WEIGHT</div>
+    <label class="field">
+      <span>今日の体重 (kg)</span>
+      <input type="number" inputmode="decimal" step="0.1" min="0" id="bodyWeightInput" value="${(() => {
+        const today = (store.bodyWeights || []).find(item => item.date === todayStr());
+        return today ? today.weight : '';
+      })()}" placeholder="${(() => { const l = latestBodyWeight(); return l ? `${l.weight}` : '—'; })()}" />
+    </label>
     ${session.completed ? '<button class="btn-text btn-block mt-12" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
   `, () => bindMenuSheetControls(session));
 }
 
 // メニュー選択系の束縛。本文から出したのでシートのマウント時に張る。
 function bindMenuSheetControls(session) {
+  const bw = document.getElementById('bodyWeightInput');
+  if (bw) bw.onchange = () => {
+    if (bw.value === '') return;
+    if (recordBodyWeight(bw.value)) showToast('体重を記録しました');
+    else showToast('体重を保存できませんでした');
+  };
   const newSessionBtn = document.getElementById('btnNewTodaySession');
   if (newSessionBtn) newSessionBtn.onclick = () => {
     closeModal();
@@ -4232,7 +4259,7 @@ function renderActiveExerciseCard(ex, exIdx) {
       <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
         <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
         <label class="stepper-value">
-          <span class="micro-label stepper-label">WEIGHT (KG)</span>
+          <span class="micro-label stepper-label">WEIGHT (KG)${ex.weightType === 'dumbbell' ? ' ・ PER HAND' : ''}</span>
           <span class="stepper-figure">
             <input class="stepper-input" type="number" inputmode="decimal" step="0.1" min="0" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
           </span>
@@ -4390,7 +4417,7 @@ function renderWorkoutSummary(session, { totalDoneSets, volume }) {
     if (!best) return '';
     return `
       <div class="summary-best-row">
-        <span class="summary-best-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
+        <span class="summary-best-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}${ex.weightType === 'dumbbell' ? '<span class="summary-best-note">片手</span>' : ''}</span>
         <span class="summary-best-value num">${fmtW(best.w)}<span class="summary-unit">kg</span> × ${best.reps ?? '-'}</span>
       </div>`;
   }).filter(Boolean).join('');
@@ -5644,6 +5671,91 @@ function upsertExerciseLogFromSession(session, ex, allowCreate = false) {
   return savedLog;
 }
 
+// ===== 体重 =====
+// ボリュームだけでは、強くなったのか重くなったのかが分からない。1日1件。
+function latestBodyWeight() {
+  return [...(store.bodyWeights || [])].sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null;
+}
+
+function recordBodyWeight(weight, date = todayStr()) {
+  const w = parseFloat(weight);
+  if (!Number.isFinite(w) || w <= 0 || w > 400) return false;
+  store.bodyWeights = (store.bodyWeights || []).filter(item => item.date !== date);
+  store.bodyWeights.push({ date, weight: Math.round(w * 10) / 10, ts: Date.now() });
+  return saveStore();
+}
+
+function bodyWeightDelta(days = 30) {
+  const list = [...(store.bodyWeights || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
+  if (list.length < 2) return null;
+  const latest = list[0];
+  const cutoff = new Date(`${latest.date}T00:00:00`);
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const older = list.find(item => item.date <= cutoffStr) || list[list.length - 1];
+  if (!older || older.date === latest.date) return null;
+  return { from: older, to: latest, delta: Math.round((latest.weight - older.weight) * 10) / 10 };
+}
+
+// ===== 部位ごとのボリューム推移 =====
+// 停滞に気づく手段が、いまは記憶しかなかった。既存ログの集計だけで出す。
+function monthlyVolumeByMenu(monthsBack = 2) {
+  const out = new Map();
+  (store.logs || []).forEach(log => {
+    if (log.isExerciseRest || log.todayOnlyDeleted || !log.date) return;
+    const menu = normalizeFourMenuKey(log.performedSplitKey || log.selectedSplitKey || log.menuKey);
+    if (!FOUR_MENU_LABELS[menu]) return;
+    const month = log.date.slice(0, 7);
+    const volume = (log.sets || []).reduce((n, set) => n + (set.done && !set.skipped
+      ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0);
+    if (!volume) return;
+    if (!out.has(month)) out.set(month, {});
+    const row = out.get(month);
+    row[menu] = (row[menu] || 0) + volume;
+  });
+  const months = [...out.keys()].sort().reverse().slice(0, monthsBack);
+  return months.map(month => ({ month, byMenu: out.get(month) }));
+}
+
+function renderBodyWeightCard() {
+  const latest = latestBodyWeight();
+  if (!latest) return '';
+  const change = bodyWeightDelta(30);
+  return `
+    <div class="card">
+      <div class="micro-label">BODY WEIGHT</div>
+      <div class="trend-row">
+        <span class="trend-name">${fmtDateShort(latest.date)}</span>
+        <span class="trend-value num">${latest.weight}<span class="trend-unit">kg</span></span>
+        <span class="trend-delta num ${change ? (change.delta >= 0 ? 'up' : 'down') : ''}">${change ? `${change.delta >= 0 ? '+' : ''}${change.delta}kg` : '—'}</span>
+      </div>
+    </div>`;
+}
+
+function renderVolumeTrend() {
+  const months = monthlyVolumeByMenu(2);
+  if (!months.length) return '';
+  const [current, previous] = months;
+  const keys = [...new Set([...Object.keys(current.byMenu), ...Object.keys(previous?.byMenu || {})])];
+  if (!keys.length) return '';
+  const rows = keys.map(key => {
+    const now = Math.round(current.byMenu[key] || 0);
+    const before = Math.round(previous?.byMenu?.[key] || 0);
+    const delta = before ? Math.round(((now - before) / before) * 100) : null;
+    return `
+      <div class="trend-row">
+        <span class="trend-name">${fourMenuLabel(key)}</span>
+        <span class="trend-value num">${now.toLocaleString('ja-JP')}<span class="trend-unit">kg</span></span>
+        <span class="trend-delta num ${delta == null ? '' : delta >= 0 ? 'up' : 'down'}">${delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta}%`}</span>
+      </div>`;
+  }).join('');
+  return `
+    <div class="card">
+      <div class="micro-label">VOLUME BY MENU ・ ${current.month}${previous ? ` vs ${previous.month}` : ''}</div>
+      <div class="trend-list">${rows}</div>
+    </div>`;
+}
+
 // ===== 自動採用 =====
 // 過去の記録から一意に決まる推奨値は、その場で採用して結果だけ残す。
 // 完了画面に一覧と取り消しを出すので、違うと思えば戻せる。
@@ -6729,7 +6841,7 @@ function renderLog() {
   `;
 
   const body = logFilter.type === 'monthly'
-    ? renderMonthlyLogView()
+    ? `${renderVolumeTrend()}${renderBodyWeightCard()}${renderMonthlyLogView()}`
     : (logFilter.type === 'max' || logFilter.type === 'emax')
       ? renderMaxLogTab()
       : renderDailyLogView();
@@ -7751,7 +7863,14 @@ function renderSettings() {
     <div class="section">
       <h2>データ管理</h2>
       <div class="muted mb-8">最終バックアップ: ${storageInfo.lastExportedAt ? fmtDateShort(storageInfo.lastExportedAt.slice(0, 10)) : '記録なし'} ・ ${storageInfo.sizeText} ・ ログ${storageInfo.logs}件 ・ セッション${storageInfo.sessions}件</div>
-      ${backupOld ? '<div class="status-pill status-caution mb-8">30日以上バックアップされていません</div>' : ''}
+      ${backupOld ? `
+        <div class="backup-warning">
+          <span class="micro-label">BACKUP</span>
+          <div class="backup-warning-text">${storageInfo.lastExportedAt
+            ? `最後のバックアップから30日以上経っています。データはこの端末にしかありません。`
+            : `まだ一度もバックアップしていません。Safariのデータ削除や機種変更で全て消えます。`}</div>
+          <button class="btn-primary btn-small" id="btnBackupNow">今すぐ書き出す</button>
+        </div>` : ''}
       <div class="btn-row">
         <button class="btn-secondary btn-small" id="btnExport2">エクスポート</button>
         <button class="btn-secondary btn-small" id="btnImport2">インポート</button>
@@ -7897,6 +8016,8 @@ function afterSettings() {
   });
 
   document.getElementById('btnExport2').onclick = exportData;
+  const backupNow = document.getElementById('btnBackupNow');
+  if (backupNow) backupNow.onclick = exportData;
   document.getElementById('btnImport2').onclick = importData;
   document.getElementById('btnFullReset').onclick = () => {
     if (!confirm('全データを削除します。本当によろしいですか？(取り消し不可)')) return;
@@ -8098,6 +8219,9 @@ if (typeof window !== 'undefined') {
     backLiftRowsHtml,
     menuSheetRowsHtml,
     undoAutoApplied,
+    recordBodyWeight,
+    latestBodyWeight,
+    migrateStoreData,
     renderDeloadMaxTestPanel,
     renderR4AdjustmentPanel,
     todayHeaderTitle,

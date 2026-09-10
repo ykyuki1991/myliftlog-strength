@@ -360,6 +360,33 @@ function testMaxUpdateAndRotationProgressionAreCapped() {
   assert.ok(isolatedStore.rotationProgressions.every(p => p.status !== 'accepted' && p.status !== 'suggested'));
 }
 
+function testBodyWeightAndVolumeTrend() {
+  const { api } = createHarness();
+  const store = api.getStore();
+  // schema 3: 器が増えるだけで既存データの意味は変わらない
+  assert.ok(Array.isArray(store.bodyWeights), 'bodyWeights は常に配列');
+  assert.strictEqual(api.recordBodyWeight('82.4'), true);
+  assert.strictEqual(store.bodyWeights.length, 1);
+  assert.strictEqual(store.bodyWeights[0].weight, 82.4);
+  // 同じ日は上書き、増えない
+  assert.strictEqual(api.recordBodyWeight('82.9'), true);
+  assert.strictEqual(store.bodyWeights.length, 1);
+  assert.strictEqual(store.bodyWeights[0].weight, 82.9);
+  // 不正値は保存しない
+  assert.strictEqual(api.recordBodyWeight('0'), false);
+  assert.strictEqual(api.recordBodyWeight('abc'), false);
+  assert.strictEqual(api.recordBodyWeight('500'), false);
+  assert.strictEqual(store.bodyWeights.length, 1);
+  // 旧データ（bodyWeights なし）を読んでも壊れない
+  const migrated = api.migrateStoreData({ logs: [], settings: {} });
+  assert.ok(Array.isArray(migrated.bodyWeights));
+  assert.strictEqual(migrated.bodyWeights.length, 0);
+  // 壊れた要素は落とす
+  const dirty = api.migrateStoreData({ bodyWeights: [{ date: '', weight: 1 }, { date: '2026-01-01', weight: 'x' }, { date: '2026-01-02', weight: 80 }] });
+  assert.strictEqual(dirty.bodyWeights.length, 1);
+  assert.strictEqual(dirty.bodyWeights[0].weight, 80);
+}
+
 function testDeloadAccessoryAndMaxTestTiming() {
   const isolated = createHarness();
   const isolatedApi = isolated.api;
@@ -2398,6 +2425,7 @@ testFourMenuStateMigrationAliasesAndBackCount();
 testBackLiftMigrationUsesLatestCompletedLift();
 testImportMigrationPreservesLegacyAndMaxData();
 testMaxUpdateAndRotationProgressionAreCapped();
+testBodyWeightAndVolumeTrend();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
 testAdaptiveR4ProposalAndSelection();
