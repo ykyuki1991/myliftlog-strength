@@ -129,7 +129,19 @@ against them has not been made.
    single rule serving classes that mean different things. Character glyphs
    used as icons are inline SVG in the same shape as the nav icons.
 
-9. **The today screen has one subject.** Order is fixed: session metrics,
+9. **Chrome is English, content is Japanese.** Every label the app writes
+   itself -- screen titles, section headings, column headers, button text,
+   navigation, unit labels -- is uppercase Latin in the numeral face. Every
+   string that came from the user or describes their training -- exercise
+   names, menu names in the picker's second line, notes, plan and log rows,
+   toasts and confirmations -- stays Japanese in `--font-jp`.
+
+   The split is by origin, not by prominence: nothing stored is translated,
+   and no display name is derived from a translation table that could drift
+   from the data behind it. The log reads in Japanese because the log is
+   content.
+
+10. **The today screen has one subject.** Order is fixed: session metrics,
    anything that changes what the user does today, the exercise being
    recorded, what is next, what is done (collapsed), what is paused. The
    active exercise is never below something read once a day. Settings that
@@ -143,7 +155,7 @@ against them has not been made.
    record, a bar for the row in progress. A screen of identical rounded grey
    boxes is a failure state, however correct its tokens.
 
-10. **One hand is holding something.** The primary action of the recording
+11. **One hand is holding something.** The primary action of the recording
     screen is docked above the bottom navigation, within thumb reach, and does
     not depend on scroll position. It survives the keyboard: the navigation
     may hide, the action and the rest timer may not, because the moment the
@@ -151,7 +163,7 @@ against them has not been made.
     or secondary actions are never placed beside the primary one at the same
     size -- completing a set and skipping it are not equals.
 
-11. **Each colour means one thing.**
+12. **Each colour means one thing.**
 
         --accent   what the user is doing now, and the primary action. As a
                    fill only: at L*57 it is not legible as thin text, which
@@ -166,11 +178,11 @@ against them has not been made.
     control the user touches once a day is never the largest coloured area on
     the screen. A drop in volume is `--text-3`, not red.
 
-12. **Analysis after training:** actual completed sets and volume in the finish
+13. **Analysis after training:** actual completed sets and volume in the finish
    summary; no fabricated PR or active-training duration (elapsed time may
    include overnight drafts).
 
-13. **Preserve all data.** Routines, custom composition, overrides, paused
+14. **Preserve all data.** Routines, custom composition, overrides, paused
     exercises, historical data, MAX approval and backup formats are preserved,
     and UI state stays outside the persistent training store. This is a
     guarantee about stored data and behaviour only -- it does not preserve any

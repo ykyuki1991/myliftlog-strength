@@ -567,7 +567,7 @@ function testExerciseRestSettings() {
   assert.ok(menu.exercises.some(ex => ex.key === 'chinning'), 'unrelated exercises should remain');
 
   const html = isolatedApi.renderToday();
-  assert.ok(html.includes('休止中'), 'rested exercises should be shown with the gray 休止中 chip');
+  assert.ok(html.includes('PAUSED'), 'rested exercises should be shown with the gray PAUSED chip');
   assert.ok(html.includes('pause-row'), 'rested exercises should be listed as gray rows at the bottom');
   assert.ok(html.includes('ベンチプレス'), 'rested exercise name should be visible');
   const session = Object.values(isolatedStore.daySessions).find(s => s.day === 2 && s.rotation === 1);
@@ -1526,7 +1526,7 @@ function testExistingStoreMigratesToFourMenuMode() {
   // メニューピッカーは本文からヘッダーのシートへ移動した。
   // 「5つ選択できて rest は出ない」という契約はシート側で検証する。
   const session = api.getOrCreateTodaySession({ persist: false });
-  assert.strictEqual(api.todayHeaderTitle(session), '肩・腕');
+  assert.strictEqual(api.todayHeaderTitle(session), 'SHOULDER & ARM');
   const menuHtml = api.menuSheetRowsHtml(session);
   assert.strictEqual((menuHtml.match(/data-four-menu-select=/g) || []).length, 5);
   assert.ok(!menuHtml.includes('data-four-menu-select="rest"'));

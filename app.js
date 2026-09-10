@@ -152,6 +152,22 @@ const FOUR_MENU_LABELS = {
   custom: 'カスタム',
   rest: '休み',
 };
+// 画面上部の見出しなど「目につくクローム」だけ英語にする。
+// 保存データ・種目名・ログ本文には一切触れない。
+const FOUR_MENU_LABELS_EN = {
+  shoulder_arm: 'SHOULDER & ARM',
+  legs: 'LEGS',
+  chest: 'CHEST',
+  back: 'BACK',
+  custom: 'CUSTOM',
+  rest: 'REST DAY',
+};
+
+function fourMenuLabelEn(key) {
+  if (key === 'rest') return FOUR_MENU_LABELS_EN.rest;
+  return FOUR_MENU_LABELS_EN[normalizeFourMenuKey(key)] || FOUR_MENU_LABELS_EN.shoulder_arm;
+}
+
 const FOUR_MENU_MAIN_LIFTS = {
   shoulderPress: { key: 'shoulderPress', maxKey: 'shoulderPress', name: 'ミリタリープレス', fallbackWeight: 65 },
   squat: { key: 'squat', maxKey: 'squat', name: 'スクワット', fallbackWeight: 145 },
@@ -3769,19 +3785,19 @@ function render() {
 }
 
 // 4画面共通ヘッダー。今日画面だけエディトリアル版に広がり、スクロールで44pxに縮む。
-const SCREEN_TITLES = { today: '今日', log: 'ログ', block: '計画', settings: '設定' };
+const SCREEN_TITLES = { today: 'TODAY', log: 'LOG', block: 'PLAN', settings: 'SETTINGS' };
 
 function todayHeaderTitle(session) {
   const s = store.currentState;
   if (isFourMenuMode()) {
     const key = session?.selectedSplitKey || session?.scheduledSplitKey || s.nextMenuKey;
     if (key === 'custom') {
-      const parts = (session?.customMenuKeys || []).map(fourMenuLabel).filter(Boolean);
-      return parts.length ? parts.join('・') : 'カスタム';
+      const parts = (session?.customMenuKeys || []).map(fourMenuLabelEn).filter(Boolean);
+      return parts.length ? parts.join(' + ') : 'CUSTOM';
     }
-    return fourMenuLabel(key) || '今日';
+    return fourMenuLabelEn(key) || 'TODAY';
   }
-  return `Day${s.day}`;
+  return `DAY ${s.day}`;
 }
 
 function updateHeader() {
@@ -3839,7 +3855,7 @@ function menuSheetRowsHtml(session) {
   const selected = session.selectedSplitKey || scheduled;
   return SELECTABLE_MENUS.map(key => `
     <button class="menu-row ${selected === key ? 'on' : ''}" role="menuitemradio" aria-checked="${selected === key}" ${session.completed ? 'disabled' : ''} data-four-menu-select="${key}">
-      <span class="menu-row-name">${fourMenuLabel(key)}</span>
+      <span class="menu-row-name">${fourMenuLabelEn(key)}<span class="menu-row-sub">${fourMenuLabel(key)}</span></span>
       ${key === scheduled ? '<span class="micro-label menu-row-note">SCHEDULED</span>' : ''}
       <span class="menu-row-check" aria-hidden="true">${selected === key ? ICON_CHECK : ''}</span>
     </button>
@@ -3867,7 +3883,7 @@ function openMenuSheet() {
     return;
   }
   const selected = session.selectedSplitKey || session.scheduledSplitKey || store.currentState.nextMenuKey;
-  openModal('メニューと調整', `
+  openModal('MENU', `
     <div class="micro-label sheet-group-label">TODAY'S MENU</div>
     <div class="menu-list" role="menu">${menuSheetRowsHtml(session)}</div>
     ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '種目を追加'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>組み合わせを編集</button></div>` : ''}
@@ -4155,7 +4171,9 @@ function renderActiveExerciseCard(ex, exIdx) {
     <div class="active-set">
       <div class="as-head">
         <span class="micro-label">SET ${setIdx + 1} / ${totalSets}</span>
-        <span class="micro-label as-prev">TARGET ${ex.isAccessory && ex.targetRpe ? `RPE ${ex.targetRpe}` : escapeHtml(exercisePlanText(ex))}</span>
+        <span class="micro-label as-prev">TARGET ${ex.isAccessory && ex.targetRpe
+          ? `RPE ${ex.targetRpe}`
+          : `${fmtW(ex.plannedWeight)} × ${escapeHtml(String(ex.plannedReps ?? '—'))}`}</span>
       </div>
       <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
         <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
@@ -4214,7 +4232,7 @@ function renderActiveExerciseCard(ex, exIdx) {
       ${activeBlock}
       ${progressionNote}
       <details class="ui-details compact-details mt-8" data-ui-key="exercise-${ex.key}-${ex.menuType}">
-        <summary>メモ・状態・調整</summary>
+        <summary>DETAILS</summary>
         <div class="ex-sub">予定 ${exercisePlanText(ex)} ・ ${escapeHtml(ex.progressionReason || '予定重量')}${ex.pctNote ? ` ・ ${escapeHtml(ex.pctNote)}` : ''}</div>
         ${prFacts.length ? `<div class="status-row">${prFacts.map(text => `<span class="chip chip-outline">${text}</span>`).join('')}</div>` : ''}
         ${ex.reductionCandidateWeight ? `<div class="accessory-suggestion"><span class="suggestion-label">5%減候補</span><span>${fmtW(ex.reductionCandidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptMainReduction" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
@@ -4255,7 +4273,7 @@ function renderCompletedExerciseCard(ex, exIdx) {
     <div class="card done-card exercise-card-complete" data-ex="${exIdx}">
       <div class="dn-row">
         <span class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
-        <span class="chip chip-ok">${ICON_CHECK} 完了</span>
+        <span class="chip chip-ok">${ICON_CHECK} DONE</span>
       </div>
       <div class="dn-row mt-8">
         <span class="dn-best">${bestText}</span>
@@ -4412,7 +4430,7 @@ function renderToday() {
 
   const nextCard = upNext.length
     ? `<section class="up-next">
-        <div class="sec-label">次の種目</div>
+        <div class="micro-label sec-label">UP NEXT</div>
         ${upNext.map(({ ex, exIdx }) => `
           <div class="next-row" data-make-active="${exIdx}" role="button" tabindex="0" aria-label="${escapeHtml(displayExerciseName(ex.key, ex.name))}を先に実施">
             <span class="nx-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
@@ -4425,7 +4443,7 @@ function renderToday() {
 
   const completedCards = completed.length
     ? `<details class="ui-details completed-exercises" data-ui-key="completed">
-        <summary><span>完了済み ${completed.length}件</span></summary>
+        <summary><span>COMPLETED ${completed.length}</span></summary>
         ${completed.map(({ ex, exIdx }) => renderCompletedExerciseCard(ex, exIdx)).join('')}
       </details>`
     : '';
@@ -4436,7 +4454,7 @@ function renderToday() {
         ${(session.skippedRestExercises || []).map(ex => `
           <div class="next-row pause-row">
             <span class="nx-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span>
-            <span class="chip chip-pause">休止中</span>
+            <span class="chip chip-pause">PAUSED</span>
           </div>
         `).join('')}
       </div>`
@@ -4468,14 +4486,14 @@ function renderToday() {
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}
     ${active && firstPendingSetIndex(active.ex) >= 0 ? `
       <div class="set-dock">
-        <button class="btn-primary set-dock-btn" data-action="completeSet" data-ex="${active.exIdx}">${ICON_CHECK} セット完了</button>
+        <button class="btn-primary set-dock-btn" data-action="completeSet" data-ex="${active.exIdx}">${ICON_CHECK} LOG SET</button>
       </div>` : ''}
     ${nextCard}
     ${completedCards}
     ${pausedRows}
     <div class="btn-pair mt-12">
-      <button class="btn-sec" id="btnAddTodayAccessory">＋補助種目を追加</button>
-      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">トレーニング完了</button>
+      <button class="btn-sec" id="btnAddTodayAccessory">＋ ADD EXERCISE</button>
+      <button class="${incomplete.length ? 'btn-sec' : 'btn-primary'}" id="btnFinishSession">FINISH WORKOUT</button>
     </div>
     ${session.completed ? '<button class="btn-text btn-block" id="btnNewTodaySession">同日に別セッションを開始</button>' : ''}
   `;

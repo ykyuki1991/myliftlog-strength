@@ -223,7 +223,7 @@ body[data-header-variant="compact"] .hd-eyebrow { max-height: 0; opacity: 0; }
 .hd-title {
   margin: 0;
   min-width: 0;
-  font-family: var(--font-jp);
+  font-family: var(--font-num);
   font-size: var(--fs-34);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--tracking-tight);
@@ -356,7 +356,24 @@ body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
   font-weight: var(--fw-semibold);
 }
 
-.menu-row-name { flex: 1; min-width: 0; }
+.menu-row-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-num);
+  letter-spacing: 0.02em;
+}
+
+/* The Japanese name stays under the English one: the label is chrome, but the
+   user still thinks of the day as 「肩・腕」. */
+.menu-row-sub {
+  display: block;
+  font-family: var(--font-jp);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+  color: var(--text-3);
+  margin-top: 1px;
+}
 .menu-row-note { color: var(--text-3); }
 .menu-row-check { flex: 0 0 20px; color: var(--accent-bright); }
 .menu-row-check .icon { width: 20px; height: 20px; }
@@ -544,6 +561,14 @@ body:has(.set-dock) #main { padding-bottom: 84px; }
   font-weight: var(--fw-semibold);
   color: var(--text-3);
   margin: 0 0 9px;
+}
+
+/* Uppercase Latin chrome is set in the numeral face, like the micro labels. */
+.set-dock-btn,
+.completed-exercises > summary,
+.compact-details > summary {
+  font-family: var(--font-num);
+  letter-spacing: var(--tracking-label);
 }
 
 /* ==========================================================================
