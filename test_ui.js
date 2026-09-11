@@ -75,12 +75,27 @@ async function run() {
     await page.locator('#restClose').click();
     const afterClose = await page.locator('.active-set').boundingBox();
     check(Math.abs(afterClose.y - inputTop.y) < 2, 'timer does not shift recording controls');
-    // RPEは入力ボックスから詳細ブロックへ移動した。一度開けば再描画をまたいで開いたまま。
+    // RPEは種目に1つではなく、これから記録するセットに付く。
+    await page.locator('[data-set-rpe="9.5"]').click();
+    let rpeSession = await page.evaluate(() => getOrCreateTodaySession());
+    check(String(rpeSession.exercises[0].sets[1].rpe) === '9.5', 'RPE is recorded on the set being logged');
+    check(rpeSession.exercises[0].rpe === '9.5', 'the exercise keeps a single derived value for the log');
+    await page.locator('[data-set-rpe="9.5"]').click();
+    rpeSession = await page.evaluate(() => getOrCreateTodaySession());
+    check(rpeSession.exercises[0].sets[1].rpe == null, 'tapping the same value clears it');
+    check(!(await page.locator('[data-rpe-edit]').count()), 'the old per-exercise RPE editor is gone');
+    check(!(await page.locator('.plate-strip').count()), 'the plate breakdown is gone');
+    // ステッパー: 数字は行の中心、単位は数字の外。桁が変わっても中心は動かない。
+    const axis = await page.evaluate(() => {
+      const centre = sel => {
+        const el = document.querySelector(sel);
+        const r = el.getBoundingClientRect();
+        return Math.round(r.left + r.width / 2);
+      };
+      return { kg: centre('.stepper-weight .stepper-input'), reps: centre('.stepper-reps .stepper-input') };
+    });
+    check(Math.abs(axis.kg - axis.reps) <= 1, `weight and reps share one centre axis (${axis.kg} vs ${axis.reps})`);
     await page.locator('details[data-ui-key^="exercise-"] > summary').first().click();
-    await page.locator('[data-rpe-edit="9.5"]').click();
-    check((await page.evaluate(() => getOrCreateTodaySession())).exercises[0].rpe === '9.5', 'RPE saved');
-    await page.locator('[data-rpe-edit="9.5"]').click();
-    check((await page.evaluate(() => getOrCreateTodaySession())).exercises[0].rpe === '未入力', 'RPE deselection');
     await page.locator('textarea[data-field="note"]').fill('UI regression draft');
     await page.locator('.chip[data-pain="なし"]').click();
     check(await page.locator('[data-ui-key^="exercise-"]').evaluate(el => el.open), 'disclosure survives rerender');

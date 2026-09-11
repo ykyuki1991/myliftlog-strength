@@ -2663,6 +2663,19 @@ function previousMainSummary(ex, session) {
   };
 }
 
+// 記録画面の「前回」行。目につくクロームは英語、種目名だけ日本語という方針に合わせる。
+// Last 132.5kg × 5 @8.5 · 8 days ago
+function previousSummaryEn(previous) {
+  const log = previous?.log;
+  if (!log) return 'No previous record';
+  const reps = (log.sets || []).filter(set => set.done).map(set => parseInt(set.reps, 10) || 0).join('/');
+  const weight = parseFloat(log.plannedWeight) || maxSetWeight(log);
+  const rpe = log.rpe && log.rpe !== '未入力' ? ` @${log.rpe}` : '';
+  const days = previous.days;
+  const ago = days == null ? '' : ` · ${days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`}`;
+  return `Last ${fmtW(weight)}kg × ${reps || '-'}${rpe}${ago}`;
+}
+
 function getMainPrFacts(ex) {
   const logs = (store.logs || []).filter(log => log.exerciseKey === ex.key && !log.isExerciseRest && !log.todayOnlyDeleted);
   const doneSets = logs.flatMap(log => (log.sets || []).filter(set => set.done).map(set => ({ ...set, log })));
@@ -2713,12 +2726,22 @@ function sessionPrSetIndexes(ex, session = undefined) {
 
 // 今セッションの完了セットから e1RM を出す。既存の estimateMaxFromSet を使うだけで
 // 新しい計算式は足さない。RPE未入力なら出さない。
+// 種目のRPEはセットから導く。ログ・推定MAX・過去の記録は ex.rpe を見ているので、
+// セットごとのRPEを入れても、その手前で1つの値に畳んでおく。
+// 採るのは最後に記録したセットの値。直近の感覚がその日の代表値になる。
+function syncExerciseRpeFromSets(ex) {
+  if (!ex) return;
+  const recorded = (ex.sets || []).filter(set => set.rpe != null && set.rpe !== '');
+  if (!recorded.length) return;
+  ex.rpe = String(recorded[recorded.length - 1].rpe);
+}
+
 function sessionEstimatedMax(ex) {
   if (!isBig3Key(ex?.key) && !ex?.isFourMenuMain) return null;
   const done = (ex.sets || []).filter(set => set.done && !set.skipped && set.weight && set.reps);
   if (!done.length) return null;
   const best = done.reduce((acc, set) => {
-    const est = estimateMaxFromSet(set.weight, set.reps, ex.rpe);
+    const est = estimateMaxFromSet(set.weight, set.reps, set.rpe ?? ex.rpe);
     if (est.value == null) return acc;
     return est.value > (acc?.value ?? -1) ? est : acc;
   }, null);
@@ -2762,51 +2785,6 @@ function renderPrBadge(ex, justSet = false, session = undefined) {
       <span class="micro-label pr-badge-tag">PR</span>
       <span class="pr-badge-value num">${fmtW(weight)}</span>
     </span>`;
-}
-
-// プレート計算: 20kgバー前提で片側の内訳を出す。
-// バーベルを使わない種目、判定できない種目では出さない。
-const PLATE_STEPS = [20, 15, 10, 5, 2.5, 1.25];
-const BARBELL_LIFT_KEYS = new Set(['bench', 'squat', 'halfDead', 'floorDead', 'deadlift', 'ohp', 'militaryPress', 'row', 'barbellRow']);
-
-function usesBarbell(ex) {
-  if (!ex) return false;
-  if (ex.isBig3 || ex.isFourMenuMain) return true;
-  if (BARBELL_LIFT_KEYS.has(ex.key)) return true;
-  return false;
-}
-
-function platesPerSide(totalWeight, barWeight = 20) {
-  const total = parseFloat(totalWeight);
-  if (!Number.isFinite(total) || total <= barWeight) return null;
-  let side = (total - barWeight) / 2;
-  const plates = [];
-  for (const step of PLATE_STEPS) {
-    while (side >= step - 1e-9 && plates.length < 12) {
-      plates.push(step);
-      side = Math.round((side - step) * 1000) / 1000;
-    }
-  }
-  return { plates, remainder: Math.round(side * 100) / 100 };
-}
-
-function renderPlateBreakdown(ex, weight) {
-  if (!usesBarbell(ex)) return '';
-  const result = platesPerSide(weight);
-  if (!result || !result.plates.length) return '';
-  const bars = result.plates.map(p => {
-    const h = Math.round(10 + (p / 20) * 18);
-    return `<span class="plate" style="--plate-h:${h}px" data-plate="${p}"><span class="plate-w num">${p}</span></span>`;
-  }).join('');
-  // 端数は必ず最小プレート(1.25kg)未満になるので、1.25以上という条件では一度も出なかった。
-  // 0.25kg刻みの増量設定を使うと普通に端数が出る。足りない分は書く。
-  const short = result.remainder >= 0.25;
-  return `
-    <div class="plate-strip" aria-label="片側のプレート ${result.plates.join('、')}キロ${short ? `。片側 ${result.remainder}キロ足りません` : ''}">
-      <span class="micro-label plate-side">PER SIDE</span>
-      <span class="plate-bar">${bars}</span>
-      ${short ? `<span class="plate-remainder num">+${result.remainder}kg</span>` : ''}
-    </div>`;
 }
 
 function buildFourMenuMainExercise(menuKey, settings = store.settings, selectedBackLiftKey = null) {
@@ -4097,6 +4075,7 @@ function setRowState(set, setIdx, activeIdx) {
 function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false, cueType = null) {
   const weight = set.weight != null && set.weight !== '' ? fmtW(set.weight) : '—';
   const reps = set.reps != null && set.reps !== '' ? set.reps : '—';
+  const rpe = set.rpe != null && set.rpe !== '' ? set.rpe : '—';
   const editAttr = editExIdx != null
     ? ` data-edit-ex="${editExIdx}" role="button" tabindex="0" aria-label="セット${setIdx + 1}を編集"`
     : ' role="row"';
@@ -4105,6 +4084,7 @@ function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false, cueType 
       <span class="set-td set-td-n num">${setIdx + 1}</span>
       <span class="set-td set-td-w num">${weight}</span>
       <span class="set-td set-td-r num">${reps}</span>
+      <span class="set-td set-td-rpe num">${rpe}</span>
       <span class="set-td set-td-s">${isPr ? '<span class="pr-tag">PR</span>' : ''}${setStatusCell(state)}</span>
     </div>`;
 }
@@ -4120,10 +4100,11 @@ function renderSetTable(ex, exIdx, activeIdx, cue = null, session = undefined) {
   return `
     <div class="set-table" role="table" aria-label="セット履歴">
       <div class="set-thead" role="row">
-        <span class="micro-label set-td-n" role="columnheader">SET</span>
-        <span class="micro-label set-td-w" role="columnheader">WEIGHT</span>
-        <span class="micro-label set-td-r" role="columnheader">REPS</span>
-        <span class="micro-label set-td-s" role="columnheader">STATUS</span>
+        <span class="micro-label set-td-n" role="columnheader"></span>
+        <span class="micro-label set-td-w" role="columnheader">kg</span>
+        <span class="micro-label set-td-r" role="columnheader">reps</span>
+        <span class="micro-label set-td-rpe" role="columnheader">rpe</span>
+        <span class="micro-label set-td-s" role="columnheader"></span>
       </div>
       ${rows}
     </div>`;
@@ -4253,45 +4234,56 @@ function renderActiveExerciseCard(ex, exIdx) {
   // 自重種目（チンニング等）もkgで表示・編集する（アシスト=軽く/加重=重くを同じ欄で扱う）
   const currentWeight = set.weight ?? ex.plannedWeight;
   const hasSetReps = set.reps != null && set.reps !== '';
-  const rpeVal = ex.rpe && ex.rpe !== '未入力' ? `@${ex.rpe}` : '—';
 
-  // RPEは入力ボックスの見た目をやめ、入力済みのときだけ小さく出す。編集は詳細ブロック。
-  const rpeEditorHtml = `
-    <div class="micro-label mt-8">RPE</div>
-    <div class="vb-editor rpe-editor" aria-label="種目のRPE">
-      ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<button class="chip chip-tap ${String(ex.rpe) === r ? 'on' : ''}" aria-pressed="${String(ex.rpe) === r}" data-rpe-edit="${r}" data-ex="${exIdx}">${r}</button>`).join('')}
+  // 数字の幅を文字数から出して、入力欄を中身ちょうどの幅にする。
+  // こうすると単位が数字の右にぶら下がり、数字そのものは行の中心に残る。
+  // 小数点は数字1桁より狭いので 0.55 で数える。
+  const figureCh = (value, fallback = 3) => {
+    const text = String(value ?? '');
+    if (!text) return fallback;
+    return Math.max(1.6, [...text].reduce((n, c) => n + (c === '.' ? 0.55 : 1), 0));
+  };
+  const weightCh = figureCh(currentWeight);
+  const repsCh = figureCh(hasSetReps ? set.reps : ex.plannedReps, 1.8);
+  // 重量の単位。ダンベルは片手の重さなので ea（each）を付ける。
+  const weightUnit = ex.weightType === 'dumbbell' ? 'kg ea' : 'kg';
+
+  // RPEはセットごとに記録する。種目に1つだけ持たせていたときは
+  // 「どのセットがきつかったか」が残らなかった。
+  const setRpeHtml = `
+    <div class="set-rpe" role="group" aria-label="このセットのRPE">
+      ${['8', '8.5', '9', '9.5', '10'].map(r => `<button class="chip chip-tap ${String(set.rpe ?? '') === r ? 'on' : ''}" aria-pressed="${String(set.rpe ?? '') === r}" data-set-rpe="${r}" data-ex="${exIdx}">${r}</button>`).join('')}
     </div>`;
 
   const activeBlock = setIdx >= 0 ? `
     <div class="active-set">
       <div class="as-head">
-        <span class="micro-label">SET ${setIdx + 1} / ${totalSets}</span>
-        <span class="micro-label as-prev">TARGET ${ex.isAccessory && ex.targetRpe
+        <span class="micro-label">Set ${setIdx + 1} of ${totalSets}</span>
+        <span class="micro-label as-prev">Target ${ex.isAccessory && ex.targetRpe
           ? `RPE ${ex.targetRpe}`
           : `${fmtW(ex.plannedWeight)} × ${escapeHtml(String(ex.plannedReps ?? '—'))}`}</span>
       </div>
       <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
         <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
         <label class="stepper-value">
-          <span class="micro-label stepper-label">WEIGHT (KG)${ex.weightType === 'dumbbell' ? ' ・ PER HAND' : ''}</span>
           <span class="stepper-figure">
-            <input class="stepper-input" type="number" inputmode="decimal" step="0.1" min="0" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+            <input class="stepper-input" type="number" inputmode="decimal" step="0.1" min="0" style="width:${weightCh}ch" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+            <span class="stepper-unit" aria-hidden="true">${weightUnit}</span>
           </span>
         </label>
         <button class="stepper-btn" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋</button>
       </div>
-      ${renderPlateBreakdown(ex, currentWeight)}
       <div class="stepper stepper-reps">
         <button class="stepper-btn" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}" aria-label="回数を1減らす">−</button>
         <label class="stepper-value">
-          <span class="micro-label stepper-label">REPS</span>
           <span class="stepper-figure">
-            <input class="stepper-input" type="number" inputmode="numeric" step="1" min="0" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+            <input class="stepper-input" type="number" inputmode="numeric" step="1" min="0" style="width:${repsCh}ch" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+            <span class="stepper-unit" aria-hidden="true">reps</span>
           </span>
         </label>
         <button class="stepper-btn" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}" aria-label="回数を1増やす">＋</button>
       </div>
-
+      ${setRpeHtml}
     </div>
   ` : '';
 
@@ -4317,9 +4309,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         </div>
       </div>
       <div class="ex-previous">
-        <span class="micro-label">PREVIOUS</span>
-        <span class="ex-previous-value num">${previous?.log ? escapeHtml(previous.text.replace(/^前回\s*/, '')) : '—'}</span>
-        ${rpeVal !== '—' ? `<span class="ex-rpe num">${rpeVal}</span>` : ''}
+        <span class="ex-previous-value num">${previous?.log ? escapeHtml(previousSummaryEn(previous)) : 'No previous record'}</span>
         ${(() => {
           const e1rm = sessionEstimatedMax(ex);
           return e1rm ? `<span class="ex-e1rm"><span class="micro-label">E1RM</span><span class="num">${fmtW(e1rm)}</span></span>` : '';
@@ -4340,7 +4330,6 @@ function renderActiveExerciseCard(ex, exIdx) {
         ${prFacts.length ? `<div class="status-row">${prFacts.map(text => `<span class="chip chip-outline">${text}</span>`).join('')}</div>` : ''}
         ${ex.reductionCandidateWeight ? `<div class="accessory-suggestion"><span class="suggestion-label">5%減候補</span><span>${fmtW(ex.reductionCandidateWeight)}kg</span><button class="btn-secondary btn-small" data-action="adoptMainReduction" data-ex="${exIdx}">今後へ反映</button></div>` : ''}
         ${ex.adjusted ? `<div class="ex-sub">調整 ${ex.adjusted > 0 ? '+' : ''}${ex.adjusted}kg</div>` : ''}
-        ${rpeEditorHtml}
         <div class="micro-label mt-8">PAIN</div>
         <div class="row-rpe-pain">${painChips}</div>
         <label class="field mt-8">
@@ -4490,7 +4479,8 @@ function renderSessionMetrics({ doneExercises, totalExercises, volume, totalDone
       <span class="micro-label">${label}</span>
       <span class="metric-value num">${value}</span>
     </div>`;
-  // 未着手の値は 0 ではなく — で出す。何もないことを大きく出さない。
+  // 1セットも記録していない間はこの行ごと出さない（呼び出し側で判定）。
+  // 3つ並んだうちの2つが「—」になる状態を画面の一等地に置かない。
   const zeroable = (n, suffix = '') => (n > 0 ? `${n.toLocaleString('ja-JP')}${suffix}` : '—');
   return `
     <div class="metric-row" aria-label="今日の集計">
@@ -4604,7 +4594,7 @@ function renderToday() {
     : '';
 
   return `
-    ${incomplete.length ? renderSessionMetrics({
+    ${incomplete.length && totalDoneSets > 0 ? renderSessionMetrics({
       doneExercises: completed.length,
       totalExercises: session.exercises.length,
       volume,
@@ -4738,14 +4728,18 @@ function afterToday() {
     input.addEventListener('focus', () => { if (typeof input.select === 'function') input.select(); });
   });
 
-  // RPE（アクティブセットのエディタ内チップ・再タップで解除）
-  document.querySelectorAll('[data-rpe-edit]').forEach(c => {
+  // RPE（これから記録するセットのチップ・再タップで解除）
+  document.querySelectorAll('[data-set-rpe]').forEach(c => {
     c.addEventListener('click', (e) => {
       e.stopPropagation();
       const exIdx = parseInt(c.dataset.ex);
       const ex = session.exercises[exIdx];
       if (!ex) return;
-      ex.rpe = ex.rpe === c.dataset.rpeEdit ? '未入力' : c.dataset.rpeEdit;
+      const setIdx = firstPendingSetIndex(ex);
+      const set = ex.sets[setIdx];
+      if (!set) return;
+      set.rpe = String(set.rpe ?? '') === c.dataset.setRpe ? null : c.dataset.setRpe;
+      syncExerciseRpeFromSets(ex);
       todayEdit = null; // タップで確定して閉じる
       persistTodaySession(session);
       render();
@@ -4829,6 +4823,7 @@ function afterToday() {
         const doneIdx = firstPendingSetIndex(ex);
         const result = toggleNextSetCompletion(session, exIdx);
         if (result.ok) {
+          if (!result.reverted) syncExerciseRpeFromSets(ex);
           todayEdit = null;
           persistTodaySession(session);
           if (!result.reverted) {
@@ -8495,8 +8490,6 @@ if (typeof window !== 'undefined') {
     restoreDeletedMain,
     addDaysStr,
     dateToLocalStr,
-    platesPerSide,
-    renderPlateBreakdown,
     recordBodyWeight,
     latestBodyWeight,
     migrateStoreData,
