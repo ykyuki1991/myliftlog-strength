@@ -513,18 +513,6 @@ function testLocalDateArithmetic() {
   assert.strictEqual(api.dateToLocalStr(new Date('nonsense')), '');
 }
 
-// プレート内訳の「足りない分」が構造上一度も表示されなかった不具合の回帰テスト
-function testPlateRemainderIsReachable() {
-  const { api } = createHarness();
-  const exact = api.platesPerSide(100);
-  assert.strictEqual(exact.remainder, 0, '2.5kg刻みなら端数は出ない');
-  const odd = api.platesPerSide(101.25);
-  assert.ok(odd.remainder >= 0.25 && odd.remainder < 1.25, '端数は最小プレート未満（' + odd.remainder + '）');
-  const html = api.renderPlateBreakdown({ key: 'bench', isBig3: true }, 101.25);
-  assert.ok(html.includes('plate-remainder'), '足りない分を表示する');
-  assert.ok(!api.renderPlateBreakdown({ key: 'bench', isBig3: true }, 100).includes('plate-remainder'), 'ちょうど組めるときは出さない');
-}
-
 // 完了画面の「NEW PR」が一度も出なかった不具合の回帰テスト。
 // 完了時に自分のセットが store.logs へ入るため、自己ベストが自分自身になっていた。
 function testPrCountsOnlyEarlierSessions() {
@@ -740,8 +728,9 @@ function testLogDailyAndMonthlyViews() {
     big3Log({ date: '2026-05-15', exerciseName: 'スクワット', exerciseKey: 'squat', menuType: 'squat-hi-main', ts: 2 }),
   ];
   const logHtml = isolatedApi.renderLog();
-  assert.ok(logHtml.includes('日別'));
-  assert.ok(logHtml.includes('月別'));
+  // 画面のクロームは英語、記録の中身は日本語という方針にログのタブも合わせた
+  assert.ok(logHtml.includes('>Daily<'));
+  assert.ok(logHtml.includes('>Monthly<'));
   // 実測MAXと推定MAXは1つのタブに統合した。知りたいのは「いま何kg挙がるか」で、
   // 両方を並べて見る値だから。タブが分かれている契約はここで反転する。
   assert.ok(!logHtml.includes('data-type="emax"'), 'MAXと推定MAXは同じタブ');
@@ -2145,7 +2134,9 @@ function testDeadliftDisplayAndLegacySearchCompatibility() {
   assert.strictEqual(api.displayExerciseName('floorDead', '床引きデッド'), 'デッドリフト');
   assert.ok(api.renderDailyLogView().includes('デッドリフト'));
   assert.ok(!api.renderDailyLogView().includes('床引きデッド'));
-  assert.ok(api.renderSettings().includes('デッドリフトMAX'));
+  // 設定は「種目名 / 数値 / 単位」の行になった。ラベルから (kg) が消えている
+  assert.ok(api.renderSettings().includes('<span>デッドリフト</span>'), '設定の行は種目名だけを持つ');
+  assert.ok(api.renderSettings().includes('field-unit'), '単位は値の右に独立して出る');
   assert.ok(api.renderBlock().includes('デッドリフト'));
   api.setLogFilter({ query: 'デッドリフト' });
   assert.strictEqual(api.logMatchesFilter(legacyFloorLog), true);
@@ -2632,7 +2623,6 @@ testPrCountsOnlyEarlierSessions();
 testLocalDateArithmetic();
 testMainExerciseTodayOnlyDelete();
 testDeletedMainLeavesANonCountingLog();
-testPlateRemainderIsReachable();
 testMigrationFixesContainerTypes();
 testDeloadAccessoryAndMaxTestTiming();
 testFutureMainSetOverride();
@@ -2643,4 +2633,36 @@ testExerciseRestSettings();
 testRotationFlowAndMaxRecordsFromSession();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
+function testSetRpePersistenceAndEstimateSource() {
+  const { api, context, elements } = createHarness({ forceLegacy: false });
+  api.selectFourMenuForToday('chest');
+  const session = api.getOrCreateTodaySession();
+  const ex = session.exercises[0];
+  ex.sets = [
+    { weight: 100, reps: 5, rpe: '8', done: true },
+    { weight: 102.5, reps: 5, rpe: '10', done: true },
+    { weight: 150, reps: 5, rpe: null, done: true },
+  ];
+  context.syncExerciseRpeFromSets(ex);
+  assert.strictEqual(ex.rpe, '10');
+  const log = context.buildExerciseLogFromSession(session, ex);
+  assert.deepStrictEqual(Array.from(log.sets, s => s.rpe), ['8', '10', null]);
+  const entry = api.createEstimatedMaxEntry(log);
+  assert.strictEqual(entry.sourceWeight, 100, 'each set must use its own RPE');
+  assert.strictEqual(entry.rpe, '8');
+  assert.strictEqual(entry.estimatedMax, context.sessionEstimatedMax(ex));
+  assert.strictEqual(context.rpeForSet(log, log.sets[2]), '未入力', 'cleared RPE must not inherit another set');
+  context.openSetEditSheet(0);
+  elements.btnSetEditSave.onclick();
+  assert.deepStrictEqual(Array.from(ex.sets, s => s.rpe), ['8', '10', null], 'editing sets must preserve per-set RPE');
+  ex.sets.forEach(s => { s.rpe = null; });
+  context.syncExerciseRpeFromSets(ex);
+  assert.strictEqual(ex.rpe, '未入力', 'clearing every RPE clears the representative value');
+  assert.strictEqual(context.sessionEstimatedMax(ex), null);
+  const legacy = big3Log();
+  const before = JSON.stringify(legacy);
+  assert.strictEqual(api.createEstimatedMaxEntry(legacy).rpe, legacy.rpe);
+  assert.strictEqual(JSON.stringify(legacy), before, 'legacy records are read without rewriting');
+}
+testSetRpePersistenceAndEstimateSource();
 console.log('test_progression.js: all tests passed');

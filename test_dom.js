@@ -266,8 +266,14 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(css.includes('.rest-ring-prog'), 'rest timer is an arc');
   assert.ok(css.includes('stroke-dashoffset'), 'arc shows remaining time');
   assert.ok(!css.includes('body.keyboard-open .rest-bar'), 'ring must survive the keyboard');
-  assert.ok(html.includes('20260909-precision-today'));
-  assert.ok(sw.includes("mll-strength-v26"));
+  assert.ok(html.includes('20260911-one-typeface'), 'cache-bust string moves with the release');
+  assert.ok(sw.includes("mll-strength-v27"), 'the worker version moves with it');
+  // 書体は1つ。バンドルしていた数字専用フォントは廃止した
+  assert.ok(!css.includes('@font-face'), 'no bundled face');
+  assert.ok(!html.includes('.woff2'), 'nothing preloads a font file');
+  assert.ok(!sw.includes('.woff2'), 'nothing precaches a font file');
+  const bodyBase = css.match(/html, body\s*\{[^}]*\}/)?.[0] || '';
+  assert.ok(bodyBase.includes('font-variant-numeric: tabular-nums'), '桁揃えはアプリ全体の指定で担保する');
   assert.ok(html.includes('role="timer"'));
   assert.ok(css.includes('font-variant-numeric: tabular-nums'));
 }

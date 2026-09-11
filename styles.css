@@ -4,33 +4,6 @@
    See DESIGN.md for the numeric constraints these tokens have to satisfy.
    ========================================================================== */
 
-/* --------------------------------------------------------------------------
-   Archivo Narrow (SIL OFL 1.1, fonts/OFL.txt), subset to digits, Latin and the
-   punctuation this app renders. 4.6 KB per weight. Chosen over Barlow
-   Condensed, Saira Condensed and IBM Plex Sans Condensed because its digits
-   are tabular by default AND it ships a `tnum` feature, and because its digit
-   advance is the narrowest of the four (0.456 em) -- which is what lets a
-   five-character weight fit the 56px display at 320px. See DESIGN.md.
-
-   font-display: swap, so a failed or slow load renders the system stack
-   instead of blocking the number the user is reading.
-   -------------------------------------------------------------------------- */
-@font-face {
-  font-family: "Archivo Narrow";
-  src: url("fonts/archivo-narrow-400.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Archivo Narrow";
-  src: url("fonts/archivo-narrow-600.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -85,7 +58,9 @@
   --fs-17: 17px;
   --fs-22: 22px;
   --fs-34: 34px;
-  --fs-56: 56px;
+  /* 56px は細長い専用書体の幅を前提にした大きさだった。書体を1つに揃えた時点で
+     同じ文字数が入らなくなるので、最上段を40pxに下げる。段数は7のまま。 */
+  --fs-40: 40px;
   --fw-regular: 400;
   --fw-semibold: 600;
   --tracking-tight: 0;
@@ -113,10 +88,8 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  /* Numerals and uppercase micro labels. Bundled, never fetched from a CDN;
-     falls back to the system stack if the file fails to load. */
-  --font-num: "Archivo Narrow", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  /* Japanese and all running text stays on the system stack. */
+  /* 数字も日本語も1つの書体で出す。骨格の違う2書体が同じ行に並ぶと、
+     どれだけ位置を揃えても揃って見えない。桁揃えは font-variant-numeric に任せる。 */
   --font-jp: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
              "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
 
@@ -161,6 +134,8 @@ html, body {
   font-family: var(--font-jp);
   font-size: var(--fs-15);
   line-height: 1.5;
+  /* 桁が縦に揃うのは書体ではなくこの指定の仕事。アプリ全体に効かせる */
+  font-variant-numeric: tabular-nums;
   -webkit-text-size-adjust: 100%;
   color-scheme: dark;
   min-height: 100vh;
@@ -221,7 +196,6 @@ body[data-header-variant="compact"] .hd-eyebrow { max-height: 0; opacity: 0; }
 .hd-title {
   margin: 0;
   min-width: 0;
-  font-family: var(--font-num);
   font-size: var(--fs-34);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--tracking-tight);
@@ -361,7 +335,6 @@ body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
 .menu-row-name {
   flex: 1;
   min-width: 0;
-  font-family: var(--font-num);
   letter-spacing: 0.02em;
 }
 
@@ -392,7 +365,6 @@ input, textarea, select {
 .cal-cell,
 .hist-row .h-val,
 .max-current-val {
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--tracking-num);
 }
@@ -409,7 +381,6 @@ input, textarea, select {
    -------------------------------------------------------------------------- */
 .micro-label {
   display: block;
-  font-family: var(--font-num);
   font-size: var(--fs-11);
   font-weight: var(--fw-regular);
   letter-spacing: var(--tracking-label);
@@ -494,7 +465,6 @@ body[data-header-variant="compact"] .rest-ring { width: 40px; height: 40px; }
 }
 
 .rest-ring-time {
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--tracking-num);
   font-size: var(--fs-22);
@@ -569,7 +539,6 @@ body:has(.set-dock) #main { padding-bottom: 84px; }
 .set-dock-btn,
 .completed-exercises > summary,
 .compact-details > summary {
-  font-family: var(--font-num);
   letter-spacing: var(--tracking-label);
 }
 
@@ -1051,7 +1020,6 @@ body.keyboard-open .set-dock { bottom: 0; }
 /* The row that set it carries the same mark, so the table and the header
    agree about which set it was. */
 .pr-tag {
-  font-family: var(--font-num);
   font-size: var(--fs-11);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--tracking-label);
@@ -1062,47 +1030,6 @@ body.keyboard-open .set-dock { bottom: 0; }
   margin-right: 6px;
 }
 
-/* ==========================================================================
-   PLATE STRIP
-   What is on one side of the bar, as stacked rectangles sized by weight.
-   Greyscale on purpose: real IPF plate colours are far more saturated than
-   anything else in this palette and would pull the eye off the number.
-   ========================================================================== */
-.plate-strip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 44px;
-  margin: -2px 0 var(--space-2);
-  padding: 0 var(--space-2);
-}
-
-.plate-side { flex: 0 0 auto; }
-.plate-bar { display: flex; align-items: center; gap: 3px; min-width: 0; flex-wrap: wrap; }
-
-.plate {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: var(--plate-h, 24px);
-  border-radius: 3px;
-  background: var(--surface-3);
-}
-
-.plate[data-plate="20"], .plate[data-plate="15"] { background: var(--surface-3); }
-.plate[data-plate="10"], .plate[data-plate="5"] { background: var(--surface-2); }
-.plate[data-plate="2.5"], .plate[data-plate="1.25"] { background: var(--surface-2); }
-
-.plate-w {
-  font-family: var(--font-num);
-  font-size: var(--fs-11);
-  font-weight: var(--fw-semibold);
-  color: var(--text);
-  line-height: 1;
-}
-
-.plate-remainder { font-size: var(--fs-11); color: var(--text-3); flex: 0 0 auto; }
 
 /* ==========================================================================
    STEPPER
@@ -1114,57 +1041,69 @@ body.keyboard-open .set-dock { bottom: 0; }
    Full width, stacked: weight above, reps below. The value itself stays
    directly tappable for keyboard entry.
    ========================================================================== */
+/* --------------------------------------------------------------------------
+   STEPPER
+   One vertical axis runs down the middle of the input block. The numeral is
+   centred on it; the unit is taken out of flow and hangs off the numeral's
+   right edge, so it cannot push the numeral off centre. That is why 135 and 5
+   sit on the same axis however many digits they have -- and why the two
+   buttons, fixed to the ends of the row, read as symmetrical.
+
+   No fill of its own: the stepper sits directly on the card. One less plane.
+   -------------------------------------------------------------------------- */
 .stepper {
-  display: flex;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 46px;
   align-items: center;
-  gap: var(--space-2);
   width: 100%;
-  height: 80px;
-  padding: 0 var(--space-2);
-  margin-bottom: var(--space-2);
-  background: var(--surface-2);
-  border-radius: var(--radius-control);
+  margin: 0;
+  background: transparent;
 }
 
+.stepper + .stepper { margin-top: 10px; }
+
 .stepper-btn {
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-num);
   font-size: var(--fs-22);
   font-weight: var(--fw-regular);
   line-height: 1;
-  color: var(--text);
-  background: var(--surface-3);
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--surface-3);
   border-radius: var(--radius-pill);
 }
 
+.stepper-btn:last-child { justify-self: end; }
+
 .stepper-value {
-  flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
-  gap: 0;
   cursor: text;
 }
 
-/* The one place a centred label is right: it sits over a centred number. */
-.stepper-label { text-align: center; }
-
 .stepper-figure {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: baseline;
-  justify-content: center;
-  gap: 3px;
   min-width: 0;
-  max-width: 100%;
+}
+
+.stepper-unit {
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: 4px;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .stepper .stepper-input {
@@ -1177,7 +1116,6 @@ body.keyboard-open .set-dock { bottom: 0; }
   background: transparent;
   box-shadow: none;
   text-align: center;
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--tracking-num);
   font-weight: var(--fw-semibold);
@@ -1188,10 +1126,20 @@ body.keyboard-open .set-dock { bottom: 0; }
 .stepper .stepper-input:focus { box-shadow: none; outline: none; }
 .stepper-value:focus-within { box-shadow: inset 0 0 0 2px var(--accent); border-radius: var(--radius-control); }
 
-.stepper-weight .stepper-input { font-size: var(--fs-56); }
-/* Reps stays at 22px so the weight keeps a 2.5x lead on the same screen. */
-.stepper-reps { height: 64px; }
-.stepper-reps .stepper-input { font-size: var(--fs-22); }
+/* Weight and reps are one input block, so they take one size. Different sizes
+   made them read as two unrelated controls. */
+.stepper-weight .stepper-input,
+.stepper-reps .stepper-input { font-size: var(--fs-40); }
+
+/* 320px で 132.25kg のような6文字が ＋ に当たる。数字を一段落とし、
+   ボタンと単位も詰めて当たりを外す。中心軸は動かさない。 */
+@media (max-width: 360px) {
+  .stepper { grid-template-columns: 40px minmax(0, 1fr) 40px; }
+  .stepper-btn { width: 40px; height: 40px; min-height: 40px; }
+  .stepper-weight .stepper-input,
+  .stepper-reps .stepper-input { font-size: var(--fs-34); }
+  .stepper-unit { font-size: var(--fs-11); left: calc(100% + 3px); }
+}
 
 /* The estimated 1RM the app already computes, shown where it is useful --
    beside the exercise -- instead of behind a tab that asks you to approve it. */
@@ -1251,12 +1199,17 @@ body.keyboard-open .set-dock { bottom: 0; }
 .set-thead,
 .set-tr {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 44px;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr) 48px 26px;
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 10px;
-  border-left: 3px solid transparent;
+  gap: 6px;
+  padding: 0 4px;
+  border-left: 0;
 }
+
+/* A column header means nothing if it does not sit on its values' centre. */
+.set-thead .micro-label,
+.set-tr .set-td { text-align: center; }
+.set-thead .set-td-n, .set-tr .set-td-n { text-align: left; }
 
 .set-thead {
   min-height: 24px;
@@ -1281,21 +1234,41 @@ body.keyboard-open .set-dock { bottom: 0; }
 
 .set-td-n { font-size: var(--fs-13); font-weight: var(--fw-regular); color: var(--text-3); }
 .set-td-s { display: flex; justify-content: flex-end; }
-.set-thead .set-td-s { justify-content: flex-end; text-align: right; }
+.set-td-rpe { font-weight: var(--fw-regular); color: var(--text-2); }
 
 /* Done and skipped recede; the row in progress is the only painted one. */
 .set-tr-done .set-td { color: var(--text-2); }
 .set-tr-todo .set-td { color: var(--text-3); font-weight: var(--fw-regular); }
 .set-tr-skip .set-td { color: var(--text-3); font-weight: var(--fw-regular); }
 
+/* The row in progress is marked by its number and its status mark, not by a
+   painted band across the table. */
 .set-tr-active {
-  background: var(--accent-soft);
-  border-left-color: var(--accent);
-  /* one-sided bar, so this row stays square */
-  border-radius: 0;
+  background: transparent;
 }
 
+.set-tr-active .set-td-n { color: var(--accent); font-weight: var(--fw-semibold); }
+.set-tr-active .set-td { color: var(--text); }
+
 .set-tr[data-edit-ex] { cursor: pointer; }
+
+/* RPE is asked for once per set, next to the set it belongs to. Five taps
+   wide, so the row is one gesture and never a dropdown. */
+.set-rpe {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.set-rpe .chip {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border-radius: var(--radius-control);
+  font-size: var(--fs-15);
+  justify-content: center;
+}
 
 /* ---- STATUS markers ---- */
 .st-dot {
@@ -1396,12 +1369,11 @@ body.keyboard-open .set-dock { bottom: 0; }
 .active-set .as-prev {
   font-size: var(--fs-13);
   color: var(--text-3);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
 /* The weight field owns a full row; reps and RPE share the one below.
-   At --fs-56 a five-character weight cannot share a row at 320px. */
+   At --fs-40 a five-character weight cannot share a row at 320px. */
 .vbox-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1510,7 +1482,6 @@ body.keyboard-open .set-dock { bottom: 0; }
   font-size: var(--fs-13);
   color: var(--text-3);
   margin-bottom: 6px;
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1526,7 +1497,7 @@ body.keyboard-open .set-dock { bottom: 0; }
 }
 
 .card-main .vbox:first-child .vb-val {
-  font-size: var(--fs-56);
+  font-size: var(--fs-40);
   letter-spacing: var(--tracking-tight);
   line-height: 1;
   min-height: 68px;
@@ -1567,7 +1538,6 @@ body.keyboard-open .set-dock { bottom: 0; }
   flex: 0 0 auto;
   font-size: var(--fs-13);
   color: var(--text-2);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1616,7 +1586,6 @@ body.keyboard-open .set-dock { bottom: 0; }
 .done-card .dn-best {
   font-size: var(--fs-13);
   color: var(--text-2);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1658,8 +1627,8 @@ textarea {
 
 input:focus, select:focus, textarea:focus { box-shadow: inset 0 0 0 2px var(--accent); }
 select { height: var(--control-height); }
-.vbox input[type="number"] { letter-spacing: var(--tracking-tight); padding: 0; height: 40px; min-height: 40px; border: 0; box-shadow: none; background: transparent; text-align: center; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: var(--fs-22); font-weight: var(--fw-semibold); border-radius: var(--radius-control); }
-.vbox.weight-input input { font-size: var(--fs-56); letter-spacing: var(--tracking-tight); height: 68px; min-height: 68px; line-height: 1; }
+.vbox input[type="number"] { letter-spacing: var(--tracking-tight); padding: 0; height: 40px; min-height: 40px; border: 0; box-shadow: none; background: transparent; text-align: center; font-variant-numeric: tabular-nums; font-size: var(--fs-22); font-weight: var(--fw-semibold); border-radius: var(--radius-control); }
+.vbox.weight-input input { font-size: var(--fs-40); letter-spacing: var(--tracking-tight); height: 68px; min-height: 68px; line-height: 1; }
 .vbox:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
 .quick-adjust { display: flex; gap: 8px; margin-top: 8px; }
 .quick-adjust button { flex: 1; min-width: 0; font-size: var(--fs-13); font-weight: var(--fw-regular); min-height: 44px; background: var(--surface-2); color: var(--text-2); }
@@ -1764,7 +1733,6 @@ body.sheet-open .bottom-nav { display: none; }
 .today-summary .meta {
   font-size: var(--fs-13);
   color: var(--text-2);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1773,31 +1741,114 @@ body.sheet-open .bottom-nav { display: none; }
   background: var(--surface);
   box-shadow: none;
 }
-.plan-overview { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 24px; color: var(--text-2); font-size: var(--fs-13); }
-.plan-overview strong { color: var(--accent-bright); font-weight: var(--fw-semibold); }
-.plan-grid { display: grid; gap: 16px; }
+.plan-overview {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.plan-overview strong { color: var(--text); font-weight: var(--fw-semibold); }
+.plan-grid { display: grid; gap: 12px; }
 .plan-grid .card { margin: 0; }
-.plan-menu-name { display: flex; align-items: center; gap: 12px; }
-.plan-menu-name h2 { margin: 0; font-size: var(--fs-22); letter-spacing: var(--tracking-tight); font-weight: var(--fw-semibold); }
-.plan-index { color: var(--text-3); font-size: var(--fs-13); font-variant-numeric: tabular-nums; }
-.plan-main { margin: 24px 0 12px; }
-.plan-main > span { font-size: var(--fs-15); }
-.plan-main > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-top: 8px; }
-.plan-main strong { font: 500 32px var(--font-num); font-variant-numeric: tabular-nums; }
-.plan-main small { font-size: var(--fs-15); color: var(--text-2); }
-.plan-main > div > span { color: var(--text-2); font-size: var(--fs-13); }
+
+.plan-head {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The numbers are the rotation order, which is a real sequence: 01 always
+   follows 04. They stay because they say something, and stay quiet. */
+.plan-index { color: var(--text-3); font-size: var(--fs-13); }
+.plan-head h2 { margin: 0; font-size: var(--fs-22); letter-spacing: var(--tracking-tight); font-weight: var(--fw-semibold); }
+.plan-next { color: var(--accent-bright); }
+
+/* Name left, weight on the card's own axis, scheme right. Same row, one
+   baseline -- the figure no longer sits alone under the name. */
+.plan-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 16px;
+}
+
+.plan-main-name { font-size: var(--fs-15); color: var(--text-2); flex: 1 1 100%; }
+.plan-main-figure { display: inline-flex; align-items: baseline; gap: 2px; }
+.plan-main-figure b { font-size: var(--fs-34); font-weight: var(--fw-semibold); letter-spacing: var(--tracking-tight); }
+.plan-main-figure i { font-style: normal; font-size: var(--fs-13); font-weight: var(--fw-semibold); color: var(--text-3); }
+.plan-main-scheme { font-size: var(--fs-15); color: var(--text-2); }
+
+.plan-reason {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: var(--fs-13);
+  color: var(--text-3);
+}
+
+.plan-reason-date { flex: 0 0 auto; }
+
+/* The accessory list is a row on the card, not a filled box inside it. */
+.plan-accessories { margin-top: 14px; }
+
 .four-plan-card .next-row { flex-wrap: wrap; gap: 8px; padding: 12px 0; }
 .four-plan-card .next-row .nx-name { flex-basis: 100%; }
 .four-plan-card .next-row button { margin-left: auto; }
-.settings-save { margin-bottom: 16px; }
-.settings-save h2 { margin: 0; }
-.settings-save .btn-primary { width: auto; }
-.settings-max > .field { display: grid; grid-template-columns: minmax(0, 1fr) 108px; gap: 12px; align-items: center; padding: 8px 0; margin: 0; }
-.settings-max > .field > span { margin: 0; font-size: var(--fs-15); font-weight: var(--fw-regular); }
-.settings-max input { font-variant-numeric: tabular-nums; text-align: right; }
+/* Settings is a list of rows, not a stack of boxes. Label left, value right,
+   unit after the value, one hairline between rows. The save button sits after
+   the fields it saves -- above them it asked to be pressed before anything had
+   been typed. */
+.settings-max > .field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 22px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 0;
+  margin: 0;
+  border-bottom: 1px solid var(--surface-2);
+}
 
+.settings-max > .field:last-of-type { border-bottom: 0; }
+.settings-max > .field > span { margin: 0; font-size: var(--fs-15); font-weight: var(--fw-regular); color: var(--text); }
+
+.settings-max input {
+  text-align: right;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--surface-2);
+}
+
+.field-unit {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+}
+
+.settings-note {
+  margin-top: 14px;
+  font-size: var(--fs-13);
+  color: var(--text-3);
+}
+
+.settings-save-btn { width: 100%; margin-top: 14px; }
+
+.settings-max .micro-label { margin-bottom: 4px; }
+.settings-max .micro-label.mt-16 { margin-top: 22px; }
+
+/* The next menu is one fact about the card, not a reason to paint the whole
+   plane blue. A saturated field that size competes with the record button,
+   which is the only thing on screen that should be loud. */
 .four-plan-card.active-plan {
-  background: var(--accent-soft);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .four-plan-card .strong {
@@ -1816,7 +1867,6 @@ body.sheet-open .bottom-nav { display: none; }
 .exercise-list .ex-detail {
   display: inline-block;
   font-size: var(--fs-13);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1898,7 +1948,6 @@ body.sheet-open .bottom-nav { display: none; }
 .plan-line .strong {
   color: var(--text);
   font-weight: var(--fw-semibold);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1982,7 +2031,6 @@ body.sheet-open .bottom-nav { display: none; }
   font-size: var(--fs-13);
   color: var(--text-2);
   margin-top: 4px;
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2133,7 +2181,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 .max-current.gold .mc-label { color: var(--max); }
 
 .max-current-val {
-  font-size: var(--fs-56);
+  font-size: var(--fs-40);
   letter-spacing: var(--tracking-tight);
   font-weight: var(--fw-semibold);
   line-height: 1.05;
@@ -2149,7 +2197,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   font-size: var(--fs-13);
   color: var(--text-2);
   margin-top: 6px;
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2169,15 +2216,37 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   gap: 8px;
 }
 
+/* Filters are chrome above the content, so they stop being three filled
+   boxes. One row of two quiet selects, the search under them, separated from
+   the list by a single rule instead of by three stacked planes. */
 .log-filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--surface-2);
 }
 
+.log-filters input { grid-column: 1 / -1; }
+
+.log-filters select,
 .log-filters input {
-  grid-column: 1 / -1;
+  background: transparent;
+  border: 1px solid var(--surface-2);
+  height: 40px;
+  min-height: 40px;
+  font-size: var(--fs-15);
 }
+
+/* The recent-form block is a line you can open, not a card of its own.
+   .ui-details is declared later, so this has to out-specify it. */
+.ui-details.log-recent {
+  background: transparent;
+  padding: 0;
+  margin: 0 0 var(--space-3);
+}
+
+.ui-details.log-recent > summary { min-height: 40px; }
 
 .previous-performance {
   overflow-wrap: anywhere;
@@ -2193,7 +2262,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   flex: 0 0 42px;
   font-size: var(--fs-13);
   color: var(--text-3);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2213,7 +2281,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 .hist-row .h-src {
   font-size: var(--fs-13);
   color: var(--text-3);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2230,7 +2297,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 .cal-head .cal-title {
   font-size: var(--fs-17);
   font-weight: var(--fw-semibold);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2307,7 +2373,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   font-size: var(--fs-22);
   letter-spacing: var(--tracking-tight);
   font-weight: var(--fw-semibold);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2381,12 +2446,17 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   padding: 0;
 }
 
+/* And the summary is a row, not a filled bar. A plane the width of the card
+   reads as another card; a rule above it says the same thing for one pixel.
+   The chevron is what makes it look openable. */
 .card .ui-details > summary,
 .exercise-card .ui-details > summary,
 .four-plan-card .ui-details > summary {
-  padding: 0 var(--space-3);
-  background: var(--surface-2);
-  border-radius: var(--radius-control);
+  padding: 12px 0 0;
+  background: transparent;
+  border-top: 1px solid var(--surface-2);
+  border-radius: 0;
+  color: var(--text-2);
 }
 
 .card .ui-details[open] > summary { margin-bottom: var(--space-3); }
@@ -2503,7 +2573,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 .suggestion-row .delta {
   font-weight: var(--fw-semibold);
   color: var(--accent-bright);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2600,7 +2669,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 
 .summary-best-note {
   margin-left: 6px;
-  font-family: var(--font-num);
   font-size: var(--fs-11);
   letter-spacing: var(--tracking-label);
   color: var(--text-3);
@@ -2752,7 +2820,6 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   font-size: var(--fs-13);
   font-weight: var(--fw-semibold);
   color: var(--text-3);
-  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2786,7 +2853,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 /* ==========================================================================
    WORKOUT SUMMARY
    The one screen that gets the extravagance. Everything else in this app is
-   restrained so that this can be loud: the session volume at --fs-56, the
+   restrained so that this can be loud: the session volume at --fs-40, the
    change against the last session, and the personal bests. A drop is
    --text-3, never red -- a lighter day is not an error.
    ========================================================================== */
@@ -2798,7 +2865,7 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 .summary-eyebrow { text-align: center; }
 
 .summary-volume {
-  font-size: var(--fs-56);
+  font-size: var(--fs-40);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--tracking-num);
   line-height: 1.02;
