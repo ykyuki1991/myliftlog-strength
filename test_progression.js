@@ -2633,4 +2633,36 @@ testExerciseRestSettings();
 testRotationFlowAndMaxRecordsFromSession();
 
 assert.ok(h.storage[STORAGE_KEY], 'store should be persisted');
+function testSetRpePersistenceAndEstimateSource() {
+  const { api, context, elements } = createHarness({ forceLegacy: false });
+  api.selectFourMenuForToday('chest');
+  const session = api.getOrCreateTodaySession();
+  const ex = session.exercises[0];
+  ex.sets = [
+    { weight: 100, reps: 5, rpe: '8', done: true },
+    { weight: 102.5, reps: 5, rpe: '10', done: true },
+    { weight: 150, reps: 5, rpe: null, done: true },
+  ];
+  context.syncExerciseRpeFromSets(ex);
+  assert.strictEqual(ex.rpe, '10');
+  const log = context.buildExerciseLogFromSession(session, ex);
+  assert.deepStrictEqual(Array.from(log.sets, s => s.rpe), ['8', '10', null]);
+  const entry = api.createEstimatedMaxEntry(log);
+  assert.strictEqual(entry.sourceWeight, 100, 'each set must use its own RPE');
+  assert.strictEqual(entry.rpe, '8');
+  assert.strictEqual(entry.estimatedMax, context.sessionEstimatedMax(ex));
+  assert.strictEqual(context.rpeForSet(log, log.sets[2]), '未入力', 'cleared RPE must not inherit another set');
+  context.openSetEditSheet(0);
+  elements.btnSetEditSave.onclick();
+  assert.deepStrictEqual(Array.from(ex.sets, s => s.rpe), ['8', '10', null], 'editing sets must preserve per-set RPE');
+  ex.sets.forEach(s => { s.rpe = null; });
+  context.syncExerciseRpeFromSets(ex);
+  assert.strictEqual(ex.rpe, '未入力', 'clearing every RPE clears the representative value');
+  assert.strictEqual(context.sessionEstimatedMax(ex), null);
+  const legacy = big3Log();
+  const before = JSON.stringify(legacy);
+  assert.strictEqual(api.createEstimatedMaxEntry(legacy).rpe, legacy.rpe);
+  assert.strictEqual(JSON.stringify(legacy), before, 'legacy records are read without rewriting');
+}
+testSetRpePersistenceAndEstimateSource();
 console.log('test_progression.js: all tests passed');

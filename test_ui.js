@@ -79,10 +79,11 @@ async function run() {
     await page.locator('[data-set-rpe="9.5"]').click();
     let rpeSession = await page.evaluate(() => getOrCreateTodaySession());
     check(String(rpeSession.exercises[0].sets[1].rpe) === '9.5', 'RPE is recorded on the set being logged');
-    check(rpeSession.exercises[0].rpe === '9.5', 'the exercise keeps a single derived value for the log');
+    check(rpeSession.exercises[0].rpe === '未入力', 'pending-set RPE does not rewrite recorded-set summary');
     await page.locator('[data-set-rpe="9.5"]').click();
     rpeSession = await page.evaluate(() => getOrCreateTodaySession());
     check(rpeSession.exercises[0].sets[1].rpe == null, 'tapping the same value clears it');
+    check(rpeSession.exercises[0].rpe === '未入力', 'cleared RPE does not leave a stale aggregate');
     check(!(await page.locator('[data-rpe-edit]').count()), 'the old per-exercise RPE editor is gone');
     check(!(await page.locator('.plate-strip').count()), 'the plate breakdown is gone');
     // ステッパー: 数字は行の中心、単位は数字の外。桁が変わっても中心は動かない。

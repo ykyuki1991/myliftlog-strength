@@ -923,22 +923,24 @@ function isValidEstimatedMaxEntry(entry) {
 
 function bestEstimatedMaxFromLog(log) {
   if (!log || !isBig3Key(log.exerciseKey)) return null;
-  const doneSets = (log.sets || []).filter(s => s.done && s.weight && s.reps);
+  const doneSets = (log.sets || []).filter(s => s.done && !s.skipped && s.weight && s.reps);
   if (doneSets.length === 0) return null;
   const estimates = doneSets.map(set => {
-    const estimate = estimateMaxFromSet(set.weight, set.reps, log.rpe);
+    const sourceRpe = rpeForSet(log, set);
+    const estimate = estimateMaxFromSet(set.weight, set.reps, sourceRpe);
     const reps = parseInt(set.reps, 10) || 0;
-    const status = classifyEstimatedMaxUse(log, reps, estimate);
+    const status = classifyEstimatedMaxUse({ ...log, rpe: sourceRpe }, reps, estimate);
     if (status.kind === 'excluded' || reps >= 10 || estimate.value == null) estimate.confidence = '低';
-    return { ...estimate, sourceWeight: parseFloat(set.weight), sourceReps: reps };
-  }).map(e => ({ ...e, status: classifyEstimatedMaxUse(log, e.sourceReps, e) }))
+    return { ...estimate, status, sourceRpe, sourceWeight: parseFloat(set.weight), sourceReps: reps };
+  })
     .filter(e => e.value != null);
   if (estimates.length === 0) {
     const fallback = doneSets[0];
-    const estimate = estimateMaxFromSet(fallback.weight, fallback.reps, log.rpe);
+    const sourceRpe = rpeForSet(log, fallback);
+    const estimate = estimateMaxFromSet(fallback.weight, fallback.reps, sourceRpe);
     const reps = parseInt(fallback.reps, 10) || 0;
-    const status = classifyEstimatedMaxUse(log, reps, estimate);
-    return { ...estimate, status, sourceWeight: parseFloat(fallback.weight), sourceReps: reps, excluded: status.kind === 'excluded' };
+    const status = classifyEstimatedMaxUse({ ...log, rpe: sourceRpe }, reps, estimate);
+    return { ...estimate, status, sourceRpe, sourceWeight: parseFloat(fallback.weight), sourceReps: reps, excluded: status.kind === 'excluded' };
   }
   const priority = { candidate: 4, reference: 2, excluded: 1 };
   estimates.sort((a, b) => (priority[b.status.kind] - priority[a.status.kind]) || (b.value - a.value));
@@ -1001,7 +1003,7 @@ function createEstimatedMaxEntry(log, source = 'training') {
     diff: roundToIncrement(estimate.value - currentMax, 0.5),
     sourceWeight: estimate.sourceWeight,
     sourceReps: estimate.sourceReps,
-    rpe: log.rpe,
+    rpe: estimate.sourceRpe,
     rir: estimate.rir,
     confidence: estimate.confidence,
     maxUseKind: estimate.status?.kind || 'excluded',
@@ -2729,11 +2731,16 @@ function sessionPrSetIndexes(ex, session = undefined) {
 // 種目のRPEはセットから導く。ログ・推定MAX・過去の記録は ex.rpe を見ているので、
 // セットごとのRPEを入れても、その手前で1つの値に畳んでおく。
 // 採るのは最後に記録したセットの値。直近の感覚がその日の代表値になる。
+function rpeForSet(record, set) {
+  const perSet = (record.sets || []).some(s => Object.prototype.hasOwnProperty.call(s, 'rpe'));
+  return perSet ? (set.rpe ?? '未入力') : record.rpe;
+}
+
 function syncExerciseRpeFromSets(ex) {
   if (!ex) return;
-  const recorded = (ex.sets || []).filter(set => set.rpe != null && set.rpe !== '');
-  if (!recorded.length) return;
-  ex.rpe = String(recorded[recorded.length - 1].rpe);
+  if (!(ex.sets || []).some(s => Object.prototype.hasOwnProperty.call(s, 'rpe'))) return;
+  const recorded = (ex.sets || []).filter(set => set.done && !set.skipped && parseRpeValue(set.rpe) != null);
+  ex.rpe = recorded.length ? String(recorded[recorded.length - 1].rpe) : '未入力';
 }
 
 function sessionEstimatedMax(ex) {
@@ -2741,7 +2748,7 @@ function sessionEstimatedMax(ex) {
   const done = (ex.sets || []).filter(set => set.done && !set.skipped && set.weight && set.reps);
   if (!done.length) return null;
   const best = done.reduce((acc, set) => {
-    const est = estimateMaxFromSet(set.weight, set.reps, set.rpe ?? ex.rpe);
+    const est = estimateMaxFromSet(set.weight, set.reps, rpeForSet(ex, set));
     if (est.value == null) return acc;
     return est.value > (acc?.value ?? -1) ? est : acc;
   }, null);
@@ -4140,6 +4147,7 @@ function openSetEditSheet(exIdx) {
     state: s.done ? 'done' : (s.skipped ? 'skip' : 'todo'),
   }));
   let draftRpe = ex.rpe || '未入力';
+  let rpeChanged = false;
 
   const stateBtn = (idx, state, label) =>
     `<button class="seg-opt ${draft[idx].state === state ? (state === 'skip' ? 'on-pause' : 'on') : ''}" aria-label="${state === 'done' ? '完了' : state === 'skip' ? 'スキップ' : '未完了'}" aria-pressed="${draft[idx].state === state}" data-se-state="${state}" data-se-idx="${idx}">${label}</button>`;
@@ -4154,7 +4162,7 @@ function openSetEditSheet(exIdx) {
         <div class="seg">${stateBtn(i, 'done', ICON_CHECK)}${stateBtn(i, 'skip', 'スキップ')}${stateBtn(i, 'todo', '—')}</div>
       </div>
     `).join('')}
-    <div class="sec-label mt-8">RPE</div>
+    <div class="sec-label mt-8">RPE（全セット）</div>
     <div class="sheet-chips">
       ${['7', '8', '8.5', '9', '9.5', '10'].map(r => `<span class="chip chip-tap ${draftRpe === r ? 'on' : ''}" data-se-rpe="${r}">${r}</span>`).join('')}
     </div>
@@ -4181,15 +4189,18 @@ function openSetEditSheet(exIdx) {
     document.querySelectorAll('[data-se-rpe]').forEach(chip => {
       chip.onclick = () => {
         draftRpe = draftRpe === chip.dataset.seRpe ? '未入力' : chip.dataset.seRpe;
+        rpeChanged = true;
         paint();
       };
     });
     const saveBtn = document.getElementById('btnSetEditSave');
     if (saveBtn) saveBtn.onclick = () => {
-      ex.sets = draft.map(d => {
+      ex.sets = draft.map((d, i) => {
         const weight = parseFloat(d.weight);
         const reps = parseInt(d.reps, 10);
         return {
+          ...ex.sets[i],
+          ...(rpeChanged ? { rpe: draftRpe === '未入力' ? null : draftRpe } : {}),
           weight: Number.isFinite(weight) ? weight : null,
           reps: Number.isFinite(reps) ? reps : '',
           done: d.state === 'done',
@@ -4197,6 +4208,7 @@ function openSetEditSheet(exIdx) {
         };
       });
       ex.rpe = draftRpe;
+      syncExerciseRpeFromSets(ex);
       if (session.completed || findSessionExerciseLogIndex(session, ex) >= 0) {
         upsertExerciseLogFromSession(session, ex, true);
       }
@@ -4823,7 +4835,7 @@ function afterToday() {
         const doneIdx = firstPendingSetIndex(ex);
         const result = toggleNextSetCompletion(session, exIdx);
         if (result.ok) {
-          if (!result.reverted) syncExerciseRpeFromSets(ex);
+          syncExerciseRpeFromSets(ex);
           todayEdit = null;
           persistTodaySession(session);
           if (!result.reverted) {
@@ -4844,6 +4856,7 @@ function afterToday() {
         // スキップ: 記録には残すがタイマーは起動しない
         const result = skipNextSet(session, exIdx);
         if (result.ok) {
+          syncExerciseRpeFromSets(ex);
           todayEdit = null;
           persistTodaySession(session);
           render();
@@ -4851,6 +4864,7 @@ function afterToday() {
       } else if (action === 'undoSet') {
         const result = undoLastSetRecord(session, exIdx);
         if (result.ok) {
+          syncExerciseRpeFromSets(ex);
           todayEdit = null;
           persistTodaySession(session);
           showToast('1セット戻しました');
@@ -5724,7 +5738,9 @@ function buildExerciseLogFromSession(session, ex, existing = null) {
     weightType: ex.weightType,
     slotId: ex.slotId,
     slotName: ex.slotName,
-    sets: (ex.sets || []).map(s => ({ weight: s.weight, reps: s.reps, done: !!s.done, skipped: !!s.skipped })),
+    sets: (ex.sets || []).map(s => ({ weight: s.weight, reps: s.reps, done: !!s.done, skipped: !!s.skipped,
+      ...(Object.prototype.hasOwnProperty.call(s, 'rpe') ? { rpe: s.rpe } : {}),
+    })),
     doneSets: (ex.sets || []).filter(s => s.done).length,
     rpe: ex.rpe,
     pains: ex.pains || [],
