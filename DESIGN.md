@@ -214,6 +214,36 @@ against them has not been made.
     style. (This replaces the previous principle 6, which read as a mandate to
     preserve the UI as well.)
 
+19. **One typeface.** Numerals and Japanese share the system stack. A second
+    face with a different skeleton on the same line cannot be made to look
+    aligned by adjusting position, which is what the bundled Archivo Narrow
+    did to every row it appeared in. Column alignment is
+    `font-variant-numeric: tabular-nums`, declared once on `html, body`, not a
+    property of the face. Seven sizes still: 11 / 13 / 15 / 17 / 22 / 34 / 40.
+    The old top step of 56px existed because a condensed face fit five
+    characters in it, and nothing else.
+
+20. **One centre axis per input block.** The numeral is centred on the block's
+    axis and the unit is taken out of flow beside it, so a unit's width can
+    never push the numeral off centre and 135 and 5 line up whatever their
+    digit count. The stepper buttons are fixed to the ends of the same grid,
+    which is what makes them read as symmetrical. A column header sits on its
+    values' centre or it is not a header.
+
+21. **Structure comes from rules and alignment, not from stacked planes.** At
+    most two planes on any screen: the page and one card. A disclosure inside
+    a card is a row with a rule above it, not a third plane; settings are rows
+    with one hairline between them, not a column of filled boxes; a filter is
+    an outline, not a fill. Blue is the record button, the active state and a
+    link -- never a field the size of a card. The "next" menu is marked by a
+    3px edge, because a saturated plane that size competes with the only
+    control on screen that should be loud.
+
+22. **RPE belongs to the set.** It is asked for once per set, beside the set
+    being recorded, and it is optional. One value per exercise could not say
+    which set was the hard one. The exercise keeps a single derived value for
+    the log and the estimated max, folded from the sets.
+
 ## Research
 
 - [Apple accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility/): target sizes, contrast and non-color state cues.

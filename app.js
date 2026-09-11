@@ -6851,27 +6851,38 @@ function renderFourMenuPlan() {
     const selected = state.nextMenuKey === menuKey;
     return `
       <article class="card four-plan-card ${selected ? 'active-plan' : ''}">
-        <div class="row between">
-          <div>
-            <div class="plan-menu-name"><span class="plan-index">0${index + 1}</span><h2>${fourMenuLabel(menuKey)}</h2></div>
-          </div>
-          ${selected ? '<span class="status-pill status-ok">次回</span>' : `<button class="btn-secondary btn-small" data-set-next-four-menu="${menuKey}">次回に設定</button>`}
+        <div class="plan-head">
+          <span class="plan-index">${String(index + 1).padStart(2, '0')}</span>
+          <h2>${fourMenuLabel(menuKey)}</h2>
+          ${selected ? '<span class="micro-label plan-next">Next</span>' : `<button class="btn-secondary btn-small" data-set-next-four-menu="${menuKey}">Set next</button>`}
         </div>
-        ${main ? `<div class="plan-main"><span>${escapeHtml(displayExerciseName(main.key, main.name))}</span><div><strong>${fmtW(main.plannedWeight)}<small> kg</small></strong><span>${main.plannedReps}回 × ${main.plannedSets}セット</span></div></div><div class="muted">${escapeHtml(main.progressionReason)} · ${escapeHtml(main.progressionReferenceDate)}</div>` : '<div class="muted">メインなし</div>'}
-        <details class="ui-details compact-details mt-8" data-ui-key="plan-${menuKey}">
-          <summary>補助 ${accessoryCount}種目</summary>
-          ${(menu.exercises.filter(ex => ex.isAccessory).map(ex => `<div class="next-row"><span class="nx-name">${ex.name}</span><span class="nx-detail">${exercisePlanText(ex)}</span><button class="btn-ghost btn-small" data-edit-four-accessory="${ex.slotId}" data-four-menu-key="${menuKey}">編集</button></div>`).join('')) || '<div class="muted">なし</div>'}
+        ${main ? `
+        <div class="plan-main">
+          <span class="plan-main-name">${escapeHtml(displayExerciseName(main.key, main.name))}</span>
+          <span class="plan-main-figure"><b>${fmtW(main.plannedWeight)}</b><i>kg</i></span>
+          <span class="plan-main-scheme">${main.plannedReps} reps × ${main.plannedSets} sets</span>
+        </div>
+        <div class="plan-reason">${escapeHtml(main.progressionReason)}<span class="plan-reason-date">${escapeHtml(main.progressionReferenceDate)}</span></div>` : '<div class="muted">メインなし</div>'}
+        <details class="ui-details plan-accessories" data-ui-key="plan-${menuKey}">
+          <summary><span class="micro-label">${accessoryCount} accessories</span></summary>
+          ${(menu.exercises.filter(ex => ex.isAccessory).map(ex => `<div class="next-row"><span class="nx-name">${escapeHtml(ex.name)}</span><span class="nx-detail">${exercisePlanText(ex)}</span><button class="btn-ghost btn-small" data-edit-four-accessory="${ex.slotId}" data-four-menu-key="${menuKey}">編集</button></div>`).join('')) || '<div class="muted">なし</div>'}
           <button class="btn-secondary btn-small mt-8" data-add-four-accessory="${menuKey}">補助種目を追加</button>
         </details>
       </article>
     `;
   }).join('');
   return `
-    <div class="plan-overview"><span>4メニュー計画</span><span>次回 <strong>${fourMenuLabel(state.nextMenuKey)}</strong></span></div>
+    <div class="plan-overview">
+      <span class="micro-label">Rotation of four</span>
+      <span class="micro-label">Next <strong>${fourMenuLabel(state.nextMenuKey)}</strong></span>
+    </div>
     <div class="plan-grid">
       ${rows}
     </div>
-    <section class="section custom-plan"><h2>カスタム</h2><div class="muted">${(store.settings.customMenuKeys || ['chest', 'back']).filter(key => FOUR_MENU_ORDER.includes(key)).map(fourMenuLabel).join(' ＋ ')}</div></section>
+    <section class="section custom-plan">
+      <div class="micro-label">Custom</div>
+      <div class="muted">${(store.settings.customMenuKeys || ['chest', 'back']).filter(key => FOUR_MENU_ORDER.includes(key)).map(fourMenuLabel).join(' ＋ ')}</div>
+    </section>
   `;
 }
 
@@ -7030,7 +7041,7 @@ function summarizeDirectSets({ sessionLimit = null, days = null } = {}) {
 function renderTrainingSummary() {
   const summary = summarizeRecentRotations();
   const direct4 = summarizeDirectSets({ sessionLimit: 4 });
-  return `<details class="section ui-details"><summary>直近実績</summary>
+  return `<details class="ui-details log-recent"><summary><span class="micro-label">Recent form</span></summary>
     <div class="summary-grid">
       <div><strong>直近4回</strong><br><span class="muted">メイン完遂 ${summary.recent4.completed}/${summary.recent4.completed + summary.recent4.missed}（${summary.recent4.completionRate}%）</span></div>
       <div><strong>直近8回</strong><br><span class="muted">メイン完遂 ${summary.recent8.completed}/${summary.recent8.completed + summary.recent8.missed}（${summary.recent8.completionRate}%）</span></div>
@@ -7056,9 +7067,9 @@ function logMatchesFilter(log) {
 function renderLog() {
   const tabs = `
     <div class="tabs">
-      <button class="tab ${logFilter.type === 'daily' ? 'active' : ''}" data-type="daily">日別</button>
-      <button class="tab ${logFilter.type === 'monthly' ? 'active' : ''}" data-type="monthly">月別</button>
-      <button class="tab ${logFilter.type === 'max' || logFilter.type === 'emax' ? 'active' : ''}" data-type="max">MAX</button>
+      <button class="tab ${logFilter.type === 'daily' ? 'active' : ''}" data-type="daily">Daily</button>
+      <button class="tab ${logFilter.type === 'monthly' ? 'active' : ''}" data-type="monthly">Monthly</button>
+      <button class="tab ${logFilter.type === 'max' || logFilter.type === 'emax' ? 'active' : ''}" data-type="max">Max</button>
     </div>
   `;
 
@@ -7962,23 +7973,21 @@ function renderSettings() {
     ` : ''}
 
     <div class="section settings-max">
-      <div class="row between settings-save"><h2>MAX設定</h2><button class="btn-primary btn-small" id="btnSaveSettings">変更を保存</button></div>
-      <label class="field"><span>ベンチプレスMAX (kg)</span><input type="number" step="0.5" id="set-bench" value="${m.bench}" /></label>
-      <label class="field"><span>スクワットMAX (kg)</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /></label>
-      <label class="field"><span>ハーフデッドMAX (kg)</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /></label>
-      <label class="field"><span>デッドリフトMAX (kg)</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /></label>
-      <label class="field"><span>ミリタリープレス基準 (kg)</span><input type="number" step="0.5" id="set-shoulderPress" value="${m.shoulderPress ?? 77.5}" /></label>
-      <label class="field"><span>重量刻み (kg)</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /></label>
-      <details class="ui-details compact-details">
-        <summary>種目別の増加幅</summary>
-        ${Object.entries(FOUR_MENU_MAIN_LIFTS).map(([key, lift]) => `
-          <label class="field"><span>${lift.name}</span><input type="number" min="0.25" step="0.25" data-main-inc="${key}" value="${getMainProgressionIncrement(key)}" /></label>
-        `).join('')}
-      </details>
-      <details class="ui-details compact-details">
-        <summary>補足</summary>
-        <div class="muted">4メニューでは各メイン種目の初期重量計算に使用します。MAX値は自動更新しません。</div>
-      </details>
+      <div class="micro-label">Maxes</div>
+      <label class="field"><span>ベンチプレス</span><input type="number" step="0.5" id="set-bench" value="${m.bench}" /><span class="field-unit">kg</span></label>
+      <label class="field"><span>スクワット</span><input type="number" step="0.5" id="set-squat" value="${m.squat}" /><span class="field-unit">kg</span></label>
+      <label class="field"><span>ハーフデッド</span><input type="number" step="0.5" id="set-halfDead" value="${m.halfDead}" /><span class="field-unit">kg</span></label>
+      <label class="field"><span>デッドリフト</span><input type="number" step="0.5" id="set-floorDead" value="${m.floorDead}" /><span class="field-unit">kg</span></label>
+      <label class="field"><span>ミリタリープレス基準</span><input type="number" step="0.5" id="set-shoulderPress" value="${m.shoulderPress ?? 77.5}" /><span class="field-unit">kg</span></label>
+
+      <div class="micro-label mt-16">Increment</div>
+      <label class="field"><span>全種目共通</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /><span class="field-unit">kg</span></label>
+      ${Object.entries(FOUR_MENU_MAIN_LIFTS).map(([key, lift]) => `
+        <label class="field"><span>${lift.name}</span><input type="number" min="0.25" step="0.25" data-main-inc="${key}" value="${getMainProgressionIncrement(key)}" /><span class="field-unit">kg</span></label>
+      `).join('')}
+
+      <div class="settings-note">4メニューでは各メイン種目の初期重量計算に使用します。MAX値は自動更新しません。</div>
+      <button class="btn-primary settings-save-btn" id="btnSaveSettings">Save changes</button>
     </div>
 
     <div class="section ${isFourMenuMode() ? 'hidden' : ''}">

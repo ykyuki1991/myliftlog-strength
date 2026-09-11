@@ -728,8 +728,9 @@ function testLogDailyAndMonthlyViews() {
     big3Log({ date: '2026-05-15', exerciseName: 'スクワット', exerciseKey: 'squat', menuType: 'squat-hi-main', ts: 2 }),
   ];
   const logHtml = isolatedApi.renderLog();
-  assert.ok(logHtml.includes('日別'));
-  assert.ok(logHtml.includes('月別'));
+  // 画面のクロームは英語、記録の中身は日本語という方針にログのタブも合わせた
+  assert.ok(logHtml.includes('>Daily<'));
+  assert.ok(logHtml.includes('>Monthly<'));
   // 実測MAXと推定MAXは1つのタブに統合した。知りたいのは「いま何kg挙がるか」で、
   // 両方を並べて見る値だから。タブが分かれている契約はここで反転する。
   assert.ok(!logHtml.includes('data-type="emax"'), 'MAXと推定MAXは同じタブ');
@@ -2133,7 +2134,9 @@ function testDeadliftDisplayAndLegacySearchCompatibility() {
   assert.strictEqual(api.displayExerciseName('floorDead', '床引きデッド'), 'デッドリフト');
   assert.ok(api.renderDailyLogView().includes('デッドリフト'));
   assert.ok(!api.renderDailyLogView().includes('床引きデッド'));
-  assert.ok(api.renderSettings().includes('デッドリフトMAX'));
+  // 設定は「種目名 / 数値 / 単位」の行になった。ラベルから (kg) が消えている
+  assert.ok(api.renderSettings().includes('<span>デッドリフト</span>'), '設定の行は種目名だけを持つ');
+  assert.ok(api.renderSettings().includes('field-unit'), '単位は値の右に独立して出る');
   assert.ok(api.renderBlock().includes('デッドリフト'));
   api.setLogFilter({ query: 'デッドリフト' });
   assert.strictEqual(api.logMatchesFilter(legacyFloorLog), true);
