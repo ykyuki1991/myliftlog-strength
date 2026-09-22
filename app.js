@@ -2366,6 +2366,15 @@ function fmtW(value) {
   return (Math.round(n * 10) / 10).toFixed(1);
 }
 
+// セット表は入力欄と同じ値を出す。66.25 を 66.3 と丸めると、
+// 真下の入力欄（66.25）と食い違って見える。
+function fmtSetW(value) {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return '-';
+  const r = Math.round(n * 100) / 100;
+  return Number.isInteger(r * 10) ? r.toFixed(1) : String(r);
+}
+
 // 日付表示: 「6/10」形式
 function fmtDateShort(value) {
   const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -3855,7 +3864,7 @@ function render() {
   updateHeader();
 }
 
-// 4画面共通ヘッダー。今日画面だけエディトリアル版に広がり、スクロールで44pxに縮む。
+// 4画面共通ヘッダー。今日画面だけ64pxのエディトリアル版（高さ固定）。
 const SCREEN_TITLES = { today: 'TODAY', log: 'LOG', block: 'PLAN', settings: 'SETTINGS' };
 
 function todayHeaderTitle(session) {
@@ -3885,17 +3894,29 @@ function updateHeader() {
   if (isToday) {
     const session = getOrCreateTodaySession({ persist: false });
     const s = store.currentState;
-    eyebrow.textContent = 'WORKOUT';
+    eyebrow.textContent = todaySessionEyebrow(session);
     title.textContent = todayHeaderTitle(session);
     // 長いメニュー名はスケールを一段落とす。リング表示時に見出しが切れないため。
     title.dataset.long = title.textContent.length > 8 ? 'true' : 'false';
     title.title = isFourMenuMode() ? '' : `B${s.block} / R${s.rotation} / Day${s.day}`;
-    setHeaderVariant((window.scrollY || 0) > 24 ? 'compact' : 'editorial');
+    setHeaderVariant('editorial');
   } else {
     eyebrow.textContent = '';
     title.textContent = SCREEN_TITLES[currentScreen] || '';
     setHeaderVariant('compact');
   }
+}
+
+// セッション集計はヘッダーの1行に置く。本文に3枚のチップを出すと、
+// 1セット目を記録した瞬間に画面全体が約70px下がり、入力欄が押し出されていた。
+function todaySessionEyebrow(session) {
+  const exercises = session?.exercises || [];
+  const sets = exercises.reduce((n, ex) => n + (ex.sets || []).filter(set => set.done).length, 0);
+  if (session?.isRest || !sets) return 'WORKOUT';
+  const doneEx = exercises.filter(isExerciseComplete).length;
+  const volume = exercises.reduce((sum, ex) => sum + (ex.sets || []).reduce((n, set) => n + (set.done && !set.skipped
+    ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0), 0), 0);
+  return `${doneEx}/${exercises.length} EX · ${sets} ${sets === 1 ? 'SET' : 'SETS'} · ${Math.round(volume).toLocaleString('ja-JP')} KG`;
 }
 
 function setHeaderVariant(variant) {
@@ -3914,8 +3935,9 @@ function setupHeaderScroll() {
     ticking = true;
     window.requestAnimationFrame(() => {
       ticking = false;
+      // 今日画面のヘッダーは高さ固定。スクロールで縮めると body の上余白が
+      // 変わり、スクロール中に本文が52px跳ねていた。
       if (currentScreen !== 'today') return;
-      setHeaderVariant((window.scrollY || 0) > 24 ? 'compact' : 'editorial');
     });
   }, { passive: true });
 }
@@ -4080,7 +4102,7 @@ function setRowState(set, setIdx, activeIdx) {
 }
 
 function renderSetTableRow(set, setIdx, state, editExIdx, isPr = false, cueType = null) {
-  const weight = set.weight != null && set.weight !== '' ? fmtW(set.weight) : '—';
+  const weight = set.weight != null && set.weight !== '' ? fmtSetW(set.weight) : '—';
   const reps = set.reps != null && set.reps !== '' ? set.reps : '—';
   const rpe = set.rpe != null && set.rpe !== '' ? set.rpe : '—';
   const editAttr = editExIdx != null
@@ -4273,7 +4295,7 @@ function renderActiveExerciseCard(ex, exIdx) {
         <span class="micro-label">Set ${setIdx + 1} of ${totalSets}</span>
         <span class="micro-label as-prev">Target ${ex.isAccessory && ex.targetRpe
           ? `RPE ${ex.targetRpe}`
-          : `${fmtW(ex.plannedWeight)} × ${escapeHtml(String(ex.plannedReps ?? '—'))}`}</span>
+          : `${fmtSetW(ex.plannedWeight)} × ${escapeHtml(String(ex.plannedReps ?? '—'))}`}</span>
       </div>
       <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
         <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
@@ -4329,11 +4351,6 @@ function renderActiveExerciseCard(ex, exIdx) {
         ${renderPrBadge(ex, cue && cue.type === 'pr' && cue.exIdx === exIdx, session)}
       </div>
       ${setTable}
-      ${restState.running && setIdx >= 0 ? `
-        <div class="up-next-set">
-          <span class="micro-label">NEXT SET</span>
-          <span class="up-next-set-value num">${fmtW(currentWeight)}<span class="up-next-unit">kg</span> × ${hasSetReps ? set.reps : escapeHtml(String(ex.plannedReps ?? '—'))}</span>
-        </div>` : ''}
       ${activeBlock}
       ${progressionNote}
       <details class="ui-details compact-details mt-8" data-ui-key="exercise-${ex.key}-${ex.menuType}">
@@ -4485,25 +4502,6 @@ function renderWorkoutSummary(session, { totalDoneSets, volume }) {
     </section>`;
 }
 
-function renderSessionMetrics({ doneExercises, totalExercises, volume, totalDoneSets }) {
-  const chip = (label, value) => `
-    <div class="metric-chip">
-      <span class="micro-label">${label}</span>
-      <span class="metric-value num">${value}</span>
-    </div>`;
-  // 1セットも記録していない間はこの行ごと出さない（呼び出し側で判定）。
-  // 3つ並んだうちの2つが「—」になる状態を画面の一等地に置かない。
-  const zeroable = (n, suffix = '') => (n > 0 ? `${n.toLocaleString('ja-JP')}${suffix}` : '—');
-  return `
-    <div class="metric-row" aria-label="今日の集計">
-      ${chip('EXERCISES', `${doneExercises} / ${totalExercises}`)}
-      ${chip('TOTAL VOLUME', volume > 0
-        ? `${volume.toLocaleString('ja-JP')}<span class="metric-unit">kg</span>`
-        : '—')}
-      ${chip('SETS DONE', zeroable(totalDoneSets))}
-    </div>`;
-}
-
 function renderToday() {
   const session = getOrCreateTodaySession({ persist: false });
   const s = store.currentState;
@@ -4606,12 +4604,6 @@ function renderToday() {
     : '';
 
   return `
-    ${incomplete.length && totalDoneSets > 0 ? renderSessionMetrics({
-      doneExercises: completed.length,
-      totalExercises: session.exercises.length,
-      volume,
-      totalDoneSets,
-    }) : ''}
     ${draftBanner}
     ${maxTestBanner}
     ${active ? renderActiveExerciseCard(active.ex, active.exIdx) : allDoneBanner}

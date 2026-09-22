@@ -68,7 +68,8 @@
   --tracking-label: 0;
 
   /* ---- Metrics ---- */
-  --nav-height: 72px;
+  /* 72px + ホームインジケーター34pxで106pxあった。iOS標準のタブバーに近い58pxへ。 */
+  --nav-height: 58px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -150,7 +151,9 @@ body {
   transition: padding-top var(--duration-normal) var(--ease-out);
 }
 
-body[data-header-variant="editorial"] { --header-h: 96px; }
+/* 96px だと 62px のセーフエリアと合わせて画面上部の158pxを使っていた。
+   高さはスクロールで変えない（変えると本文が跳ねる）。 */
+body[data-header-variant="editorial"] { --header-h: 64px; }
 
 /* ==========================================================================
    COMMON HEADER
@@ -188,6 +191,8 @@ body[data-header-variant="editorial"] { --header-h: 96px; }
   overflow: hidden;
   opacity: 1;
   max-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   transition: max-height var(--duration-normal) var(--ease-out), opacity var(--duration-fast) ease;
 }
 
@@ -230,43 +235,6 @@ body[data-header-variant="compact"] .hd-title { font-size: var(--fs-17); }
 }
 
 .hd-icon-btn svg { width: 22px; height: 22px; display: block; }
-
-/* ==========================================================================
-   SESSION METRICS
-   Three chips under the editorial header. Label above, number below, both
-   left-aligned. No DURATION: a draft can span a night, so elapsed time is
-   not a measurement of anything (DESIGN.md principle 5).
-   ========================================================================== */
-.metric-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-}
-
-.metric-chip {
-  min-width: 0;
-  padding: var(--space-2) 10px;
-  background: var(--surface);
-  border-radius: var(--radius-control);
-}
-
-.metric-value {
-  display: block;
-  margin-top: 2px;
-  font-size: var(--fs-17);
-  font-weight: var(--fw-semibold);
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.metric-unit {
-  font-size: var(--fs-11);
-  color: var(--text-3);
-  margin-left: 2px;
-}
 
 /* One-line banner for something that changes what the user does today.
    The panel itself lives in the options sheet; this is only the pointer. */
@@ -405,8 +373,8 @@ input, textarea, select {
 .rest-ring {
   position: relative;
   flex: 0 0 auto;
-  width: 88px;
-  height: 88px;
+  width: 58px;
+  height: 58px;
   transition: width var(--duration-normal) var(--ease-out), height var(--duration-normal) var(--ease-out);
 }
 
@@ -467,14 +435,14 @@ body[data-header-variant="compact"] .rest-ring { width: 40px; height: 40px; }
 .rest-ring-time {
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--tracking-num);
-  font-size: var(--fs-22);
+  font-size: var(--fs-15);
   font-weight: var(--fw-semibold);
   line-height: 1;
   color: var(--accent-bright);
   transition: font-size var(--duration-normal) var(--ease-out);
 }
 
-.rest-ring-caption { text-align: center; }
+.rest-ring-caption { text-align: center; font-size: 9px; line-height: 1; }
 
 body[data-header-variant="compact"] .rest-ring-time { font-size: var(--fs-11); }
 body[data-header-variant="compact"] .rest-ring-caption { display: none; }
@@ -526,7 +494,7 @@ body[data-header-variant="compact"] .rest-ring-caption { display: none; }
 
 /* The ring lives in the header, so the page no longer reserves bar space. */
 body.timer-visible #main { padding-bottom: 22px; }
-body:has(.set-dock) #main { padding-bottom: 84px; }
+body:has(.set-dock) #main { padding-bottom: 76px; }
 
 .sec-label {
   font-size: var(--fs-13);
@@ -967,13 +935,15 @@ button:disabled { cursor: not-allowed; color: var(--text-3); background: var(--s
   right: 0;
   bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
   z-index: 42;
-  padding: var(--space-2) 16px;
+  padding: 6px 16px;
   background: linear-gradient(to top, var(--bg) 62%, transparent);
   pointer-events: none;
 }
 
 .set-dock-btn {
   display: block;
+  min-height: 52px;
+  padding: 12px;
   max-width: 720px;
   margin: 0 auto;
   pointer-events: auto;
@@ -1060,7 +1030,7 @@ body.keyboard-open .set-dock { bottom: 0; }
   background: transparent;
 }
 
-.stepper + .stepper { margin-top: 10px; }
+.stepper + .stepper { margin-top: 4px; }
 
 .stepper-btn {
   width: 46px;
@@ -1156,28 +1126,6 @@ body.keyboard-open .set-dock { bottom: 0; }
   color: var(--text-2);
 }
 
-/* Rest is the time to prepare the next set, so the screen says what it is. */
-.up-next-set {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: 10px var(--space-3);
-  margin-bottom: var(--space-3);
-  background: var(--accent-soft);
-  border-radius: var(--radius-control);
-}
-
-.up-next-set-value {
-  font-size: var(--fs-22);
-  font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-num);
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.up-next-unit { font-size: var(--fs-11); color: var(--text-3); margin-left: 1px; }
-
 .ex-rpe {
   font-size: var(--fs-13);
   font-weight: var(--fw-semibold);
@@ -1193,7 +1141,7 @@ body.keyboard-open .set-dock { bottom: 0; }
    table: nothing has happened there yet.
    ========================================================================== */
 .set-table {
-  margin: var(--space-3) 0 var(--space-4);
+  margin: var(--space-2) 0 var(--space-3);
 }
 
 .set-thead,
@@ -1257,7 +1205,7 @@ body.keyboard-open .set-dock { bottom: 0; }
 .set-rpe {
   display: flex;
   gap: 6px;
-  margin-top: 16px;
+  margin-top: 10px;
 }
 
 .set-rpe .chip {
@@ -1357,7 +1305,7 @@ body.keyboard-open .set-dock { bottom: 0; }
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .active-set .as-title {
@@ -1670,7 +1618,7 @@ label.field > span {
   border-top: 1px solid var(--surface-3);
   z-index: 40;
   height: calc(var(--nav-height) + env(safe-area-inset-bottom));
-  padding: 6px max(8px, calc((100% - 640px) / 2)) calc(6px + env(safe-area-inset-bottom));
+  padding: 4px max(8px, calc((100% - 640px) / 2)) calc(4px + env(safe-area-inset-bottom));
   gap: 4px;
 }
 
@@ -1680,8 +1628,8 @@ body.sheet-open .bottom-nav { display: none; }
   flex: 1;
   background: transparent;
   border-radius: var(--radius-control);
-  padding: 7px 4px;
-  min-height: 50px;
+  padding: 4px;
+  min-height: 44px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3132,8 +3080,8 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
 }
 
 @media (max-width: 360px) {
-  body[data-header-variant="editorial"] .rest-ring { width: 66px; height: 66px; }
-  body[data-header-variant="editorial"] .rest-ring-time { font-size: var(--fs-15); }
+  body[data-header-variant="editorial"] .rest-ring { width: 52px; height: 52px; }
+  body[data-header-variant="editorial"] .rest-ring-time { font-size: var(--fs-13); }
   body[data-header-variant="editorial"] .hd-title[data-long="true"] { font-size: var(--fs-17); }
   .vbox-row { gap: 6px; }
   #btnExport,
@@ -3163,4 +3111,24 @@ html { scroll-padding-bottom: calc(var(--nav-height) + 24px); }
   }
   button:active,
   .next-row[data-make-active]:active { transform: none; }
+}
+
+/* ==========================================================================
+   TODAY FIT (2026-09-23)
+   The recording block -- set table, weight, reps, RPE -- has to be on screen
+   together with LOG SET, without scrolling, on the phone it is used on.
+   Measured on an iOS 27 simulator (iPhone 18 Pro, home-screen web app): from
+   the second set on, the reps stepper and RPE sat under the dock.
+   ========================================================================== */
+.card.card-ex.active { padding: var(--space-4) var(--space-4) var(--space-3); }
+
+/* SE-class heights (667px). The numeral steps down one size; the 44px touch
+   targets stay. */
+@media (max-height: 740px) {
+  .stepper-weight .stepper-input,
+  .stepper-reps .stepper-input { font-size: var(--fs-34); }
+  .stepper-btn { width: 44px; height: 44px; min-height: 44px; }
+  .stepper { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .card-ex .ex-title { font-size: var(--fs-17); }
+  .set-rpe { margin-top: 8px; }
 }
