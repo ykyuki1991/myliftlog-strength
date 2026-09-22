@@ -4,6 +4,29 @@ The tool a person who handles 150kg reaches for. Apple Watch Ultra, high-end
 strength equipment, the precision of powerlifting. No muscle photography, no
 flame, no neon, no showy gradients.
 
+## Audit (2026-09-23, today screen on iPhone)
+
+Measured on an iOS 27 simulator (Xcode 27, iPhone 18 Pro, 402x874) with the
+app added to the home screen as a web app, then reproduced at 375x667,
+393x852 and 440x956 with the safe areas substituted.
+
+- From the second set on, the reps stepper and the RPE row sat under LOG SET.
+  Every set needed a scroll before it could be recorded.
+- Logging the first set inserted the three metric chips above the card and
+  pushed everything down 70px; the NEXT SET band inserted during rest pushed
+  the stepper down another 80px. Both repeated what the set table already said.
+- The header was 96px + 62px safe area (158px) and shrank to 44px on scroll,
+  which changed body padding mid-scroll and made the page jump 52px.
+- Chrome below the content was 180px: a 72px nav + 34px home indicator and a
+  74px dock.
+- The set table rounded 66.25 to 66.3 directly above an input reading 66.25.
+
+Changes: metrics moved into the header eyebrow line; NEXT SET band removed;
+today header fixed at 64px; nav 58px; dock 64px; tighter card spacing; a
+max-height 740px step for SE-class screens; the set table shows the entered
+weight. Result: the set table, weight, reps, RPE and LOG SET are on one screen
+without scrolling at every size above, and nothing moves when a set is logged.
+
 ## Audit (2026-09-09, today screen)
 
 Measured against a device screenshot after the token work landed (PR #43).
@@ -140,8 +163,8 @@ against them has not been made.
    from the data behind it. The log reads in Japanese because the log is
    content.
 
-10. **The today screen has one subject.** Order is fixed: session metrics,
-   anything that changes what the user does today, the exercise being
+10. **The today screen has one subject.** Order is fixed: session metrics
+   (in the header's eyebrow line, so they add no height), anything that changes what the user does today, the exercise being
    recorded, what is next, what is done (collapsed), what is paused. The
    active exercise is never below something read once a day. Settings that
    choose the day -- the menu picker, the R4 intensity, the MAX-test toggle --
