@@ -46,6 +46,8 @@ node --check app.js
 node test_dom.js
 node test_accessory.js
 node test_progression.js
+NODE_PATH=<playwright modules> node test_ui.js
+NODE_PATH=<playwright modules> node test_ux_audit.js
 git diff --check
 ```
 
@@ -58,3 +60,4 @@ git diff --check
 - `test_dom.js`: DOMとタイマー
 - `test_accessory.js`: 補助種目
 - `test_progression.js`: 進行、ログ、推定MAX、migration
+- `test_ui.js` / `test_ux_audit.js`: 実ブラウザでの画面・操作の回帰テスト
