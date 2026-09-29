@@ -4,6 +4,45 @@ The tool a person who handles 150kg reaches for. Apple Watch Ultra, high-end
 strength equipment, the precision of powerlifting. No muscle photography, no
 flame, no neon, no showy gradients.
 
+## Audit (2026-09-29, whole app)
+
+Six weeks of training were recorded through the UI (14 sessions, a set at a
+time, on a fixed clock) at 402x874 with the iPhone safe areas, then every
+screen and sheet was photographed and the stored data read back.
+
+Bugs:
+
+- On every new day the exercise card said "No previous record" and showed no
+  PR until the first set was logged: it read only the saved session, and a
+  day's session is not saved before its first set.
+- FINISH had no guard. With nothing logged it wrote empty logs and moved the
+  rotation to the next menu. With sets still pending it finished silently and
+  then left LOG SET on screen for a finished session.
+- The summary appeared as soon as the last set was logged, with "close" and
+  "view log" but no FINISH, so the day could look done without being saved.
+- Weights were rounded to one decimal: 66.25 read 66.3 and a 1.25kg step read
+  "+1.3kg", in PLAN, LOG and the progression reasons.
+- The set editor had one "RPE (all sets)" row that overwrote every set's RPE.
+- The rest alarm was silent on iPhone: the AudioContext was created at the
+  moment the timer ended, outside a tap, and Safari keeps such a context
+  suspended. A finished 00:00 ring stayed in the header indefinitely.
+- A rest timer started after the last set of the day.
+- The toast covered LOG SET.
+- Settings were kept only after "Save changes", placed above the next-menu
+  field it also saved; leaving the screen discarded edits, and a blank MAX was
+  saved as 0.
+- LOG listed each day's exercises newest first, so the main lift came last,
+  dropped every exercise after the fourth without saying so, and labelled
+  almost every day "MAX候補" and every main lift "中" (an 8-day-rotation label).
+- The monthly summary's "ローテ" was always "-" in the four-menu rotation.
+
+Friction: the sheet grabber did not respond to a downward drag; DETAILS
+repeated the edit action already on the card's menu; "今後も変更" borrowed the
+PR colour; an added exercise started with the name "新規補助種目" typed in; the
+empty pause list was a filled box above the largest blue button in settings.
+
+Each item above is covered by `test_ux_audit.js`.
+
 ## Audit (2026-09-23, today screen on iPhone)
 
 Measured on an iOS 27 simulator (Xcode 27, iPhone 18 Pro, 402x874) with the

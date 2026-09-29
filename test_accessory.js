@@ -246,7 +246,9 @@ function testTodayScreenRenders() {
     assert.ok(html.includes('ADD EXERCISE'));
     assert.ok(html.includes('active-set'), 'first incomplete exercise should expand as the active card');
     assert.ok(html.includes('UP NEXT'), 'remaining exercises should collapse into the up-next list');
-    assert.ok(html.includes('メイン種目編集'), 'active main card should expose the edit action without a BIG3-only label');
+    // 編集は見出し右の ⋮ に1つだけ置く（DETAILS に同じボタンを重ねない）。
+    assert.ok(html.includes('data-action="editMainSet"'), 'active main card should expose the edit action without a BIG3-only label');
+    assert.strictEqual((html.match(/data-action="editMainSet"/g) || []).length, 1, 'main edit action appears once');
     assert.ok(!html.includes('膝負荷'), 'today accessory cards should not show fatigue tags by default');
     assert.ok(!html.includes('脚補助'), 'today accessory cards should keep category details out of the card');
 

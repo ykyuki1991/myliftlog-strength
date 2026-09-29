@@ -266,8 +266,8 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(css.includes('.rest-ring-prog'), 'rest timer is an arc');
   assert.ok(css.includes('stroke-dashoffset'), 'arc shows remaining time');
   assert.ok(!css.includes('body.keyboard-open .rest-bar'), 'ring must survive the keyboard');
-  assert.ok(html.includes('20260923-today-fit'), 'cache-bust string moves with the release');
-  assert.ok(sw.includes("mll-strength-v28"), 'the worker version moves with it');
+  assert.ok(html.includes('20260929-ux-audit'), 'cache-bust string moves with the release');
+  assert.ok(sw.includes("mll-strength-v29"), 'the worker version moves with it');
   // 書体は1つ。バンドルしていた数字専用フォントは廃止した
   assert.ok(!css.includes('@font-face'), 'no bundled face');
   assert.ok(!html.includes('.woff2'), 'nothing preloads a font file');
