@@ -186,6 +186,11 @@ function testRestoreAfterEnd() {
   assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:31');
   assert.ok(state.alertedAt);
   assert.strictEqual(h.elements.restTimer.classList.contains('alarm'), true);
+  h.elements.restToggle.onclick();
+  h.api.setNowProvider(() => 2_231_000);
+  h.api.restoreRestTimer();
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:31', 'a paused count-up timer survives a long restart');
+  assert.strictEqual(h.api.getRestState().running, false);
 }
 
 function testLifecycleEventsRecalculate() {

@@ -6437,7 +6437,7 @@ function normalizeRestTimerState(state) {
   if (!restDurationSec || !restStartedAt || !restEndAt) return null;
   // 終わったレストの 00:00 がヘッダーに何時間も残っていた。終了から10分で片付ける。
   const countUp = Object.prototype.hasOwnProperty.call(state, 'elapsedBeforePauseSec');
-  const endedAt = state.running ? (countUp ? null : restEndAt) : (parseInt(state.alertedAt, 10) || null);
+  const endedAt = countUp ? null : (state.running ? restEndAt : (parseInt(state.alertedAt, 10) || null));
   if (endedAt && nowMs() - endedAt > REST_STALE_MS) return null;
   return {
     restStartedAt,
