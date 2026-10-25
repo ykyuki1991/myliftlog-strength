@@ -1,5 +1,54 @@
 # Precision Strength
 
+## Recording reliability design (2026-10-25)
+
+Additional requirements (2026-10-25): free workouts can start with no menu
+combination and contain any named exercise. Existing combined-menu custom
+workouts remain available. An exercise picker starts with body-part filters
+and search, with a larger local catalog and a free-name option. All future
+weight/MAX increases require an explicit adoption action; finishing a workout
+only saves records and advances the existing routine. The rest display counts
+elapsed time upward from zero, continues past the target, and retains pause,
+resume, reset and offline/restart recovery from timestamps. Target duration
+remains a rest reminder, not a stop condition. Preserve historical logs and
+the ability to undo automatic applications saved by older releases.
+
+Final weight-step clarification: all weight buttons and increase proposals
+use 2.5kg. Old increment settings are normalized to that value; historical
+weights and saved absolute targets are not rounded onto a new grid. A
+recorded 66.25kg stays 66.25kg until an explicit edit/adoption changes it.
+
+Audit: Today, Plan, Log, Settings, set editing and persistence in an isolated
+390px browser, on main at 6bfe687. Reproduced before changing the code:
+
+- A 66.25kg military press increased to 68.75kg although its configured step
+  is 1.25kg. Recording controls used the global 2.5kg step.
+- Clearing the weight and pressing LOG SET recorded the previous 68.75kg.
+  Invalid input was ignored, so the visible form and stored set disagreed.
+- Editing the bench MAX reset `isRestSelected`, even though the next-menu
+  setting had not been touched.
+- Opening an older exercise with a single RPE of 7, then saving its sets,
+  replaced that RPE with "未入力". The editor read only per-set RPE.
+- Previous-performance text preferred `plannedWeight` over recorded weights.
+- A future main-weight adjustment was saved as a delta. Once the adjusted
+  target appeared in the next log, menu generation could add the delta again.
+  New future adjustments use absolute overrides; already-included legacy
+  adjustments are recognized without rewriting logs.
+
+Design: retain the current screen hierarchy, navigation, timer and card
+treatment. Make the recording controls truthful and predictable. Explicitly
+cleared or invalid fields remain editable drafts through reload, and LOG SET
+points to the field to correct instead of silently recording the old value.
+Untouched planned values keep their existing one-tap recording behavior.
+Use the same 2.5kg increment in both steppers and weight adjustment.
+Identify the optional RPE row without adding another panel. Preserve legacy
+RPE through the existing per-set fallback, and use actual completed sets for
+previous-performance text. Settings autosave must not change unrelated state.
+
+Regression coverage: direct input, clear/reload/correct/record, invalid reps,
+lift-specific increments, legacy RPE editing, rest selection, actual previous
+weights, all menus/custom, narrow/short screens, and service-worker upgrade.
+
 The tool a person who handles 150kg reaches for. Apple Watch Ultra, high-end
 strength equipment, the precision of powerlifting. No muscle photography, no
 flame, no neon, no showy gradients.
@@ -239,13 +288,11 @@ against them has not been made.
     control the user touches once a day is never the largest coloured area on
     the screen. A drop in volume is `--text-3`, not red.
 
-13. **The app decides; the user corrects.** Anything derivable from past
-    records is applied automatically at session finish, and listed on the
-    completion screen with its reason and a way to undo it. A calculated
-    recommendation is not a question: asking the user to approve seven of
-    them per session is phone time in a gym, and a gym is a bad place to
-    read. What stays a question is only what the app cannot know -- how the
-    body feels today, whether a joint hurts, whether to test a max.
+13. **Weight changes are intentional.** Finishing saves training records.
+    Main, accessory and MAX increases stay proposals until the user adopts
+    them. The finish summary and Plan offer next-weight candidates; Max
+    retains its adoption controls. Existing automatic applications from
+    older releases can still be undone. (Updated 2026-10-25.)
 
 14. **One place per capability.** A function appears on exactly one screen.
     Export/import belongs to settings, not settings and the log; measured and

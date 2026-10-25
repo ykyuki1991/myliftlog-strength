@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=20260929-ux-audit" />
+  <link rel="stylesheet" href="styles.css?v=20261025-recording-ux" />
   <title>MyLiftLog Strength Planner</title>
 </head>
 <body>
@@ -29,13 +29,14 @@
             </svg>
             <span class="rest-ring-inner">
               <span class="rest-ring-time" id="restTimerDisplay" role="timer">00:00</span>
-              <span class="micro-label rest-ring-caption">REST</span>
+              <span class="micro-label rest-ring-caption">ELAPSED</span>
             </span>
           </button>
           <div class="rest-pop hidden" id="restPop" role="group" aria-label="レストタイマー">
+            <span id="restTarget" class="micro-label"></span>
             <button id="restToggle">停止</button>
-            <button id="restMinus30" aria-label="30秒減らす">−30秒</button>
-            <button id="restPlus30" aria-label="30秒増やす">＋30秒</button>
+            <button id="restMinus30" aria-label="目安を30秒減らす">目安 −30秒</button>
+            <button id="restPlus30" aria-label="目安を30秒増やす">目安 ＋30秒</button>
             <button id="restReset" aria-label="リセット">リセット</button>
             <button id="restClose">スキップ</button>
           </div>
@@ -82,6 +83,6 @@
   <!-- トースト -->
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="app.js?v=20260929-ux-audit"></script>
+  <script src="app.js?v=20261025-recording-ux"></script>
 </body>
 </html>

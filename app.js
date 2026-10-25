@@ -9,6 +9,7 @@ const STORAGE_KEY = 'mll_strength_planner_v1';
 const RECOVERY_KEY_PREFIX = `${STORAGE_KEY}_recovery_`;
 const APP_VERSION = '1.0.0';
 const DATA_SCHEMA_VERSION = 3;
+const WEIGHT_STEP_KG = 2.5;
 
 const DEFAULT_SETTINGS = {
   programMode: 'fourMenu',
@@ -24,7 +25,7 @@ const DEFAULT_SETTINGS = {
   mainProgressionSettings: {
     bench: { increment: 2.5 },
     squat: { increment: 2.5 },
-    shoulderPress: { increment: 1.25 },
+    shoulderPress: { increment: 2.5 },
     halfDead: { increment: 2.5 },
     floorDead: { increment: 2.5 },
   },
@@ -280,10 +281,60 @@ const ACCESSORY_PRESET_GROUPS = [
   },
 ];
 
+// Catalog entries are options, never additions to an existing routine.
+const EXTRA_EXERCISE_CATALOG = {
+  '胸': [
+    ['bench', 'ベンチプレス', 'barbell'], ['incline_bench', 'インクラインベンチプレス', 'barbell'],
+    ['decline_bench', 'デクラインベンチプレス', 'barbell'], ['smith_bench', 'スミスマシンベンチプレス', 'upper_machine'],
+    ['db_fly', 'ダンベルフライ', 'dumbbell'], ['incline_db_fly', 'インクラインダンベルフライ', 'dumbbell'],
+    ['push_up', 'プッシュアップ', 'bodyweight'], ['cable_chest_press', 'ケーブルチェストプレス', 'cable'],
+  ],
+  '背中': [
+    ['halfDead', 'ハーフデッド', 'barbell'], ['floorDead', 'デッドリフト', 'barbell'],
+    ['assisted_pull_up', 'アシストチンニング', 'upper_machine'], ['neutral_pull_up', 'ニュートラルグリップチンニング', 'bodyweight'],
+    ['straight_arm_pulldown', 'ストレートアームプルダウン', 'cable'], ['t_bar_row', 'Tバーロウ', 'upper_machine'],
+    ['chest_supported_row', 'チェストサポートロウ', 'upper_machine'], ['db_pullover', 'ダンベルプルオーバー', 'dumbbell'],
+  ],
+  '脚': [
+    ['squat', 'スクワット', 'barbell'], ['front_squat', 'フロントスクワット', 'barbell'],
+    ['goblet_squat', 'ゴブレットスクワット', 'dumbbell'], ['smith_squat', 'スミスマシンスクワット', 'leg_machine'],
+    ['db_lunge', 'ダンベルランジ', 'dumbbell'], ['step_up', 'ステップアップ', 'dumbbell'],
+    ['hip_thrust', 'ヒップスラスト', 'barbell'], ['hip_abduction', 'ヒップアブダクション', 'leg_machine'],
+    ['hip_adduction', 'ヒップアダクション', 'leg_machine'], ['glute_bridge', 'グルートブリッジ', 'bodyweight'],
+    ['seated_leg_curl', 'シーテッドレッグカール', 'leg_machine'], ['lying_leg_curl', 'ライイングレッグカール', 'leg_machine'],
+  ],
+  '肩': [
+    ['shoulderPress', 'ミリタリープレス', 'barbell'], ['arnold_press', 'アーノルドプレス', 'dumbbell'],
+    ['db_rear_raise', 'ダンベルリアレイズ', 'dumbbell'], ['upright_row', 'アップライトロウ', 'barbell'],
+    ['db_shrug', 'ダンベルシュラッグ', 'dumbbell'], ['cable_rear_fly', 'ケーブルリアフライ', 'cable'],
+  ],
+  '腕': [
+    ['barbell_curl', 'バーベルカール', 'barbell'], ['ez_bar_curl', 'EZバーカール', 'barbell'],
+    ['concentration_curl', 'コンセントレーションカール', 'dumbbell'], ['reverse_curl', 'リバースカール', 'barbell'],
+    ['db_triceps_ext', 'ダンベルトライセプスエクステンション', 'dumbbell'], ['triceps_kickback', 'トライセプスキックバック', 'dumbbell'],
+    ['close_grip_bench', 'クローズグリップベンチプレス', 'barbell'], ['wrist_curl', 'リストカール', 'dumbbell'],
+  ],
+  '体幹': [
+    ['crunch', 'クランチ', 'bodyweight'], ['cable_crunch', 'ケーブルクランチ', 'cable'],
+    ['hanging_leg_raise', 'ハンギングレッグレイズ', 'bodyweight'], ['ab_machine', 'アブドミナルマシン', 'upper_machine'],
+    ['ab_wheel', 'アブローラー', 'bodyweight'], ['back_extension', 'バックエクステンション', 'bodyweight'],
+  ],
+};
+Object.entries(EXTRA_EXERCISE_CATALOG).forEach(([group, entries]) => {
+  let target = ACCESSORY_PRESET_GROUPS.find(item => item.group === group);
+  if (!target) {
+    target = { group, presets: [] };
+    ACCESSORY_PRESET_GROUPS.splice(ACCESSORY_PRESET_GROUPS.length - 1, 0, target);
+  }
+  entries.forEach(([key, name, weightType]) => target.presets.push({
+    key, name, weightType, slotName: group, setsText: '3', plannedSets: 3, reps: 10,
+    targetRpe: '7〜8', categories: [group === '脚' ? '脚補助' : group], fatigueTags: [],
+  }));
+});
 const ACCESSORY_PRESETS = ACCESSORY_PRESET_GROUPS.flatMap(group => group.presets.map(preset => ({ ...preset, group: group.group })));
 
 const ACCESSORY_CATEGORIES = [
-  '胸', '背中', '肩', '腕', '脚前側', '脚後側', 'カーフ',
+  '胸', '背中', '肩', '腕', '脚前側', '脚後側', 'カーフ', '体幹',
   'ベンチ系プレス', 'デッド・腰背部負荷', '肩プレス系',
   'チンニング系', 'ロウ系', '脚補助', '横肩', '後ろ肩', '肩補助',
 ];
@@ -426,10 +477,11 @@ function migrateStoreData(parsed = {}) {
     ...def.settings,
     ...(parsed.settings || {}),
     programMode: 'fourMenu',
+    increment: WEIGHT_STEP_KG,
     maxes: { ...def.settings.maxes, ...(parsed.settings?.maxes || {}) },
     mainProgressionSettings: Object.fromEntries(Object.entries(def.settings.mainProgressionSettings).map(([key, value]) => [
       key,
-      { ...value, ...(parsed.settings?.mainProgressionSettings?.[key] || {}) },
+      { ...value, ...(parsed.settings?.mainProgressionSettings?.[key] || {}), increment: WEIGHT_STEP_KG },
     ])),
     rotationIncreaseCaps: { ...def.settings.rotationIncreaseCaps, ...(parsed.settings?.rotationIncreaseCaps || {}) },
     r4AdjustmentModes: { ...def.settings.r4AdjustmentModes, ...(parsed.settings?.r4AdjustmentModes || {}) },
@@ -620,8 +672,16 @@ function inferPresetKey(slot = {}) {
   return byName ? byName.key : 'custom';
 }
 
-function accessoryPresetOptionsHtml(selectedKey = 'custom') {
-  return ACCESSORY_PRESET_GROUPS.map(group => `
+function accessoryPresetOptionsHtml(selectedKey = 'custom', selectedGroup = '', query = '') {
+  const term = query.trim().toLocaleLowerCase();
+  const groups = ACCESSORY_PRESET_GROUPS.map(group => ({ ...group,
+    presets: group.presets.filter(preset => (!selectedGroup || group.group === selectedGroup) &&
+      (!term || `${preset.name} ${preset.key}`.toLocaleLowerCase().includes(term))),
+  }));
+  const selected = getAccessoryPreset(selectedKey);
+  const keepSelection = selected && !groups.some(group => group.presets.some(preset => preset.key === selectedKey))
+    ? `<optgroup label="選択中"><option value="${escapeHtml(selected.key)}" selected>${escapeHtml(selected.name)}</option></optgroup>` : '';
+  return keepSelection + groups.filter(group => group.presets.length).map(group => `
     <optgroup label="${group.group}">
       ${group.presets.map(preset => `<option value="${preset.key}" ${preset.key === selectedKey ? 'selected' : ''}>${preset.name}</option>`).join('')}
     </optgroup>
@@ -2235,16 +2295,7 @@ function hasStrongPain(ex) {
 }
 
 function weightStepText(weightType) {
-  switch (weightType) {
-    case 'dumbbell': return '片手+1〜2kg';
-    case 'cable': return '+1〜2.5kg';
-    case 'barbell': return '+2.5〜5kg';
-    case 'leg_machine': return '+5〜10kg';
-    case 'bodyweight': return '上限回数達成後に+2.5kg加重';
-    case 'arm': return '+1〜2kg';
-    case 'calf': return '+5kg or 回数増';
-    default: return '+2.5〜5kg';
-  }
+  return weightType === 'bodyweight' ? '上限回数達成後に+2.5kg加重' : weightType === 'dumbbell' ? '片手+2.5kg' : '+2.5kg';
 }
 
 function classifyAccessoryLog(log) {
@@ -2298,16 +2349,7 @@ function suggestAccessoryProgression(ex, mode = store.settings.accessoryManageme
 }
 
 function accessoryWeightIncrement(weightType) {
-  switch (weightType) {
-    case 'dumbbell': return 2;
-    case 'barbell': return 2.5;
-    case 'upper_machine':
-    case 'leg_machine':
-    case 'cable':
-    case 'calf': return 5;
-    case 'bodyweight': return 0;
-    default: return 2.5;
-  }
+  return weightType === 'bodyweight' ? 0 : WEIGHT_STEP_KG;
 }
 
 function getAccessoryProgressionCandidate(ex) {
@@ -2562,7 +2604,6 @@ function deriveLastCompletedBackLiftKey(logs = [], daySessions = {}, backComplet
 
 function getFourMenuState() {
   store.currentState.nextMenuKey = normalizeActiveFourMenuKey(store.currentState.nextMenuKey);
-  store.currentState.isRestSelected = false;
   store.currentState.backCompletedCount = parseInt(store.currentState.backCompletedCount, 10) || 0;
   store.currentState.lastCompletedBackLiftKey = normalizeBackLiftKey(store.currentState.lastCompletedBackLiftKey) ||
     deriveLastCompletedBackLiftKey(store.logs, store.daySessions, store.currentState.backCompletedCount);
@@ -2615,15 +2656,18 @@ function getFourMenuBaseWeightFromMax(liftKey, settings = store.settings) {
 }
 
 function getMainProgressionIncrement(liftKey, settings = store.settings) {
-  const configured = parseFloat(settings.mainProgressionSettings?.[liftKey]?.increment);
-  return Number.isFinite(configured) && configured > 0 ? configured : (parseFloat(settings.increment) || 2.5);
+  return WEIGHT_STEP_KG;
+}
+
+function getRecordingWeightIncrement(ex) {
+  return WEIGHT_STEP_KG;
 }
 
 function countConsecutiveMainMisses(logs, targetWeight, increment) {
   let count = 0;
   for (const log of logs) {
     if (isNonAttemptMainLog(log)) continue;
-    const weight = roundToIncrement(parseFloat(log.plannedWeight) || maxSetWeight(log), increment);
+    const weight = parseFloat(log.plannedWeight) || maxSetWeight(log);
     if (weight !== targetWeight || isFourMainLogComplete(log)) break;
     count++;
   }
@@ -2636,7 +2680,7 @@ function getFourMenuMainPlan(liftKey, menuKey, settings = store.settings) {
   const override = settings.mainSetOverrides?.[`Four-${normalizeFourMenuKey(menuKey)}-${liftKey}-four-main-${liftKey}`];
   if (override) {
     return {
-      weight: roundToIncrement(parseFloat(override.plannedWeight), inc),
+      weight: parseFloat(override.plannedWeight),
       reps: parseInt(override.plannedReps, 10) || 5,
       sets: parseInt(override.plannedSets, 10) || 3,
       reason: '手動設定',
@@ -2651,12 +2695,12 @@ function getFourMenuMainPlan(liftKey, menuKey, settings = store.settings) {
   }
 
   const latest = logs[0];
-  const latestWeight = roundToIncrement(parseFloat(latest.plannedWeight) || maxSetWeight(latest) || getFourMenuBaseWeightFromMax(liftKey, settings), inc);
+  const latestWeight = parseFloat(latest.plannedWeight) || maxSetWeight(latest) || getFourMenuBaseWeightFromMax(liftKey, settings);
   const latestComplete = isFourMainLogComplete(latest);
   const consecutiveMisses = countConsecutiveMainMisses(logs, latestWeight, inc);
 
   if (latestComplete) {
-    return { weight: roundToIncrement(latestWeight + inc, inc), reps: 5, sets: 3, reason: `前回3セット完遂のため +${fmtW(inc)}kg`, reasonCode: 'completed_increment', referenceDate: fmtDateShort(latest.date) };
+    return { weight: latestWeight, increaseCandidateWeight: Math.round((latestWeight + inc) * 100) / 100, reps: 5, sets: 3, reason: '前回完遂・増量は候補を採用した場合のみ', reasonCode: 'completed_candidate', referenceDate: fmtDateShort(latest.date) };
   }
   if (consecutiveMisses >= 2) {
     return {
@@ -2690,7 +2734,7 @@ function previousMainSummary(ex, session) {
   const log = getPreviousMainLog(ex, session);
   if (!log) return { log: null, text: '前回 記録なし', days: null };
   const reps = (log.sets || []).filter(set => set.done).map(set => parseInt(set.reps, 10) || 0).join('/');
-  const weight = parseFloat(log.plannedWeight) || maxSetWeight(log);
+  const weight = maxSetWeight(log) ?? parseFloat(log.plannedWeight);
   const date = log.performedDate || log.date;
   const days = dateDiffDays(date, session.performedDate || session.date);
   return {
@@ -2705,13 +2749,15 @@ function previousMainSummary(ex, session) {
 function previousSummaryEn(previous) {
   const log = previous?.log;
   if (!log) return 'No previous record';
-  const reps = (log.sets || []).filter(set => set.done).map(set => parseInt(set.reps, 10) || 0).join('/');
-  const weight = parseFloat(log.plannedWeight) || maxSetWeight(log);
+  const done = (log.sets || []).filter(set => set.done && !set.skipped);
+  const reps = done.map(set => parseInt(set.reps, 10) || 0).join('/');
+  const weights = done.filter(set => set.weight != null && set.weight !== '').map(set => Number(set.weight)).filter(Number.isFinite);
+  const weight = weights.length ? [...new Set(weights)].map(fmtW).join('/') : fmtW(log.plannedWeight);
   const rpe = log.rpe && log.rpe !== '未入力' ? ` @${log.rpe}` : '';
   const days = previous.days;
   // PR バッジと同じ行に収まる長さにする（以前は「5 days ...」と切れていた）。単位は表の見出しにある。
   const ago = days == null ? '' : ` · ${days === 0 ? 'today' : `${days}d ago`}`;
-  return `Last ${fmtW(weight)} × ${reps || '-'}${rpe}${ago}`;
+  return `Last ${weight} × ${reps || '-'}${rpe}${ago}`;
 }
 
 function getMainPrFacts(ex) {
@@ -2851,6 +2897,7 @@ function buildFourMenuMainExercise(menuKey, settings = store.settings, selectedB
     progressionReason: plan.reason,
     progressionReasonCode: plan.reasonCode,
     reductionCandidateWeight: plan.reductionCandidateWeight || null,
+    increaseCandidateWeight: plan.increaseCandidateWeight || null,
     progressionReferenceDate: plan.referenceDate,
     deadliftVariant: lift.key === 'halfDead' ? 'rack' : lift.key === 'floorDead' ? 'floor' : null,
   };
@@ -2919,7 +2966,8 @@ function buildFourMenu(menuKey, settings = store.settings, options = {}) {
       const adjKey = `Four-${normalizedKey}-${ex.key}-${ex.menuType}`;
       const adj = store.manualAdjustments?.[adjKey] || 0;
       if (adj) {
-        ex.plannedWeight = roundToIncrement(ex.plannedWeight + adj, settings.increment || 2.5);
+        const includedInLatestLog = ex.isFourMenuMain && getFourMenuLatestLogsForLift(ex.key, 1)[0]?.manualAdjusted;
+        if (!includedInLatestLog) ex.plannedWeight = roundToIncrement(ex.plannedWeight + adj, getRecordingWeightIncrement(ex));
         ex.adjusted = adj;
       }
     }
@@ -3508,7 +3556,9 @@ function applyMainSetEdit(ex, values, options = {}) {
 
   const nextSets = currentSets.slice(0, plannedSets).map(set => {
     if (set.done) return { ...set };
-    return { ...set, weight: plannedWeight, reps: plannedReps };
+    const edited = { ...set, weight: plannedWeight, reps: plannedReps };
+    delete edited.inputDraft;
+    return edited;
   });
   while (nextSets.length < plannedSets) {
     nextSets.push({ weight: plannedWeight, reps: plannedReps, done: false });
@@ -3556,6 +3606,29 @@ function applyMainSetOverridesToMenu(exercises, day, settings = store.settings) 
   });
 }
 
+function setInputError(set) {
+  if (Object.prototype.hasOwnProperty.call(set?.inputDraft || {}, 'weight')) return { field: 'kg', message: '重量を0以上の数値で入力してください' };
+  if (Object.prototype.hasOwnProperty.call(set?.inputDraft || {}, 'reps')) return { field: 'reps', message: '回数を0以上の整数で入力してください' };
+  return null;
+}
+
+function updateSetInput(set, field, rawValue) {
+  const key = field === 'kg' ? 'weight' : 'reps';
+  const value = rawValue.trim() === '' ? NaN : Number(rawValue);
+  const valid = Number.isFinite(value) && value >= 0 && (key === 'weight' || Number.isInteger(value));
+  if (valid) {
+    set[key] = key === 'weight' ? Math.round(value * 100) / 100 : value;
+    if (set.inputDraft) {
+      delete set.inputDraft[key];
+      if (!Object.keys(set.inputDraft).length) delete set.inputDraft;
+    }
+  } else {
+    // Explicit edits are drafts, not a request to silently reuse the last value.
+    set.inputDraft = { ...(set.inputDraft || {}), [key]: rawValue };
+  }
+  return valid;
+}
+
 // 完了時に実績値を確定する。空欄やレンジ表記（5〜8等）を保存データに残さない
 function commitSetRecordDefaults(ex, set) {
   if (!ex || !set) return;
@@ -3582,6 +3655,8 @@ function toggleNextSetCompletion(session, exIdx) {
   if (!ex) return { ok: false, reason: 'missing-exercise' };
   const nextIdx = firstPendingSetIndex(ex);
   if (nextIdx >= 0) {
+    const error = setInputError(ex.sets[nextIdx]);
+    if (error) return { ok: false, reason: 'invalid-input', ...error };
     commitSetRecordDefaults(ex, ex.sets[nextIdx]);
     ex.sets[nextIdx].done = true;
     return { ok: true, completedSet: nextIdx, allDone: isExerciseComplete(ex), reverted: false };
@@ -3632,6 +3707,12 @@ function selectFourMenuForToday(menuKey, options = {}) {
     ? (normalizeBackLiftKey(oldSession?.selectedBackLiftKey) || getFourMenuBackLiftKey(getFourMenuState()))
     : null;
   const menu = buildFourMenu(selected, store.settings, { backLiftKey: selectedBackLiftKey, customMenuKeys: options.customMenuKeys || oldSession?.menuDrafts?.custom?.customMenuKeys });
+  if (selected === 'custom' && options.customMenuKeys && oldSession?.selectedSplitKey === 'custom') {
+    const preserved = oldSession.exercises.filter(ex => ex.fourMenuKey === 'custom');
+    preserved.forEach(ex => {
+      if (!menu.exercises.some(item => item.slotId === ex.slotId)) menu.exercises.push(cloneWorkoutExercise(ex));
+    });
+  }
   const exerciseDrafts = oldSession?.exerciseDrafts || {};
   (oldSession?.exercises || []).forEach(ex => { exerciseDrafts[`${ex.key}:${ex.menuType}`] = cloneWorkoutExercise(ex); });
   const menuDrafts = oldSession?.menuDrafts || {};
@@ -4008,7 +4089,7 @@ function openMenuSheet() {
   openModal('MENU', `
     <div class="micro-label sheet-group-label">TODAY'S MENU</div>
     <div class="menu-list" role="menu">${menuSheetRowsHtml(session)}</div>
-    ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '種目を追加'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>組み合わせを編集</button></div>` : ''}
+    ${selected === 'custom' ? `<div class="custom-menu-summary"><span>${(session.customMenuKeys || ['chest', 'back']).map(fourMenuLabel).join('・') || '自由カスタム'}</span><button class="btn-secondary btn-small" id="editCustomMenu" ${session.completed ? 'disabled' : ''}>構成を編集</button></div><button class="btn-secondary btn-block" id="startFreeCustom" ${session.completed ? 'disabled' : ''}>種目を自由に選ぶ</button>` : ''}
     ${backLiftRowsHtml(session)}
     ${renderR4AdjustmentPanel(session)}
     ${renderDeloadMaxTestPanel(session)}
@@ -4018,6 +4099,17 @@ function openMenuSheet() {
 
 // メニュー選択系の束縛。本文から出したのでシートのマウント時に張る。
 function bindMenuSheetControls(session) {
+  const freeCustom = document.getElementById('startFreeCustom');
+  if (freeCustom) freeCustom.onclick = () => {
+    const removed = session.exercises.filter(ex => ex.fourMenuKey !== 'custom');
+    if (removed.some(ex => ex.note || ex.todayEdited || (ex.sets || []).some(set => hasSetRecord(set) || set.inputDraft || (set.weight != null && set.weight !== ex.plannedWeight))) &&
+        !confirm('組み合わせの種目を外して自由カスタムにしますか？入力はメニューの下書きに残ります。')) return;
+    if (!selectFourMenuForToday('custom', { customMenuKeys: [] })) return;
+    store.settings.customMenuKeys = [];
+    saveStore();
+    closeModal();
+    render();
+  };
   const newSessionBtn = document.getElementById('btnNewTodaySession');
   if (newSessionBtn) newSessionBtn.onclick = () => {
     closeModal();
@@ -4046,11 +4138,10 @@ function bindMenuSheetControls(session) {
   const customEditor = document.getElementById('editCustomMenu');
   if (customEditor) customEditor.onclick = () => openModal('組み合わせ', `
     <div class="custom-menu-options">${FOUR_MENU_ORDER.map(key => `<label><input type="checkbox" data-custom-menu="${key}" ${(session.customMenuKeys || []).includes(key) ? 'checked' : ''}>${fourMenuLabel(key)}</label>`).join('')}</div>
-    <button class="btn-primary" id="saveCustomMenu">この組み合わせで記録</button>
+    <button class="btn-primary" id="saveCustomMenu">この構成を使う</button>
   `, () => {
     document.getElementById('saveCustomMenu').onclick = () => {
       const keys = [...document.querySelectorAll('[data-custom-menu]:checked')].map(el => el.dataset.customMenu);
-      if (!keys.length) { showToast('メニューを1つ以上選んでください'); return; }
       const removed = session.exercises.filter(ex => !keys.includes(ex.fourMenuKey));
       if (removed.some(ex => ex.sets?.some(set => set.done || set.skipped) || ex.note || ex.rpe !== '未入力') && !confirm('入力済みの種目が組み合わせから外れます。変更しますか？')) return;
       if (!selectFourMenuForToday('custom', { customMenuKeys: keys })) { showToast('保存できませんでした'); return; }
@@ -4194,12 +4285,12 @@ function openSetEditSheet(exIdx) {
   if (!ex) return;
   // RPE はセットごとの値を編集する。以前は「RPE（全セット）」の1つで全セットを上書きしていた。
   const draft = ex.sets.map(s => ({
-    weight: s.weight ?? '',
-    reps: s.reps ?? '',
-    rpe: s.rpe ?? '',
+    weight: s.inputDraft?.weight ?? s.weight ?? '',
+    reps: s.inputDraft?.reps ?? s.reps ?? '',
+    rpe: String(parseRpeValue(rpeForSet(ex, s)) ?? ''),
     state: s.done ? 'done' : (s.skipped ? 'skip' : 'todo'),
   }));
-  const RPE_OPTIONS = ['7', '7.5', '8', '8.5', '9', '9.5', '10'];
+  const setRpeOptions = Array.from({ length: 19 }, (_, i) => String(1 + i * 0.5));
 
   const stateBtn = (idx, state, label) => {
     const on = draft[idx].state === state;
@@ -4217,7 +4308,7 @@ function openSetEditSheet(exIdx) {
         <input type="number" inputmode="numeric" value="${d.reps}" placeholder="回" aria-label="セット${i + 1}の回数" data-se-field="reps" data-se-idx="${i}" />
         <select aria-label="セット${i + 1}のRPE" data-se-field="rpe" data-se-idx="${i}">
           <option value="" ${d.rpe === '' ? 'selected' : ''}>—</option>
-          ${RPE_OPTIONS.map(r => `<option value="${r}" ${String(d.rpe) === r ? 'selected' : ''}>${r}</option>`).join('')}
+          ${setRpeOptions.map(r => `<option value="${r}" ${String(d.rpe) === r ? 'selected' : ''}>${r}</option>`).join('')}
         </select>
         <div class="seg">${stateBtn(i, 'done', `${ICON_CHECK} 完了`)}${stateBtn(i, 'skip', 'スキップ')}${stateBtn(i, 'todo', '未実施')}</div>
       </div>
@@ -4244,10 +4335,13 @@ function openSetEditSheet(exIdx) {
     });
     const saveBtn = document.getElementById('btnSetEditSave');
     if (saveBtn) saveBtn.onclick = () => {
+      const invalid = draft.findIndex(d => (String(d.weight).trim() !== '' && (!Number.isFinite(Number(d.weight)) || Number(d.weight) < 0)) ||
+        (String(d.reps).trim() !== '' && (!Number.isInteger(Number(d.reps)) || Number(d.reps) < 0)));
+      if (invalid >= 0) { showToast(`セット${invalid + 1}の重量・回数を確認してください`); return; }
       ex.sets = draft.map((d, i) => {
         const weight = parseFloat(d.weight);
         const reps = parseInt(d.reps, 10);
-        return {
+        const set = {
           ...ex.sets[i],
           rpe: d.rpe === '' ? null : d.rpe,
           weight: Number.isFinite(weight) ? weight : null,
@@ -4255,6 +4349,8 @@ function openSetEditSheet(exIdx) {
           done: d.state === 'done',
           skipped: d.state === 'skip',
         };
+        delete set.inputDraft;
+        return set;
       });
       syncExerciseRpeFromSets(ex);
       if (session.completed || findSessionExerciseLogIndex(session, ex) >= 0) {
@@ -4295,7 +4391,10 @@ function renderActiveExerciseCard(ex, exIdx) {
 
   // 自重種目（チンニング等）もkgで表示・編集する（アシスト=軽く/加重=重くを同じ欄で扱う）
   const currentWeight = set.weight ?? ex.plannedWeight;
-  const hasSetReps = set.reps != null && set.reps !== '';
+  const inputWeight = set.inputDraft?.weight ?? currentWeight;
+  const inputReps = set.inputDraft?.reps ?? set.reps;
+  const inputError = setInputError(set);
+  const increment = getRecordingWeightIncrement(ex);
 
   // 数字の幅を文字数から出して、入力欄を中身ちょうどの幅にする。
   // こうすると単位が数字の右にぶら下がり、数字そのものは行の中心に残る。
@@ -4305,16 +4404,17 @@ function renderActiveExerciseCard(ex, exIdx) {
     if (!text) return fallback;
     return Math.max(1.6, [...text].reduce((n, c) => n + (c === '.' ? 0.55 : 1), 0));
   };
-  const weightCh = figureCh(currentWeight);
-  const repsCh = figureCh(hasSetReps ? set.reps : ex.plannedReps, 1.8);
+  const weightCh = figureCh(inputWeight);
+  const repsCh = figureCh(inputReps || ex.plannedReps, 1.8);
   // 重量の単位。ダンベルは片手の重さなので ea（each）を付ける。
   const weightUnit = ex.weightType === 'dumbbell' ? 'kg ea' : 'kg';
 
   // RPEはセットごとに記録する。種目に1つだけ持たせていたときは
   // 「どのセットがきつかったか」が残らなかった。
   const setRpeHtml = `
+    <div class="set-rpe-label micro-label">RPE <span>OPTIONAL</span></div>
     <div class="set-rpe" role="group" aria-label="このセットのRPE">
-      ${['8', '8.5', '9', '9.5', '10'].map(r => `<button class="chip chip-tap ${String(set.rpe ?? '') === r ? 'on' : ''}" aria-pressed="${String(set.rpe ?? '') === r}" data-set-rpe="${r}" data-ex="${exIdx}">${r}</button>`).join('')}
+      ${['8', '8.5', '9', '9.5', '10'].map(r => `<button class="chip chip-tap ${String(set.rpe ?? '') === r ? 'on' : ''}" aria-label="RPE ${r}" aria-pressed="${String(set.rpe ?? '') === r}" data-set-rpe="${r}" data-ex="${exIdx}">${r}</button>`).join('')}
     </div>`;
 
   const activeBlock = setIdx >= 0 ? `
@@ -4326,32 +4426,29 @@ function renderActiveExerciseCard(ex, exIdx) {
           : `${fmtW(ex.plannedWeight)} × ${escapeHtml(String(ex.plannedReps ?? '—'))}`}</span>
       </div>
       <div class="stepper stepper-weight${cue && cue.type === 'weight' && cue.exIdx === exIdx ? (cue.dir > 0 ? ' roll-up' : ' roll-down') : ''}">
-        <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg減らす">−</button>
+        <button class="stepper-btn" data-step-field="kg" data-step-dir="-1" data-ex="${exIdx}" aria-label="重量を${increment}kg減らす">−</button>
         <label class="stepper-value">
           <span class="stepper-figure">
-            <input class="stepper-input" type="number" inputmode="decimal" step="0.1" min="0" style="width:${weightCh}ch" aria-label="セット重量 kg" data-direct-field="kg" data-ex="${exIdx}" value="${currentWeight ?? ''}" placeholder="—" />
+            <input class="stepper-input" type="number" inputmode="decimal" step="any" min="0" style="width:${weightCh}ch" aria-label="セット重量 kg" aria-describedby="set-input-error" aria-invalid="${!!set.inputDraft && Object.prototype.hasOwnProperty.call(set.inputDraft, 'weight')}" data-direct-field="kg" data-ex="${exIdx}" value="${escapeHtml(inputWeight ?? '')}" placeholder="—" />
             <span class="stepper-unit" aria-hidden="true">${weightUnit}</span>
           </span>
         </label>
-        <button class="stepper-btn" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${store.settings.increment || 2.5}kg増やす">＋</button>
+        <button class="stepper-btn" data-step-field="kg" data-step-dir="1" data-ex="${exIdx}" aria-label="重量を${increment}kg増やす">＋</button>
       </div>
       <div class="stepper stepper-reps">
         <button class="stepper-btn" data-step-field="reps" data-step-dir="-1" data-ex="${exIdx}" aria-label="回数を1減らす">−</button>
         <label class="stepper-value">
           <span class="stepper-figure">
-            <input class="stepper-input" type="number" inputmode="numeric" step="1" min="0" style="width:${repsCh}ch" aria-label="セット回数" data-direct-field="reps" data-ex="${exIdx}" value="${hasSetReps ? set.reps : ''}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
+            <input class="stepper-input" type="number" inputmode="numeric" step="1" min="0" style="width:${repsCh}ch" aria-label="セット回数" aria-describedby="set-input-error" aria-invalid="${!!set.inputDraft && Object.prototype.hasOwnProperty.call(set.inputDraft, 'reps')}" data-direct-field="reps" data-ex="${exIdx}" value="${escapeHtml(inputReps ?? '')}" placeholder="${escapeHtml(ex.plannedReps ?? '—')}" />
             <span class="stepper-unit" aria-hidden="true">reps</span>
           </span>
         </label>
         <button class="stepper-btn" data-step-field="reps" data-step-dir="1" data-ex="${exIdx}" aria-label="回数を1増やす">＋</button>
       </div>
+      <div id="set-input-error" class="set-input-error${inputError ? '' : ' hidden'}" role="status">${inputError ? inputError.message : ''}</div>
       ${setRpeHtml}
     </div>
   ` : '';
-
-  // 次回候補・5%減候補・推定MAX更新は完了時に自動採用する。
-  // セット間に判断を挟まない（DESIGN.md 原則15）。
-  const progressionNote = '';
 
   const painChips = PAIN_OPTIONS.map(p => `
     <button class="chip pain ${ex.pains.includes(p) ? 'active' : ''}" aria-pressed="${ex.pains.includes(p)}" data-ex="${exIdx}" data-pain="${p}">${p}</button>
@@ -4361,7 +4458,7 @@ function renderActiveExerciseCard(ex, exIdx) {
     <div class="card card-ex active ${ex.isFourMenuMain || ex.isBig3 ? 'card-main' : 'card-accessory'}" data-ex="${exIdx}">
       <div class="ex-head">
         <div class="ex-head-text">
-          <div class="micro-label">${ex.isFourMenuMain || ex.isBig3 ? 'MAIN' : 'ACCESSORY'}</div>
+          <div class="micro-label">${ex.isFourMenuMain || ex.isBig3 ? 'MAIN' : session.selectedSplitKey === 'custom' ? 'EXERCISE' : 'ACCESSORY'}</div>
           <h1 class="ex-title">${escapeHtml(displayExerciseName(ex.key, ex.name))}</h1>
         </div>
         <div class="ex-head-actions">
@@ -4380,7 +4477,6 @@ function renderActiveExerciseCard(ex, exIdx) {
       </div>
       ${setTable}
       ${activeBlock}
-      ${progressionNote}
       <details class="ui-details compact-details mt-8" data-ui-key="exercise-${ex.key}-${ex.menuType}">
         <summary>DETAILS</summary>
         <div class="ex-sub">予定 ${exercisePlanText(ex)} ・ ${escapeHtml(ex.progressionReason || '予定重量')}${ex.pctNote ? ` ・ ${escapeHtml(ex.pctNote)}` : ''}</div>
@@ -4520,6 +4616,8 @@ function renderWorkoutSummary(session, { totalDoneSets, volume }) {
             </div>`).join('')}
         </div>` : ''}
 
+      ${session.completed ? renderNextWeightCandidates(session) : ''}
+
       ${bestRows ? `<div class="summary-best"><span class="micro-label">BEST SET</span>${bestRows}</div>` : ''}
 
       ${session.completed ? `
@@ -4530,6 +4628,32 @@ function renderWorkoutSummary(session, { totalDoneSets, volume }) {
       <button class="btn-primary mt-12" id="btnFinishSession">FINISH</button>
       <button class="btn-sec mt-8" id="btnAddTodayAccessory">ADD EXERCISE</button>`}
     </section>`;
+}
+
+function renderNextWeightCandidates(session) {
+  const rows = (session.exercises || []).map((ex, index) => {
+    const candidate = ex.isFourMenuMain
+      ? getFourMenuMainPlan(ex.key, ex.fourMenuKey || session.selectedSplitKey).increaseCandidateWeight
+      : getAccessoryProgressionCandidate(ex)?.candidateWeight;
+    const menuKey = ex.fourMenuKey || session.selectedSplitKey;
+    const slot = ex.isAccessory ? getFourMenuAccessorySlots(menuKey).find(item => item.slotId === ex.slotId) : null;
+    if (candidate == null || (ex.isAccessory && (!slot || Number(slot.plannedWeight) !== Number(ex.plannedWeight)))) return '';
+    return `<div class="summary-auto-row"><span class="summary-auto-text"><span class="summary-auto-name">${escapeHtml(displayExerciseName(ex.key, ex.name))}</span><span class="summary-auto-reason">次回候補 ${fmtW(candidate)}kg</span></span><button class="btn-secondary btn-small" data-adopt-next-weight="${index}">採用</button></div>`;
+  }).filter(Boolean).join('');
+  return rows ? `<div class="summary-auto"><span class="micro-label">NEXT WEIGHT · OPTIONAL</span>${rows}</div>` : '';
+}
+
+function adoptMainIncrease(menuKey, liftKey) {
+  const plan = getFourMenuMainPlan(liftKey, menuKey);
+  if (plan.increaseCandidateWeight == null) return false;
+  const before = JSON.stringify(store.settings.mainSetOverrides || {});
+  const beforeAdjustments = JSON.stringify(store.manualAdjustments || {});
+  saveMainSetOverride(menuKey, { key: liftKey, menuType: `four-main-${liftKey}`, isFourMenuMain: true,
+    plannedWeight: plan.increaseCandidateWeight, plannedReps: plan.reps, plannedSets: plan.sets });
+  if (saveStore()) return true;
+  store.settings.mainSetOverrides = JSON.parse(before);
+  store.manualAdjustments = JSON.parse(beforeAdjustments);
+  return false;
 }
 
 function renderToday() {
@@ -4556,6 +4680,10 @@ function renderToday() {
       </div>
       <button class="btn-primary" id="btnFinishRest">休みとして保存</button>
     `;
+  }
+
+  if (!session.completed && session.selectedSplitKey === 'custom' && !session.exercises.length) {
+    return `${draftBanner}<section class="card custom-empty"><h2>自由カスタム</h2><p class="muted">今日やりたい種目を追加</p><button class="btn-primary" id="btnAddTodayAccessory">種目を追加</button></section>`;
   }
 
   const incomplete = session.exercises
@@ -4660,6 +4788,16 @@ function renderToday() {
 
 function afterToday() {
   const session = getOrCreateTodaySession({ persist: false });
+  document.querySelectorAll('[data-adopt-next-weight]').forEach(button => {
+    button.onclick = () => {
+      const ex = session.exercises[Number(button.dataset.adoptNextWeight)];
+      if (!ex) return;
+      const applied = ex.isFourMenuMain
+        ? adoptMainIncrease(ex.fourMenuKey || session.selectedSplitKey, ex.key)
+        : applyAccessoryProgressionCandidate(session, ex) && saveStore();
+      if (applied) { showToast('次回重量へ反映しました'); render(); }
+    };
+  });
   const viewLog = document.getElementById('btnViewWorkoutLog');
   if (viewLog) viewLog.onclick = () => navigate('log');
   const maxBanner = document.getElementById('btnOpenMaxTestFromBanner');
@@ -4716,15 +4854,15 @@ function afterToday() {
       const set = ex.sets[setIdx];
       if (!set) return;
       if (field === 'kg') {
-        const inc = parseFloat(store.settings.increment) || 2.5;
+        const inc = getRecordingWeightIncrement(ex);
         const base = parseFloat(set.weight ?? ex.plannedWeight) || 0;
-        set.weight = Math.max(0, Math.round((base + dir * inc) * 100) / 100);
+        updateSetInput(set, field, String(Math.max(0, Math.round((base + dir * inc) * 100) / 100)));
         cueMotion({ type: 'weight', exIdx, dir });
       } else if (field === 'reps') {
         const parsed = parseInt(set.reps, 10);
         // 未入力時はレンジ表記（8〜12等）の上限を初期値にして±する
         const base = Number.isFinite(parsed) ? parsed : parseRangeMax(ex.plannedReps, 0);
-        set.reps = Math.max(0, base + dir);
+        updateSetInput(set, field, String(Math.max(0, base + dir)));
       }
       persistTodaySession(session);
       render();
@@ -4734,7 +4872,7 @@ function afterToday() {
   // 直接入力（kg=小数可 / 回=整数）。不正値は保存しない
   document.querySelectorAll('input[data-direct-field]').forEach(input => {
     input.addEventListener('click', e => e.stopPropagation());
-    const saveDirectInput = (rerender = false) => {
+    const saveDirectInput = () => {
       const exIdx = parseInt(input.dataset.ex);
       const field = input.dataset.directField;
       const ex = session.exercises[exIdx];
@@ -4742,27 +4880,19 @@ function afterToday() {
       const setIdx = firstPendingSetIndex(ex);
       const set = ex.sets[setIdx];
       if (!set) return;
-      if (field === 'kg') {
-        const value = parseFloat(input.value);
-        if (!Number.isFinite(value) || value < 0) {
-          if (rerender) render();
-          return;
-        }
-        set.weight = Math.round(value * 100) / 100;
-      } else if (field === 'reps') {
-        const value = parseInt(input.value, 10);
-        if (!Number.isFinite(value) || value < 0) {
-          if (rerender) render();
-          return;
-        }
-        set.reps = value;
+      const valid = updateSetInput(set, field, input.value);
+      input.setAttribute('aria-invalid', String(!valid));
+      const error = setInputError(set);
+      const feedback = document.getElementById('set-input-error');
+      if (feedback) {
+        feedback.textContent = error?.message || '';
+        feedback.classList.toggle('hidden', !error);
       }
       persistTodaySession(session);
-      if (rerender) render();
     };
-    input.addEventListener('input', () => saveDirectInput(false));
+    input.addEventListener('input', saveDirectInput);
     // Keep the clicked completion button in the DOM when the input loses focus.
-    input.addEventListener('change', () => saveDirectInput(false));
+    input.addEventListener('change', saveDirectInput);
     input.addEventListener('focus', () => { if (typeof input.select === 'function') input.select(); });
   });
 
@@ -4880,6 +5010,9 @@ function afterToday() {
             showToast('1セット戻しました');
           }
           render();
+        } else if (result.reason === 'invalid-input') {
+          const input = document.querySelector(`input[data-direct-field="${result.field}"]`);
+          if (input) input.focus();
         }
       } else if (action === 'skipSet') {
         // スキップ: 記録には残すがタイマーは起動しない
@@ -4956,15 +5089,16 @@ function openAdjustModal(exIdx) {
   const session = store.daySessions[todaySessionKey()];
   const ex = session.exercises[exIdx];
   const currentWeight = ex.plannedWeight ?? ex.sets.find(s => s.weight != null)?.weight ?? 0;
+  const increment = getRecordingWeightIncrement(ex);
   openModal('重量調整', `
     <div class="muted mb-8">${escapeHtml(displayExerciseName(ex.key, ex.name))}</div>
     <div>現在の予定: <strong>${currentWeight || '-'}kg</strong></div>
     <label class="field mt-8"><span>新しい予定重量(kg)</span>
-      <input type="number" id="adj-weight" step="0.5" value="${currentWeight || ''}" />
+      <input type="number" id="adj-weight" min="0" step="any" value="${currentWeight}" />
     </label>
     <div class="btn-row">
-      <button class="btn-ghost btn-small" data-adjust-quick="-2.5">-2.5kg</button>
-      <button class="btn-ghost btn-small" data-adjust-quick="2.5">+2.5kg</button>
+      <button class="btn-ghost btn-small" data-adjust-quick="${-increment}">-${fmtW(increment)}kg</button>
+      <button class="btn-ghost btn-small" data-adjust-quick="${increment}">+${fmtW(increment)}kg</button>
       <button class="btn-ghost btn-small" data-adjust-percent="-5">-5%</button>
       <button class="btn-ghost btn-small" data-adjust-percent="5">+5%</button>
     </div>
@@ -4977,25 +5111,27 @@ function openAdjustModal(exIdx) {
     document.querySelectorAll('[data-adjust-quick]').forEach(btn => {
       btn.onclick = () => {
         const input = document.getElementById('adj-weight');
-        const value = (parseFloat(input.value) || currentWeight || 0) + parseFloat(btn.dataset.adjustQuick);
-        input.value = roundToIncrement(Math.max(0, value), store.settings.increment);
+        const entered = parseFloat(input.value);
+        const value = (Number.isFinite(entered) ? entered : currentWeight || 0) + parseFloat(btn.dataset.adjustQuick);
+        input.value = Math.round(Math.max(0, value) * 100) / 100;
       };
     });
     document.querySelectorAll('[data-adjust-percent]').forEach(btn => {
       btn.onclick = () => {
         const input = document.getElementById('adj-weight');
-        const base = parseFloat(input.value) || currentWeight || 0;
+        const entered = parseFloat(input.value);
+        const base = Number.isFinite(entered) ? entered : currentWeight || 0;
         const value = base * (1 + parseFloat(btn.dataset.adjustPercent) / 100);
-        input.value = roundToIncrement(Math.max(0, value), store.settings.increment);
+        input.value = roundToIncrement(Math.max(0, value), increment);
       };
     });
     document.getElementById('adj-today').onclick = () => {
       const v = parseFloat(document.getElementById('adj-weight').value);
-      if (!v) return;
-      const newW = roundToIncrement(v, store.settings.increment);
+      if (!Number.isFinite(v) || v < 0) return;
+      const newW = Math.round(v * 100) / 100;
       ex.plannedWeight = newW;
       ex.todayEdited = true;
-      ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
+      ex.sets.forEach(s => { if (!s.done) updateSetInput(s, 'kg', String(newW)); });
       saveStore();
       closeModal();
       render();
@@ -5003,8 +5139,8 @@ function openAdjustModal(exIdx) {
     };
     document.getElementById('adj-future').onclick = () => {
       const v = parseFloat(document.getElementById('adj-weight').value);
-      if (!v) return;
-      const newW = roundToIncrement(v, store.settings.increment);
+      if (!Number.isFinite(v) || v < 0) return;
+      const newW = Math.round(v * 100) / 100;
       if (ex.isAccessory) {
         store.settings.accessoryDefaults[ex.key] = {
           ...(store.settings.accessoryDefaults[ex.key] || {}),
@@ -5025,23 +5161,28 @@ function openAdjustModal(exIdx) {
           }
         }
         ex.plannedWeight = newW;
-        ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
+        ex.sets.forEach(s => { if (!s.done) updateSetInput(s, 'kg', String(newW)); });
         saveStore();
         closeModal();
         render();
         showToast('補助重量を今後にも反映しました');
         return;
       }
-      const diff = newW - ex.plannedWeight;
       const baseW = ex.plannedWeight - (ex.adjusted || 0);
       const totalAdj = (newW - baseW);
       const adjKey = session.fourMenuRotation
         ? `Four-${ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey}-${ex.key}-${ex.menuType}`
         : `Day${session.day}-${ex.key}-${ex.menuType}`;
-      store.manualAdjustments[adjKey] = totalAdj;
       ex.plannedWeight = newW;
-      ex.adjusted = totalAdj;
-      ex.sets.forEach(s => { if (!s.done) s.weight = newW; });
+      if (session.fourMenuRotation) {
+        // Store an absolute target: a delta would be added again to the next log's weight.
+        saveMainSetOverride(ex.fourMenuKey || session.performedSplitKey || session.selectedSplitKey, ex);
+        delete ex.adjusted;
+      } else {
+        store.manualAdjustments[adjKey] = totalAdj;
+        ex.adjusted = totalAdj;
+      }
+      ex.sets.forEach(s => { if (!s.done) updateSetInput(s, 'kg', String(newW)); });
       saveStore();
       closeModal();
       render();
@@ -5055,14 +5196,19 @@ function slotFormHtml(prefix, ex) {
   const selectedPreset = inferPresetKey(ex);
   const displaySlotName = ex.slotName === '腰に優しい背中' ? '背中' : (ex.slotName || '補助スロット');
   return `
+    <div class="exercise-groups" role="group" aria-label="種目の部位">
+      ${['', ...ACCESSORY_PRESET_GROUPS.map(group => group.group)].map(group => `<button type="button" class="btn-secondary btn-small" data-preset-group="${group}" data-preset-prefix="${prefix}" aria-pressed="${group === ''}">${group || 'すべて'}</button>`).join('')}
+    </div>
+    <label class="field"><span>種目を検索</span><input type="search" id="${prefix}-search" placeholder="種目名で絞り込み" /></label>
     <label class="field"><span>種目</span>
       <select id="${prefix}-preset" data-preset-select="${prefix}">
         ${accessoryPresetOptionsHtml(selectedPreset)}
       </select>
     </label>
+    <div class="muted" id="${prefix}-matches" role="status">${ACCESSORY_PRESETS.length}種目</div>
     <details class="accessory-custom-name" data-custom-name="${prefix}" ${selectedPreset === 'custom' ? 'open' : ''}>
       <summary>種目名を手動編集</summary>
-      <label class="field"><span>種目名</span><input type="text" id="${prefix}-name" value="${ex.name || ''}" placeholder="カスタム種目名" /></label>
+      <label class="field"><span>種目名</span><input type="text" id="${prefix}-name" value="${escapeHtml(ex.name || '')}" placeholder="カスタム種目名" /></label>
     </details>
     <label class="field"><span>セット数</span><input type="number" min="0" id="${prefix}-sets" value="${ex.plannedSets || 1}" /></label>
     <label class="field"><span>回数</span><input type="text" id="${prefix}-reps" value="${ex.plannedReps || ex.reps || ''}" /></label>
@@ -5158,6 +5304,27 @@ function bindAccessoryPresetSelect(prefix) {
   const select = document.getElementById(`${prefix}-preset`);
   if (!select) return;
   select.onchange = () => fillSlotFormFromPreset(prefix, select.value);
+  let selectedGroup = '';
+  const search = document.getElementById(`${prefix}-search`);
+  const filter = () => {
+    select.innerHTML = accessoryPresetOptionsHtml(select.value, selectedGroup, search?.value || '');
+    const count = select.querySelectorAll('optgroup:not([label="選択中"]) option').length;
+    const matches = document.getElementById(`${prefix}-matches`);
+    if (matches) matches.textContent = count ? `${count}種目` : '該当する種目なし';
+  };
+  document.querySelectorAll(`[data-preset-prefix="${prefix}"]`).forEach(button => {
+    button.onclick = () => {
+      selectedGroup = button.dataset.presetGroup;
+      document.querySelectorAll(`[data-preset-prefix="${prefix}"]`).forEach(other => other.setAttribute('aria-pressed', String(other === button)));
+      filter();
+      if (selectedGroup === 'カスタム') {
+        select.value = 'custom';
+        fillSlotFormFromPreset(prefix, 'custom');
+        document.getElementById(`${prefix}-name`)?.focus();
+      }
+    };
+  });
+  if (search) search.oninput = filter;
 }
 
 function applySlotToExercise(ex, updated) {
@@ -5390,7 +5557,7 @@ function openAccessoryTodayAddModal() {
     weightType: 'upper_machine',
     restType: 'default',
   });
-  openModal('補助種目を追加', `
+  openModal(fourMenuKey === 'custom' ? '種目を追加' : '補助種目を追加', `
     <div class="muted mb-8">${contextLabel}に追加します。</div>
     ${slotFormHtml('accAddToday', { ...base, name: '', plannedReps: base.reps })}
     <div class="btn-row">
@@ -5928,11 +6095,7 @@ function renderVolumeTrend() {
     </div>`;
 }
 
-// ===== 自動採用 =====
-// 過去の記録から一意に決まる推奨値は、その場で採用して結果だけ残す。
-// 完了画面に一覧と取り消しを出すので、違うと思えば戻せる。
-// 取り消した提案の識別子。取り消しは「この提案は要らない」という意思表示なので、
-// 同じセッションを保存し直したときに黙って戻ってはいけない。
+// ===== 旧バージョンの自動反映の取り消し =====
 // トレーニングを終えたらインターバルも終わり。止めないとリングが回り続け、
 // アプリを閉じたあとに鳴り、次に開いたときにまた復元されていた。
 function stopRestTimerAfterFinish() {
@@ -5944,78 +6107,6 @@ function autoApplyIdentity(item) {
   if (!item) return '';
   if (item.kind === 'accessory') return `accessory:${item.menuKey}:${item.slotId}`;
   return `${item.kind}:${item.id}`;
-}
-
-function autoApplySuggestions(session) {
-  const applied = [];
-  const liftKeys = new Set((session.exercises || []).map(ex => ex.key));
-  const undone = new Set(session.autoUndoneKeys || []);
-
-  // 1. ローテーション進行（メイン種目の次回重量）
-  (store.rotationProgressions || []).forEach(p => {
-    if (p.status !== 'suggested' || p.appliedAt || !p.delta) return;
-    if (!liftKeys.has(p.liftKey)) return;
-    if (undone.has(`rotation:${p.id}`)) return;
-    if (!adoptRotationProgression(p.id)) return;
-    applied.push({
-      kind: 'rotation',
-      id: p.id,
-      label: displayExerciseName(p.liftKey),
-      detail: `${p.delta > 0 ? '+' : ''}${fmtW(p.delta)}kg`,
-      reason: p.message || '前回の達成状況から',
-    });
-  });
-
-  // 2. 推定MAXの更新候補
-  (store.estimatedMaxHistory || []).forEach(entry => {
-    if (entry.adopted || !liftKeys.has(entry.liftKey)) return;
-    if (undone.has(`emax:${entry.id}`)) return;
-    const candidate = getMaxUpdateCandidate(entry);
-    if (!candidate) return;
-    const before = store.settings.maxes?.[entry.maxKey];
-    // MAX採用は同じ種目の保留中ローテーション進行を却下する。取り消しで戻せるよう控えておく
-    const dismissed = (store.rotationProgressions || [])
-      .filter(p => p.liftKey === entry.liftKey && ['suggested', 'accepted'].includes(p.status) && !p.appliedAt)
-      .map(p => ({ id: p.id, status: p.status }));
-    if (!adoptEstimatedMax(entry.id)) return;
-    applied.push({
-      kind: 'emax',
-      id: entry.id,
-      maxKey: entry.maxKey,
-      dismissed,
-      before,
-      label: `${displayExerciseName(entry.liftKey)} MAX`,
-      detail: `${fmtW(before)} → ${fmtW(candidate.candidate)}kg`,
-      reason: entry.maxUseReason || '推定MAXの更新',
-    });
-  });
-
-  // 3. 補助種目の重量進行
-  (session.exercises || []).forEach(ex => {
-    const candidate = getAccessoryProgressionCandidate(ex);
-    if (!candidate) return;
-    const menuKey = normalizeFourMenuKey(ex?.fourMenuKey || session?.performedSplitKey || session?.selectedSplitKey);
-    if (!FOUR_MENU_LABELS[menuKey] || !ex.slotId) return;
-    if (undone.has(`accessory:${menuKey}:${ex.slotId}`)) return;
-    const before = candidate.currentWeight;
-    if (!applyAccessoryProgressionCandidate(session, ex)) return;
-    applied.push({
-      kind: 'accessory',
-      menuKey,
-      slotId: ex.slotId,
-      before,
-      label: displayExerciseName(ex.key, ex.name),
-      detail: `${fmtW(before)} → ${fmtW(candidate.candidateWeight)}kg`,
-      reason: '予定セットを全て達成',
-    });
-  });
-
-  // 保存し直しでも、前回適用して取り消していない項目は一覧に残す（取り消せる状態を保つ）
-  const prior = (session.autoApplied || [])
-    .filter(item => !undone.has(autoApplyIdentity(item)))
-    .filter(item => !applied.some(next => autoApplyIdentity(next) === autoApplyIdentity(item)));
-  session.autoApplied = [...prior, ...applied];
-  return applied;
 }
 
 function undoAutoApplied(sessionKey, index) {
@@ -6086,8 +6177,6 @@ function finishTodaySession() {
   session.exercises.forEach(ex => {
     upsertExerciseLogFromSession(session, ex, true);
   });
-
-  autoApplySuggestions(session);
 
   (session.skippedRestExercises || []).forEach(ex => {
     const fourMeta = session.fourMenuRotation ? {
@@ -6316,6 +6405,8 @@ let restState = {
   running: false,
   targetName: '',
   alertedAt: null,
+  elapsedBeforePauseSec: 0,
+  elapsedStartedAt: null,
   remaining: 0,
   timerId: null,
 };
@@ -6328,6 +6419,8 @@ function createEmptyRestState() {
     running: false,
     targetName: '',
     alertedAt: null,
+    elapsedBeforePauseSec: 0,
+    elapsedStartedAt: null,
     remaining: 0,
     timerId: restState?.timerId || null,
   };
@@ -6343,7 +6436,8 @@ function normalizeRestTimerState(state) {
   const restEndAt = parseInt(state.restEndAt, 10) || null;
   if (!restDurationSec || !restStartedAt || !restEndAt) return null;
   // 終わったレストの 00:00 がヘッダーに何時間も残っていた。終了から10分で片付ける。
-  const endedAt = state.running ? restEndAt : (parseInt(state.alertedAt, 10) || null);
+  const countUp = Object.prototype.hasOwnProperty.call(state, 'elapsedBeforePauseSec');
+  const endedAt = state.running ? (countUp ? null : restEndAt) : (parseInt(state.alertedAt, 10) || null);
   if (endedAt && nowMs() - endedAt > REST_STALE_MS) return null;
   return {
     restStartedAt,
@@ -6352,6 +6446,9 @@ function normalizeRestTimerState(state) {
     running: !!state.running,
     targetName: state.targetName || '',
     alertedAt: state.alertedAt ? parseInt(state.alertedAt, 10) : null,
+    elapsedBeforePauseSec: countUp ? Math.max(0, Number(state.elapsedBeforePauseSec) || 0)
+      : (state.running ? 0 : Math.max(0, restDurationSec - (restEndAt - restStartedAt) / 1000)),
+    elapsedStartedAt: state.running ? (Number(state.elapsedStartedAt) || restStartedAt) : null,
   };
 }
 
@@ -6380,6 +6477,11 @@ function getRestRemainingSec(now = nowMs()) {
   // 自然終了では開始・終了時刻が元のままなので、同期のたびに満タンに戻って見えていた。
   if (restState.alertedAt && restState.restEndAt <= now) return 0;
   return Math.max(0, Math.ceil((restState.restEndAt - restState.restStartedAt) / 1000));
+}
+
+function getRestElapsedSec(now = nowMs()) {
+  const before = restState.elapsedBeforePauseSec || 0;
+  return Math.max(0, Math.floor(before + (restState.running && restState.elapsedStartedAt ? (now - restState.elapsedStartedAt) / 1000 : 0)));
 }
 
 function setRestTimerVisibility(visible) {
@@ -6431,6 +6533,8 @@ function startRestTimer(sec, targetName = '') {
     targetName,
     alertedAt: null,
     remaining: duration,
+    elapsedBeforePauseSec: 0,
+    elapsedStartedAt: now,
   };
   setRestTimerVisibility(true);
   setRestTimerAlarm(false);
@@ -6455,9 +6559,7 @@ function syncRestTimer({ persist = true, alert = true } = {}) {
   restState.remaining = getRestRemainingSec();
 
   if (restState.running && restState.remaining <= 0) {
-    restState.running = false;
     restState.remaining = 0;
-    stopRestTick();
     if (!restState.alertedAt) {
       restState.alertedAt = nowMs();
       if (alert) {
@@ -6475,23 +6577,29 @@ function syncRestTimer({ persist = true, alert = true } = {}) {
 }
 
 function updateRestDisplay() {
-  const m = Math.floor(Math.max(0, restState.remaining) / 60);
-  const s = Math.max(0, restState.remaining) % 60;
+  const elapsed = getRestElapsedSec();
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
   const display = document.getElementById('restTimerDisplay');
   if (!display) return;
   display.textContent =
     `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  // 残量はリングの円弧で表す。pathLength=100 なので dashoffset は残り%そのもの。
+  // 経過時間を目安時間に対する割合で示す。
   const fill = document.getElementById('restBarFill');
   if (fill && fill.style) {
     const total = restState.restDurationSec || 0;
-    const pct = total > 0 ? Math.max(0, Math.min(100, (restState.remaining / total) * 100)) : 0;
+    const pct = total > 0 ? Math.max(0, Math.min(100, (elapsed / total) * 100)) : 0;
     fill.style.strokeDasharray = '100';
     fill.style.strokeDashoffset = String(100 - pct);
   }
   // 残り30秒で --max に切り替える
   const ring = document.getElementById('restTimer');
   if (ring?.classList) ring.classList.toggle('warn', restState.remaining > 0 && restState.remaining <= 30);
+  const target = document.getElementById('restTarget');
+  if (target) {
+    const duration = restState.restDurationSec || 0;
+    target.textContent = `目安 ${String(Math.floor(duration / 60)).padStart(2, '0')}:${String(duration % 60).padStart(2, '0')}`;
+  }
 }
 
 // iPhone の Safari は、ユーザー操作の外で作った AudioContext を鳴らさない。
@@ -6532,21 +6640,23 @@ function setupRestTimerControls() {
     if (restState.running) {
       const remaining = getRestRemainingSec();
       const now = nowMs();
+      restState.elapsedBeforePauseSec = getRestElapsedSec(now);
+      restState.elapsedStartedAt = null;
       restState.running = false;
       restState.restStartedAt = now;
       restState.restEndAt = now + remaining * 1000;
       restState.remaining = remaining;
       setRestToggleText();
     } else {
-      const remaining = restState.remaining > 0 ? restState.remaining : restState.restDurationSec || 60;
+      const remaining = restState.remaining;
       const now = nowMs();
       restState.restStartedAt = now;
       restState.restEndAt = now + remaining * 1000;
       restState.running = true;
-      restState.alertedAt = null;
+      restState.elapsedStartedAt = now;
       restState.remaining = remaining;
       setRestToggleText();
-      setRestTimerAlarm(false);
+      setRestTimerAlarm(remaining <= 0);
     }
     scheduleRestTick();
     persistRestTimerState();
@@ -6581,14 +6691,13 @@ function adjustRestTimer(deltaSec) {
   syncRestTimer({ persist: false, alert: false });
   // 鳴り終わったあとの「+30」は、時間を足したのに止まったままだった。
   // 自然に0になった状態（alertedAtあり）と、自分で止めた状態は別物として扱う。
-  const wasExpired = !restState.running && restState.remaining <= 0 && !!restState.alertedAt;
   const remaining = Math.max(0, restState.remaining + deltaSec);
   const now = nowMs();
+  restState.restDurationSec = getRestElapsedSec(now) + remaining;
   restState.restStartedAt = now;
   restState.restEndAt = now + remaining * 1000;
   restState.remaining = remaining;
   restState.alertedAt = remaining > 0 ? null : (restState.alertedAt || now);
-  restState.running = remaining > 0 ? (restState.running || wasExpired) : false;
   setRestTimerAlarm(remaining <= 0);
   setRestToggleText();
   scheduleRestTick();
@@ -6605,6 +6714,8 @@ function resetRestTimer() {
   restState.running = true;
   restState.alertedAt = null;
   restState.remaining = duration;
+  restState.elapsedBeforePauseSec = 0;
+  restState.elapsedStartedAt = now;
   setRestTimerVisibility(true);
   setRestTimerAlarm(false);
   setRestToggleText();
@@ -6776,6 +6887,11 @@ function renderBlock() {
 
 function afterBlock() {
   if (isFourMenuMode()) {
+    document.querySelectorAll('[data-plan-increase]').forEach(button => {
+      button.onclick = () => {
+        if (adoptMainIncrease(button.dataset.fourMenuKey, button.dataset.planIncrease)) { showToast('次回重量へ反映しました'); render(); }
+      };
+    });
     document.querySelectorAll('[data-set-next-four-menu]').forEach(btn => {
       btn.onclick = () => {
         store.currentState.nextMenuKey = normalizeFourMenuKey(btn.dataset.setNextFourMenu);
@@ -6951,6 +7067,7 @@ function renderFourMenuPlan() {
           <span class="plan-main-scheme">${main.plannedReps} reps × ${main.plannedSets} sets</span>
         </div>
         <div class="plan-reason">${escapeHtml(main.progressionReason)}<span class="plan-reason-date">${escapeHtml(main.progressionReferenceDate)}</span></div>` : '<div class="muted">メインなし</div>'}
+        ${main?.increaseCandidateWeight != null ? `<div class="plan-reason"><span>次回候補 ${fmtW(main.increaseCandidateWeight)}kg</span><button class="btn-secondary btn-small" data-plan-increase="${main.key}" data-four-menu-key="${menuKey}">採用</button></div>` : ''}
         <details class="ui-details plan-accessories" data-ui-key="plan-${menuKey}">
           <summary><span class="micro-label">${accessoryCount} accessories</span></summary>
           ${(menu.exercises.filter(ex => ex.isAccessory).map(ex => `<div class="next-row"><span class="nx-name">${escapeHtml(ex.name)}</span><span class="nx-detail">${exercisePlanText(ex)}</span><button class="btn-ghost btn-small" data-edit-four-accessory="${ex.slotId}" data-four-menu-key="${menuKey}">編集</button></div>`).join('')) || '<div class="muted">なし</div>'}
@@ -6969,7 +7086,9 @@ function renderFourMenuPlan() {
     </div>
     <section class="section custom-plan">
       <div class="micro-label">Custom</div>
-      <div class="muted">${(store.settings.customMenuKeys || ['chest', 'back']).filter(key => FOUR_MENU_ORDER.includes(key)).map(fourMenuLabel).join(' ＋ ')}</div>
+      <div class="muted">${(store.settings.customMenuKeys || ['chest', 'back']).filter(key => FOUR_MENU_ORDER.includes(key)).map(fourMenuLabel).join(' ＋ ') || '自由に種目を追加'}</div>
+      ${getFourMenuAccessorySlots('custom').map(slot => `<div class="next-row"><span class="nx-name">${escapeHtml(slot.name)}</span><span class="nx-detail">${slot.reps}回 × ${slot.plannedSets}セット</span><button class="btn-ghost btn-small" data-edit-four-accessory="${slot.slotId}" data-four-menu-key="custom">編集</button></div>`).join('')}
+      <button class="btn-secondary mt-8" data-add-four-accessory="custom">カスタムに種目を追加</button>
     </section>
   `;
 }
@@ -8072,12 +8191,9 @@ function renderSettings() {
       <label class="field"><span>ミリタリープレス基準</span><input type="number" step="0.5" id="set-shoulderPress" value="${m.shoulderPress ?? 77.5}" /><span class="field-unit">kg</span></label>
 
       <div class="micro-label mt-16">Increment</div>
-      <label class="field"><span>全種目共通</span><input type="number" step="0.5" id="set-inc" value="${store.settings.increment}" /><span class="field-unit">kg</span></label>
-      ${Object.entries(FOUR_MENU_MAIN_LIFTS).map(([key, lift]) => `
-        <label class="field"><span>${lift.name}</span><input type="number" min="0.25" step="0.25" data-main-inc="${key}" value="${getMainProgressionIncrement(key)}" /><span class="field-unit">kg</span></label>
-      `).join('')}
+      <div class="row between"><span>重量の変更幅</span><strong class="num">2.5 kg</strong></div>
 
-      <div class="settings-note">4メニューでは各メイン種目の初期重量計算に使用します。MAX値は自動更新しません。変更は入力した時点で保存されます。</div>
+      <div class="settings-note">重量・MAXの更新は候補を採用した場合のみ。設定の変更は自動保存されます。</div>
     </div>
 
     <div class="section ${isFourMenuMode() ? 'hidden' : ''}">
@@ -8253,7 +8369,7 @@ function afterSettings() {
     const v = parseFloat(document.getElementById(id)?.value);
     return Number.isFinite(v) && v > 0 ? v : fallback;
   };
-  const saveSettingsFromForm = () => {
+  const saveSettingsFromForm = (event) => {
     const m0 = store.settings.maxes || {};
     const newMaxes = {
       ...m0,
@@ -8267,7 +8383,7 @@ function afterSettings() {
     const newState = isFourMenuMode()
       ? {
           nextMenuKey: normalizeActiveFourMenuKey(document.getElementById('set-next-menu')?.value),
-          isRestSelected: false,
+          ...(event?.target?.id === 'set-next-menu' ? { isRestSelected: false } : {}),
         }
       : {
           block: parseInt(document.getElementById('set-block').value) || 1,
@@ -8596,7 +8712,6 @@ if (typeof window !== 'undefined') {
     backLiftRowsHtml,
     menuSheetRowsHtml,
     undoAutoApplied,
-    autoApplySuggestions,
     sessionPrSetIndexes,
     getExercisePrRecord,
     selectedLogMonth,

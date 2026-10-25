@@ -9,6 +9,8 @@ const { execFileSync } = require('node:child_process');
 const { chromium, webkit } = require('playwright');
 
 const root = __dirname;
+const currentCache = fs.readFileSync(path.join(root, 'service-worker.js'), 'utf8').match(/const CACHE_NAME = '([^']+)'/)[1];
+const previousCache = execFileSync('git', ['show', '70cf64a:service-worker.js'], { cwd: root, encoding: 'utf8' }).match(/const CACHE_NAME = '([^']+)'/)[1];
 const artifacts = process.env.UI_ARTIFACT_DIR || path.join(os.tmpdir(), 'myliftlog-quiet-ui');
 fs.mkdirSync(artifacts, { recursive: true });
 let oldVersion = false;
@@ -112,9 +114,9 @@ async function run() {
     await page.locator('#btnNewTodaySession').click();
     await selectMenu(page, 'custom');
     await page.locator('#hdOptions').click();
-    await page.getByRole('button', { name: '組み合わせを編集' }).click();
+    await page.getByRole('button', { name: '構成を編集' }).click();
     await page.locator('[data-custom-menu="legs"]').check();
-    await page.getByRole('button', { name: 'この組み合わせで記録' }).click();
+    await page.getByRole('button', { name: 'この構成を使う' }).click();
     check(await menuIsSelected(page, 'custom'), 'custom visible selected state');
     await page.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises.forEach(ex => ex.sets.forEach(set => { set.done = true; })); finishTodaySession(); });
     check(await page.evaluate(() => store.currentState.nextMenuKey) === next, 'custom preserves normal sequence');
@@ -204,7 +206,7 @@ async function run() {
     // 「組み合わせを編集」はカスタム選択時にだけシートへ出る。
     await selectMenu(page, 'custom');
     await page.locator('#hdOptions').click();
-    await page.getByRole('button', { name: '組み合わせを編集' }).click();
+    await page.getByRole('button', { name: '構成を編集' }).click();
     await page.keyboard.press('Escape');
     check(await page.locator('#modal').evaluate(el => el.classList.contains('hidden')), 'Escape closes modal');
     await page.setViewportSize({ width: 375, height: 430 });
@@ -214,7 +216,7 @@ async function run() {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     check(await page.locator('.btn-primary').first().evaluate(el => parseFloat(getComputedStyle(el).transitionDuration) < 0.01), 'reduced motion');
     await page.evaluate(() => navigator.serviceWorker.ready);
-    await page.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v26'));
+    await page.waitForFunction(async name => (await caches.keys()).includes(name), currentCache);
     await page.waitForFunction(() => !!navigator.serviceWorker.controller);
     // WebKit's protocol-level offline mode aborts navigation before SW fallback.
     // Locally cut the origin connection instead, exercising the actual fetch failure.
@@ -233,12 +235,12 @@ async function run() {
       const tab = await upgrade.newPage();
       await tab.goto(url);
       await tab.evaluate(() => navigator.serviceWorker.ready);
-      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v25'));
+      await tab.waitForFunction(async name => (await caches.keys()).includes(name), previousCache);
       await selectMenu(tab, 'custom');
       const old = await tab.evaluate(() => { const s = getOrCreateTodaySession(); s.exercises[0].note = 'upgrade'; persistTodaySession(s); return JSON.stringify(store); });
       oldVersion = false;
       await tab.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
-      await tab.waitForFunction(async () => (await caches.keys()).includes('mll-strength-v26') && !(await caches.keys()).includes('mll-strength-v25'));
+      await tab.waitForFunction(async ({ current, previous }) => (await caches.keys()).includes(current) && !(await caches.keys()).includes(previous), { current: currentCache, previous: previousCache });
       await tab.reload();
       // reload直後の evaluate は実行コンテキストの破棄と競合する。DOMが立つまで待つ。
       await tab.locator('#appHeader').waitFor();
@@ -252,7 +254,7 @@ async function run() {
         assert.ok(actual.daySessions[key].updatedAt >= expected.daySessions[key].updatedAt);
         actual.daySessions[key].updatedAt = expected.daySessions[key].updatedAt;
       });
-      assert.deepStrictEqual(actual, expected, 'v24 to v25 preserves all data under existing migration');
+      assert.deepStrictEqual(actual, expected, 'service-worker upgrade preserves all data under existing migration');
       checks++;
       await upgrade.close();
     }
@@ -293,8 +295,8 @@ async function run() {
         t.syncRestTimer({ persist: false, alert: false });
         return { expired, resumed, later: t.getRestState().remaining };
       });
-      check(!expiry.expired.running && expiry.expired.remaining === 0, 'an expired timer reads zero, not the full duration');
-      check(expiry.resumed.running && expiry.resumed.remaining === 30 && expiry.later < 30, '+30 after the alarm restarts the countdown');
+      check(expiry.expired.running && expiry.expired.remaining === 0, 'count-up continues beyond the rest target');
+      check(expiry.resumed.running && expiry.resumed.remaining === 30 && expiry.later < 30, '+30 moves the target while elapsed time keeps running');
 
       const paused = await timerTab.evaluate(() => {
         const t = window.__mllTest;

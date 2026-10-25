@@ -853,24 +853,19 @@ function testRotationFlowAndMaxRecordsFromSession() {
   assert.ok(backoffLog);
   assert.strictEqual(isolatedApi.createEstimatedMaxEntry(backoffLog), null, 'backoff should not be mixed into e1RM history');
   assert.strictEqual(isolatedStore.estimatedMaxHistory.some(entry => entry.logId === backoffLog.id), false);
-  // 推奨値は完了時に自動採用し、完了画面から取り消せる（DESIGN.md 原則15）。
-  // 「タップするまで変わらない」契約は「自動で変わり、戻せる」契約に置き換わった。
+  // MAX updates now require explicit adoption; legacy automatic updates stay undoable.
   const finishedKey = Object.keys(isolatedStore.daySessions).find(k => isolatedStore.daySessions[k].completed);
   const applied = isolatedStore.daySessions[finishedKey].autoApplied || [];
-  const emaxApplied = applied.find(item => item.kind === 'emax' && item.maxKey === 'bench');
-  assert.ok(emaxApplied, 'MAX更新は自動採用され記録に残る');
-  assert.strictEqual(emaxApplied.before, 120, '取り消し用に旧値を保持する');
-  assert.strictEqual(isolatedStore.settings.maxes.bench, 122.5, 'MAXは自動採用される');
-  assert.strictEqual(isolatedApi.undoAutoApplied(finishedKey, applied.indexOf(emaxApplied)), true);
-  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, '取り消すと旧値に戻る');
-  // 取り消したのに、同じセッションを保存し直すと黙って再適用されていた
-  isolatedApi.autoApplySuggestions(isolatedStore.daySessions[finishedKey]);
-  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, '取り消した提案は保存し直しても戻らない');
-  assert.strictEqual(
-    (isolatedStore.daySessions[finishedKey].autoApplied || []).some(item => item.kind === 'emax' && item.maxKey === 'bench'),
-    false,
-    '取り消した項目が一覧に復活してはいけない'
-  );
+  assert.strictEqual(applied.length, 0, 'finishing does not apply MAX/progression changes');
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120);
+  assert.strictEqual(!!emax.adopted, false);
+  assert.strictEqual(isolatedApi.adoptEstimatedMax(emax.id), true);
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 122.5, 'explicit adoption updates MAX');
+  isolatedStore.daySessions[finishedKey].autoApplied = [{ kind: 'emax', id: emax.id, maxKey: 'bench', before: 120 }];
+  assert.strictEqual(isolatedApi.undoAutoApplied(finishedKey, 0), true);
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, 'older automatic applications can still be undone');
+  isolatedApi.finishTodaySession();
+  assert.strictEqual(isolatedStore.settings.maxes.bench, 120, 'resaving does not silently readopt MAX');
 
   const failedLog = big3Log({
     id: 'failed-max-log',
@@ -1804,7 +1799,16 @@ function testFourMenuPlanAndProgression() {
     pains: [],
     ts: 1,
   });
-  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).weight, 110);
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).weight, 107.5, 'completion does not increase weight without approval');
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).increaseCandidateWeight, 110);
+  store.manualAdjustments['Four-chest-bench-four-main-bench'] = 2.5;
+  store.logs[0].manualAdjusted = true;
+  assert.strictEqual(api.buildFourMenu('chest', store.settings).exercises[0].plannedWeight, 107.5, 'legacy manual deltas already included in the log are not added twice');
+  delete store.manualAdjustments['Four-chest-bench-four-main-bench'];
+  store.logs[0].plannedWeight = 66.25;
+  const fractional = api.getFourMenuMainPlan('bench', 'chest', store.settings);
+  assert.strictEqual(fractional.weight, 66.25, 'legacy weights are not rounded upward on load');
+  assert.strictEqual(fractional.increaseCandidateWeight, 68.75, 'candidate is exactly 2.5kg above the saved weight');
 
   store.logs.unshift({
     id: 'four-bench-miss-2',
@@ -1862,9 +1866,9 @@ function testDataProtectionAndProgressionImprovements() {
   assert.strictEqual(store.maxTestResults.length, 1);
 
   store.settings.mainProgressionSettings.militaryPress = undefined;
-  assert.strictEqual(api.getMainProgressionIncrement('shoulderPress', store.settings), 1.25);
+  assert.strictEqual(api.getMainProgressionIncrement('shoulderPress', store.settings), 2.5);
   store.settings.mainProgressionSettings.shoulderPress.increment = 1.25;
-  assert.strictEqual(api.getMainProgressionIncrement('shoulderPress', store.settings), 1.25);
+  assert.strictEqual(api.getMainProgressionIncrement('shoulderPress', store.settings), 2.5, 'legacy 1.25kg settings do not change the fixed 2.5kg step');
 
   const make = (id, ts, complete, weight = 100) => ({
     id, ts, date: `2026-07-0${ts}`, fourMenuRotation: true, exerciseKey: 'bench', menuType: 'four-main-bench',
@@ -1887,7 +1891,7 @@ function testDataProtectionAndProgressionImprovements() {
   ];
   assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'miss_hold');
   store.logs = [{ ...make('complete-rpe', 3, true), rpe: '10', pains: ['痛み'] }];
-  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'completed_increment');
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'completed_candidate');
 }
 
 function testRecoveryAndSessionIdentity() {
@@ -1934,7 +1938,7 @@ function testPreviousSummaryAccessoryCandidateAndAnalytics() {
     isAccessory: true, slotId: 'fm-test', key: 'test', weightType: 'cable', plannedWeight: 50, plannedSets: 3, plannedReps: 10,
     sets: [{ reps: 10, done: true }, { reps: 11, done: true }, { reps: 10, done: true }],
   };
-  assert.strictEqual(api.getAccessoryProgressionCandidate(accessory).candidateWeight, 55);
+  assert.strictEqual(api.getAccessoryProgressionCandidate(accessory).candidateWeight, 52.5, 'accessory candidates also increase by 2.5kg');
   assert.strictEqual(api.getAccessoryProgressionCandidate({ ...accessory, sets: accessory.sets.slice(0, 2) }), null);
   assert.strictEqual(api.getAccessoryProgressionCandidate({ ...accessory, weightType: 'bodyweight' }), null);
 
