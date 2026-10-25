@@ -2679,8 +2679,16 @@ function getFourMenuMainPlan(liftKey, menuKey, settings = store.settings) {
   const inc = getMainProgressionIncrement(liftKey, settings);
   const override = settings.mainSetOverrides?.[`Four-${normalizeFourMenuKey(menuKey)}-${liftKey}-four-main-${liftKey}`];
   if (override) {
+    const weight = parseFloat(override.plannedWeight);
+    const subsequent = getFourMenuLatestLogsForLift(liftKey, 3).filter(log => (Number(log.ts) || 0) >= (override.updatedAt || 0));
+    const latest = subsequent[0];
+    const atTarget = latest && Number(latest.plannedWeight) === weight;
+    const increaseCandidateWeight = atTarget && isFourMainLogComplete(latest) ? Math.round((weight + inc) * 100) / 100 : null;
+    const reductionCandidateWeight = atTarget && countConsecutiveMainMisses(subsequent, weight, inc) >= 2 ? roundToIncrement(weight * 0.95, inc) : null;
     return {
-      weight: parseFloat(override.plannedWeight),
+      weight,
+      increaseCandidateWeight,
+      reductionCandidateWeight,
       reps: parseInt(override.plannedReps, 10) || 5,
       sets: parseInt(override.plannedSets, 10) || 3,
       reason: '手動設定',

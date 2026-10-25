@@ -1894,6 +1894,26 @@ function testDataProtectionAndProgressionImprovements() {
   assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest', store.settings).reasonCode, 'completed_candidate');
 }
 
+function testRepeatedManualProgressionCandidates() {
+  const { api } = createFourMenuHarness();
+  const state = api.getStore();
+  api.saveMainSetOverride('chest', { key: 'bench', menuType: 'four-main-bench', isFourMenuMain: true, plannedWeight: 102.5, plannedSets: 3, plannedReps: 5 });
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest').weight, 102.5);
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest').increaseCandidateWeight, null, 'adoption alone does not propose another increase');
+  const ts = Date.now() + 1000;
+  const make = (id, time, reps) => ({ id, ts: time, date: '2026-10-25', fourMenuRotation: true,
+    exerciseKey: 'bench', menuType: 'four-main-bench', plannedWeight: 102.5, plannedReps: 5, plannedSets: 3,
+    sets: reps.map(reps => ({ weight: 102.5, reps, done: true })) });
+  state.logs = [make('target-complete', ts, [5, 5, 5])];
+  const completed = api.getFourMenuMainPlan('bench', 'chest');
+  assert.strictEqual(completed.weight, 102.5, 'a completed target is still held until approval');
+  assert.strictEqual(completed.increaseCandidateWeight, 105, 'new candidates continue after adopting a previous candidate');
+  state.logs = [make('miss-1', ts, [5, 5, 4]), make('miss-2', ts + 1000, [5, 4, 4])];
+  assert.strictEqual(api.getFourMenuMainPlan('bench', 'chest').reductionCandidateWeight, 97.5, 'a saved override does not hide consecutive-miss proposals');
+  assert.strictEqual(api.buildFourMenu('chest').exercises[0].plannedWeight, 102.5, 'a reduction proposal is not automatically applied');
+}
+testRepeatedManualProgressionCandidates();
+
 function testRecoveryAndSessionIdentity() {
   const broken = createHarness({ rawStore: '{not-json', forceLegacy: false, confirm: () => true });
   assert.strictEqual(broken.api.getStorageRecovery().active, true);
