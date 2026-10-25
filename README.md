@@ -11,7 +11,7 @@
 
 ## 主な機能
 
-- メイン種目3セット×5回の記録と、種目別重量刻みによる次回候補
+- メイン種目3セット×5回の記録と、2.5kg刻みの次回候補
 - 前回実績、経過日数、今回重量の理由表示
 - 2回連続未達時の5%減候補（ユーザーが採用するまで自動反映しない）
 - menuKey別の補助種目テンプレートと次回重量候補
@@ -22,6 +22,10 @@
 - 期間指定の種目・部位休止
 - JSONバックアップ/復元と旧データmigration
 - オフライン起動対応PWA
+- 空の構成から作れる自由カスタムと、部位・検索で絞り込める種目ライブラリ
+- カウントアップ式レストタイマー（停止・再開・目安時間の通知）
+
+メイン重量・補助重量・MAXは自動で増やしません。次回候補の「採用」を押した場合、または手動編集した場合のみ変更します。
 
 RPE、痛み、メモは記録と確認のために保持します。これらを使って重量、休養、デロード、メニューを自動変更することはありません。
 
@@ -48,6 +52,7 @@ node test_accessory.js
 node test_progression.js
 NODE_PATH=<playwright modules> node test_ui.js
 NODE_PATH=<playwright modules> node test_ux_audit.js
+NODE_PATH=<playwright modules> node test_recording_ux.js
 git diff --check
 ```
 

@@ -142,7 +142,7 @@ function testStartPersistsState() {
   assert.strictEqual(saved.running, true);
   assert.strictEqual(saved.targetName, 'ベンチプレス');
   assert.strictEqual(saved.alertedAt, null);
-  assert.strictEqual(h.elements.restTimerDisplay.textContent, '01:30');
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:00');
 }
 
 function testRestoreBeforeEnd() {
@@ -162,7 +162,7 @@ function testRestoreBeforeEnd() {
 
   assert.strictEqual(h.api.getRestState().remaining, 60);
   assert.strictEqual(h.api.getRestState().running, true);
-  assert.strictEqual(h.elements.restTimerDisplay.textContent, '01:00');
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:30');
 }
 
 function testRestoreAfterEnd() {
@@ -182,9 +182,15 @@ function testRestoreAfterEnd() {
 
   const state = h.api.getRestState();
   assert.strictEqual(state.remaining, 0);
-  assert.strictEqual(state.running, false);
+  assert.strictEqual(state.running, true, 'elapsed timer continues after the rest target');
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:31');
   assert.ok(state.alertedAt);
   assert.strictEqual(h.elements.restTimer.classList.contains('alarm'), true);
+  h.elements.restToggle.onclick();
+  h.api.setNowProvider(() => 2_231_000);
+  h.api.restoreRestTimer();
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:31', 'a paused count-up timer survives a long restart');
+  assert.strictEqual(h.api.getRestState().running, false);
 }
 
 function testLifecycleEventsRecalculate() {
@@ -223,16 +229,21 @@ function testControlsStayConsistent() {
   h.elements.restToggle.onclick();
   assert.strictEqual(h.api.getRestState().running, false);
   assert.strictEqual(h.api.getRestState().remaining, 50);
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:10');
   assert.strictEqual(savedStore(h).restTimerState.running, false);
 
   h.api.setNowProvider(() => 3_030_000);
   h.elements.restToggle.onclick();
   assert.strictEqual(h.api.getRestState().running, true);
   assert.strictEqual(savedStore(h).restTimerState.restEndAt, 3_080_000);
+  h.api.setNowProvider(() => 3_040_000);
+  h.api.syncRestTimer();
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:20', 'paused seconds are not added to elapsed time');
 
   h.elements.restReset.onclick();
   assert.strictEqual(h.api.getRestState().remaining, 60);
-  assert.strictEqual(savedStore(h).restTimerState.restEndAt, 3_090_000);
+  assert.strictEqual(savedStore(h).restTimerState.restEndAt, 3_100_000);
+  assert.strictEqual(h.elements.restTimerDisplay.textContent, '00:00');
 
   h.elements.restClose.onclick();
   assert.strictEqual(h.api.getStore().restTimerState, null);
@@ -266,8 +277,10 @@ function testDesignSystemAndAccessibilityContracts() {
   assert.ok(css.includes('.rest-ring-prog'), 'rest timer is an arc');
   assert.ok(css.includes('stroke-dashoffset'), 'arc shows remaining time');
   assert.ok(!css.includes('body.keyboard-open .rest-bar'), 'ring must survive the keyboard');
-  assert.ok(html.includes('20260929-ux-audit'), 'cache-bust string moves with the release');
-  assert.ok(sw.includes("mll-strength-v29"), 'the worker version moves with it');
+  const assets = [...html.matchAll(/(?:href|src)="((?:app\.js|styles\.css)\?v=[^"]+)"/g)].map(match => match[1]);
+  assert.strictEqual(assets.length, 2);
+  assets.forEach(asset => assert.ok(sw.includes(asset), 'HTML and worker precache use the same asset version'));
+  assert.ok(sw.includes("mll-strength-v30"), 'the worker version moves with the release');
   // 書体は1つ。バンドルしていた数字専用フォントは廃止した
   assert.ok(!css.includes('@font-face'), 'no bundled face');
   assert.ok(!html.includes('.woff2'), 'nothing preloads a font file');
